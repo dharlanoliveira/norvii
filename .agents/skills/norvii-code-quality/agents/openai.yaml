@@ -1,0 +1,4 @@
+interface:
+  display_name: "Norvii Code Quality"
+  short_description: "Generate maintainable, idiomatic Norvii code"
+  default_prompt: "Use $norvii-code-quality to implement this change with idiomatic, tested, low-coupling code."

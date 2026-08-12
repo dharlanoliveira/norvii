@@ -1,0 +1,38 @@
+schema_version: "1.0"
+
+preset:
+  id: "norvii"
+  name: "Norvii Project Standards"
+  version: "1.0.0"
+  description: "Adds Norvii architecture, prototype, evidence, cost, and quality requirements to Spec Kit artifacts."
+  author: "Dharlan Oliveira"
+  license: "Proprietary"
+
+requires:
+  speckit_version: ">=0.16.2"
+
+provides:
+  templates:
+    - type: "template"
+      name: "spec-template"
+      file: "templates/spec-addendum.md"
+      description: "Norvii specification requirements"
+      strategy: "append"
+
+    - type: "template"
+      name: "plan-template"
+      file: "templates/plan-addendum.md"
+      description: "Norvii implementation planning requirements"
+      strategy: "append"
+
+    - type: "template"
+      name: "tasks-template"
+      file: "templates/tasks-addendum.md"
+      description: "Norvii task quality and path requirements"
+      strategy: "append"
+
+tags:
+  - "norvii"
+  - "architecture"
+  - "quality"
+  - "rag"

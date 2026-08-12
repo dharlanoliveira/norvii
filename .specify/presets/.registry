@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "presets": {
+    "norvii": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:d8e63cf4451c9650978832a9f3a6211f8e86a8ea49a66b6501250f577be0cb11",
+      "enabled": true,
+      "priority": 5,
+      "registered_commands": {},
+      "registered_skills": {},
+      "installed_at": "2026-08-12T18:50:34.889282+00:00"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+.playwright-mcp/
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+
+# JavaScript and TypeScript
+node_modules/
+dist/
+coverage/
+.vite/
+storybook-static/
+playwright-report/
+test-results/
+
+# Python
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+htmlcov/
+
+# Go
+bin/
+*.test
+coverage.out
+
+# Local build and runtime state
+.cache/
+tmp/
