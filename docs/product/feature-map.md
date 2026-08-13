@@ -8,7 +8,7 @@ document does not create feature branches or implementation commitments by itsel
 
 | Order | Candidate feature | Demonstrable outcome | Likely modules | Depends on |
 | --- | --- | --- | --- | --- |
-| 001 | Product experience prototype | A reviewer navigates the core Norvii journeys and states in a deterministic React prototype without backend services | Prototype web | None |
+| [001](../../specs/001-product-experience-prototype/spec.md) | Product experience prototype | A reviewer navigates the bilingual core Norvii journeys and states in a deterministic React prototype without backend services | Prototype web | None |
 | 002 | Local project foundation | A contributor can start required backing services and run module checks from documented commands | Infra, all production module shells | 001 |
 | 003 | Corpus catalog | A user can create, edit, list, select, and disable a corpus | Web, API, contracts | 001, 002 |
 | 004 | Corpus source management | A user can add a PDF or official URL and see its processing state | Web, API, contracts | 001, 003 |
@@ -33,8 +33,8 @@ document does not create feature branches or implementation commitments by itsel
 - Merge candidates only when neither produces meaningful standalone value.
 - Production UI features MUST link to the approved prototype baseline and record intentional differences.
 
-## First proposed feature
+## First active feature
 
-Start with `001-product-experience-prototype`. Its acceptance target is an approved, executable React baseline for the core journeys and required states defined in the [prototyping workflow](../development/prototyping.md). It uses deterministic fixtures and does not create production modules, backend services, databases, or public contracts.
+The active [product experience prototype specification](../../specs/001-product-experience-prototype/spec.md) establishes an approved, executable English and Portuguese baseline for the core journeys and required states defined in the [prototyping workflow](../development/prototyping.md). It uses deterministic fixtures and does not create production modules, backend services, databases, or public contracts.
 
 After prototype approval, `002-local-project-foundation` establishes the production module shells and the minimum backing services required by the next vertical slice. If the database decision is still open, that feature researches the options and records the choice before creating `infra/compose.yaml`.

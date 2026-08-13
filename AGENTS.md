@@ -12,6 +12,12 @@ Read the language reference for every language touched by the task:
 
 Apply the skill to tests, migrations, build files, configuration, and generated code as well as application code.
 
+## Engineering language
+
+Write all project-owned source code, configuration, tests, technical documentation, specifications, plans, tasks, comments, identifiers, logs, and error messages in English. English is the default product and engineering language.
+
+Portuguese is limited to Portuguese localization values, preserved legal or corpus content, quotations and citations, and deterministic test data for those cases. Keep localization keys, surrounding code, test descriptions, and technical explanations in English. Follow Principle VIII of `.specify/memory/constitution.md` and run `.github/scripts/validate_repository_language.py` before committing.
+
 ## Spec-driven development
 
 Before implementing a product capability, create or select its numbered workspace under `specs/` and follow the repository-local Spec Kit flow:

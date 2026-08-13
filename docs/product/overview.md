@@ -17,6 +17,7 @@ Production development begins after the prototype baseline is approved. The prot
 - Answer questions using only the active corpus.
 - Link citations to the source passage, article, section, or page used in the answer.
 - Support an isolated Portuguese corpus and an isolated English corpus.
+- Present the complete product interface in English and Portuguese, with English as the default.
 - Compare vector RAG, GraphRAG, and hybrid retrieval.
 - Expose retrieved chunks, entities, relations, latency, and token use for inspection.
 - Offer research operations through MCP tools and reusable skills.
@@ -48,6 +49,12 @@ The primary audience is technical: recruiters, engineers, architects, and people
 | Product | Clear interface, accessible sources, and explicit limitations |
 
 ## Product experience
+
+### Interface languages
+
+Norvii supports English and Portuguese as interface languages. English is the default when the user has not selected a language. The interface language applies to product-authored navigation, actions, labels, validation, status, error, empty-state, inspection, and accessibility text.
+
+Interface language and corpus language are independent. Changing the interface language does not translate corpus names that are proper titles, source documents, legal passages, citations, user questions, or generated answers. Each of those retains the language defined by its content and active-corpus behavior.
 
 ### Entry page
 
@@ -93,6 +100,7 @@ The MVP is complete when:
 - the Portuguese and English corpora remain isolated;
 - ready sources appear in the corpus workspace;
 - chat answers in the expected language with navigable citations;
+- the complete interface is available in English and Portuguese, starts in English by default, and contains no untranslated product-authored copy in either language;
 - questions without sufficient evidence produce explicit abstention;
 - inspection exposes retrieved chunks;
 - a minimum automated evaluation set exists;

@@ -17,6 +17,12 @@ Read every reference for a language touched by the task before editing:
 
 For mixed-language work, read all applicable references and treat data exchanged between modules as a public contract.
 
+## Engineering language
+
+Write all project-owned code, configuration, schemas, migrations, tests, comments, docstrings, identifiers, logs, error messages, and technical documentation in English. English is the default product and engineering language.
+
+Portuguese is permitted only in Portuguese localization values, preserved legal or corpus content, quotations and citations, and deterministic test data for those cases. Keep localization keys, surrounding code, test descriptions, and technical explanations in English. Run `.github/scripts/validate_repository_language.py` for every change that can affect scanned text.
+
 ## Workflow
 
 ### 1. Inspect before designing

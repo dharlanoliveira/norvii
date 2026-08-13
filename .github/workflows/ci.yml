@@ -1,0 +1,177 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  repository-validation:
+    name: Repository validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Test CI support scripts
+        run: python -m unittest discover -s .github/scripts/tests -v
+
+      - name: Enforce English source and documentation
+        run: python .github/scripts/validate_repository_language.py
+
+      - name: Validate shell scripts
+        run: bash -n .specify/scripts/bash/*.sh .specify/extensions/git/scripts/bash/*.sh
+
+  module-builds:
+    name: Build ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - prototypes/web
+          - apps/web
+          - apps/api
+          - apps/ingestion
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Install module dependencies
+        env:
+          MODULE_PATH: ${{ matrix.module }}
+        run: |
+          if [ -f "$MODULE_PATH/package.json" ]; then
+            npm --prefix "$MODULE_PATH" ci
+          fi
+
+      - name: Run module CI contract
+        env:
+          MODULE_PATH: ${{ matrix.module }}
+        run: |
+          marker_count="$(find "$MODULE_PATH" -maxdepth 1 -type f \( -name package.json -o -name go.mod -o -name pyproject.toml \) -print -quit 2>/dev/null | wc -l)"
+          if [ "$marker_count" -eq 0 ]; then
+            echo "$MODULE_PATH is not scaffolded; no build is required yet."
+            exit 0
+          fi
+
+          if [ ! -f "$MODULE_PATH/Makefile" ]; then
+            echo "::error::$MODULE_PATH is scaffolded but does not provide the required Makefile ci target."
+            exit 1
+          fi
+
+          make -C "$MODULE_PATH" ci
+
+  sonar:
+    name: SonarQube Cloud
+    needs:
+      - repository-validation
+      - module-builds
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Validate SonarQube Cloud configuration
+        env:
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          test -n "$SONAR_ORGANIZATION" || { echo "::error::Repository variable SONAR_ORGANIZATION is required."; exit 1; }
+          test -n "$SONAR_PROJECT_KEY" || { echo "::error::Repository variable SONAR_PROJECT_KEY is required."; exit 1; }
+          test -n "$SONAR_TOKEN" || { echo "::error::Repository secret SONAR_TOKEN is required."; exit 1; }
+
+      - name: Scan and wait for quality gate
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >-
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+
+      - name: Enforce zero open Sonar issues
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+          SONAR_PULL_REQUEST: ${{ github.event.pull_request.number }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: python .github/scripts/enforce_sonar_issues.py
+
+  notify-failure:
+    name: Email failure notification
+    needs:
+      - repository-validation
+      - module-builds
+      - sonar
+    if: >-
+      always() &&
+      !cancelled() &&
+      (needs.repository-validation.result == 'failure' ||
+       needs.module-builds.result == 'failure' ||
+       needs.sonar.result == 'failure') &&
+      (github.event_name == 'push' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Send failure email
+        env:
+          CI_FAILURE_EMAIL: ${{ vars.CI_FAILURE_EMAIL }}
+          CI_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CI_WORKFLOW: ${{ github.workflow }}
+          GIT_BRANCH: ${{ github.head_ref || github.ref_name }}
+          GIT_COMMIT: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+        run: python .github/scripts/send_ci_failure_email.py

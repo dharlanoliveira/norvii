@@ -29,7 +29,9 @@ Repository foundation, documentation-only maintenance, and tool upgrades do not 
 - Keep module ownership aligned with `docs/architecture/repository-structure.md`.
 - Update the durable source of truth in the same change that alters it.
 - Never commit secrets, local environment files, generated reports, or dependency directories.
-- Keep public contracts and identifiers in English. User-facing content may follow the active corpus language.
+- Write all project-owned source code, configuration, tests, technical documentation, specifications, plans, tasks, comments, identifiers, logs, errors, and commit messages in English.
+- Keep Portuguese inside Portuguese localization values, preserved legal or corpus content, quotations and citations, and deterministic fixtures that verify those cases. Localization keys and the surrounding code remain in English.
+- Every scaffolded module provides a `Makefile` `ci` target that owns its formatting, analysis, tests, coverage, and build checks.
 
 ## Commit history
 
@@ -55,7 +57,11 @@ specify check
 specify integration status
 specify workflow resolve speckit
 specify preset resolve spec-template
+python -m unittest discover -s .github/scripts/tests -v
+python .github/scripts/validate_repository_language.py
 git diff --check
 ```
 
 Review `git status --short` and the complete staged diff before creating the commit.
+
+See [continuous integration](docs/development/continuous-integration.md) for the module build contract, SonarQube Cloud setup, and required GitHub checks.

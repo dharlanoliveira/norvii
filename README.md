@@ -4,6 +4,8 @@
 
 # Norvii
 
+[![CI](https://github.com/dharlanoliveira/norvii/actions/workflows/ci.yml/badge.svg)](https://github.com/dharlanoliveira/norvii/actions/workflows/ci.yml)
+
 Norvii is a proof of concept for evidence-grounded legal research using RAG,
 GraphRAG, LLMs, MCP, and reusable skills. The application will let a user select a
 small Portuguese or English corpus, browse its sources, and ask questions in a chat
@@ -15,6 +17,12 @@ The project is a technical demonstration and does not provide legal advice.
 
 The repository is in the specification and product-prototyping phase. Production application modules have not been scaffolded yet. The first feature will create an executable React prototype with deterministic data before production implementation begins. The database, vector index, graph storage, models, and ingestion trigger remain intentionally undecided and will be selected through feature research and architecture decisions.
 
+## Code quality analysis
+
+GitHub Actions is prepared to analyze Norvii with SonarQube Cloud after the public project is imported and its repository variables and analysis token are configured. Each same-repository pull request and push to `main` waits for the Sonar quality gate, then applies the stricter Norvii policy that fails the build when any unresolved Sonar issue remains.
+
+View the [Norvii analysis dashboard on SonarQube Cloud](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii). The dashboard will become available after the initial SonarQube Cloud setup and first successful analysis. See [continuous integration](docs/development/continuous-integration.md#sonarqube-cloud-free-setup) for the setup procedure, required GitHub configuration, and gate behavior.
+
 ## Documentation map
 
 - [Product overview](docs/product/overview.md): vision, scope, product behavior, and MVP boundary.
@@ -25,6 +33,7 @@ The repository is in the specification and product-prototyping phase. Production
 - [Spec-driven workflow](docs/development/spec-driven-development.md): how Codex and
   contributors move from capability to verified code.
 - [Development tooling](docs/development/tooling.md): pinned Spec Kit version, project preset, workflow overlay, and upgrade rules.
+- [Continuous integration](docs/development/continuous-integration.md): GitHub Actions builds, SonarQube Cloud gates, and failure notifications.
 - [Executable prototyping](docs/development/prototyping.md): how React prototypes are built, reviewed, and approved before production.
 - [Prototype workspace](prototypes/README.md): executable product experiments kept separate from production applications.
 - [Repository structure](docs/architecture/repository-structure.md): target monorepo
