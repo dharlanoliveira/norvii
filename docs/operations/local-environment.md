@@ -1,53 +1,152 @@
 # Local Environment
 
-Norvii will use Docker Compose for backing services required by local development and
-evaluation. The application modules remain runnable with their native Go, Python, and
-Node.js toolchains unless a later deployment feature decides otherwise.
+Norvii uses Docker Compose for backing services while application modules run with
+their native Go, Python, and Node.js toolchains. The canonical Compose file is
+`infra/compose.yaml`.
 
-## Compose ownership
+## Persistence topology
 
-The canonical file will be `infra/compose.yaml`. The local foundation feature creates it according to [ADR 0005](../decisions/0005-postgresql-and-neo4j-persistence.md). The default environment starts PostgreSQL with pgvector and one standalone Neo4j Community instance. Exact image versions remain feature-owned and must be pinned before the Compose file is committed.
+The default `norvii` project starts exactly two services:
 
-Compose is responsible for infrastructure such as:
+- PostgreSQL 18 with pgvector 0.8.6 is canonical relational, binary, document, and
+  vector storage;
+- standalone Neo4j Community 2026.06.0 is a rebuildable graph projection.
 
-- canonical relational, document, binary, and vector persistence in PostgreSQL with pgvector;
-- rebuildable graph projection in standalone Neo4j Community;
-- queues or object storage only when a feature requires them;
-- optional local model services when explicitly selected.
+Both multi-architecture images are pinned by exact release tag and OCI digest.
+PostgreSQL is limited to 512 MiB and Neo4j to 1.5 GiB, so contributors should make at
+least 2 GiB available to Docker. PostgreSQL and Neo4j use distinct named volumes:
+`norvii_postgres_data` and `norvii_neo4j_data`.
 
-## Service rules
+[ADR 0005](../decisions/0005-postgresql-and-neo4j-persistence.md) defines the
+authority and projection boundaries. Removing Neo4j data cannot remove canonical
+PostgreSQL data.
 
-Every service added to Compose MUST include:
+## Prerequisites
 
-- an image pinned to a deliberate version, never `latest`;
-- a stable service name and documented purpose;
-- a health check used by dependent services;
-- named volumes only for data that must survive restart;
-- ports exposed only when a local process or operator needs them;
-- resource and data-size expectations appropriate for the POC;
-- environment variables documented in `.env.example` without secrets;
-- a clean initialization or migration path;
-- a verification command in the owning feature's `quickstart.md`.
+- Docker Engine with Docker Compose
+- Go 1.26.5 or a compatible Go 1.26 patch release
+- Python 3.13
+- uv 0.11
+- GNU Make and Bash on the reference Linux environment
 
-## Profiles
+The reference container platforms are Linux amd64 and arm64.
 
-Use Compose profiles only when they express real optional capabilities, such as local observability or local model services. PostgreSQL and Neo4j are both part of the default POC persistence environment. The default profile MUST not introduce clustered database modes or unrelated services.
+## Configuration
 
-## Persistence implementation gate
+Create the ignored local configuration and replace both password markers:
 
-[ADR 0005](../decisions/0005-postgresql-and-neo4j-persistence.md) resolves the database topology. The local foundation feature must still research and record deliberate versions, resource limits, credentials, ports, migration tooling, driver versions, and health checks. `infra/compose.yaml`, the initial PostgreSQL migration, environment template, and feature quickstart are delivered together.
+```bash
+cp infra/.env.example infra/.env
+```
 
-PostgreSQL is the canonical service. Neo4j contains only a projection that can be rebuilt from a published PostgreSQL artifact release. Removing the Neo4j volume must not remove source documents or canonical extraction artifacts.
+The example contains no usable credential. Single-quote values containing spaces,
+dollar signs, or other special characters so Compose treats them literally. Norvii
+parses the file without evaluating it as shell code and passes discrete connection
+fields to drivers so password-bearing URLs do not enter errors or logs.
 
-## Expected operator commands
+Validate the rendered service list:
 
-The foundation feature should provide one documented command for each operation:
+```bash
+make persistence-config
+```
 
-- start PostgreSQL with pgvector and standalone Neo4j Community;
-- inspect health;
-- run migrations or initialization;
-- stop services without deleting data;
-- intentionally reset only named POC data with an explicit warning;
-- run all module verification checks.
+The output must contain only `postgres` and `neo4j`.
 
-Exact commands remain feature-owned until the toolchain and backing services exist.
+## Lifecycle commands
+
+Start both stores and wait up to two minutes for authenticated health:
+
+```bash
+make persistence-up
+```
+
+Initialize pgvector and inspect the tern migration ledger:
+
+```bash
+make persistence-migrate
+make persistence-migration-status
+```
+
+Initialization is idempotent. Feature 003 owns one migration,
+`001_enable_vector.sql`; it creates no product table.
+
+Verify Go and Python through their production database drivers:
+
+```bash
+make persistence-verify
+```
+
+Each runtime authenticates and executes constant read-only SQL and Cypher operations
+within the configured timeout. No corpus, source, document, ingestion artifact, node,
+or relationship is created.
+
+Stop services while retaining both volumes:
+
+```bash
+make persistence-stop
+```
+
+## Health and troubleshooting
+
+Inspect authenticated health without changing state:
+
+```bash
+make persistence-health
+```
+
+When a service is unhealthy, the command prints a bounded log command for that
+service. The direct equivalents are:
+
+```bash
+docker compose --env-file infra/.env -f infra/compose.yaml ps
+docker compose --env-file infra/.env -f infra/compose.yaml logs --tail 100 postgres
+docker compose --env-file infra/.env -f infra/compose.yaml logs --tail 100 neo4j
+```
+
+Review third-party logs before sharing them. Norvii never prints the configured
+passwords, but database-owned diagnostic output is outside the application's logging
+boundary.
+
+Common failures include an occupied port, a stale data volume initialized with older
+credentials, insufficient Docker memory, and running migration or verifier commands
+before health succeeds. A normal stop never fixes a stale credential because Neo4j
+correctly retains authentication in its data volume; use the intentional reset only
+when local data may be discarded.
+
+## Isolated integration journey
+
+Run the complete service-backed acceptance journey with:
+
+```bash
+make persistence-integration
+```
+
+The journey uses project `norvii-integration`, alternate local ports, temporary
+credentials, and separately named integration volumes. It proves authenticated
+health, repeatable migration, Go and Python connectivity, safe failure, normal
+restart retention, graph-volume isolation, and clean-volume reproduction. A trap
+removes the isolated containers and volumes; it never targets default local data.
+
+## Intentional local reset
+
+The following command permanently removes exactly `norvii_postgres_data` and
+`norvii_neo4j_data` after validating their Compose ownership:
+
+```bash
+make persistence-reset CONFIRM=reset-norvii-data
+```
+
+The command accepts no volume name or filesystem path. It refuses missing or
+unexpected volumes, a changed project identity, invalid ownership labels, and any
+other confirmation. Removed data cannot be recovered through Norvii.
+
+Recreate the foundation after reset:
+
+```bash
+make persistence-up
+make persistence-migrate
+make persistence-verify
+```
+
+The feature-specific executable evidence remains in
+[Feature 003 quickstart](../../specs/003-local-persistence-foundation/quickstart.md).

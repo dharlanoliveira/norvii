@@ -40,7 +40,7 @@ jobs:
         run: python .github/scripts/validate_repository_language.py
 
       - name: Validate shell scripts
-        run: bash -n .specify/scripts/bash/*.sh .specify/extensions/git/scripts/bash/*.sh
+        run: bash -n .specify/scripts/bash/*.sh .specify/extensions/git/scripts/bash/*.sh infra/scripts/*.sh
 
   module-builds:
     name: Build ${{ matrix.module }}
@@ -59,10 +59,32 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
+        if: matrix.module == 'prototypes/web' || matrix.module == 'apps/web'
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: "24"
           package-manager-cache: false
+
+      - name: Set up Go
+        if: matrix.module == 'apps/api'
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26.5"
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Set up Python
+        if: matrix.module == 'apps/ingestion'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        if: matrix.module == 'apps/ingestion'
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.16"
+          enable-cache: true
+          cache-dependency-glob: apps/ingestion/uv.lock
 
       - name: Install module dependencies
         env:
@@ -70,6 +92,12 @@ jobs:
         run: |
           if [ -f "$MODULE_PATH/package.json" ]; then
             npm --prefix "$MODULE_PATH" ci
+          fi
+          if [ -f "$MODULE_PATH/go.mod" ]; then
+            go -C "$MODULE_PATH" mod download
+          fi
+          if [ -f "$MODULE_PATH/pyproject.toml" ]; then
+            uv sync --directory "$MODULE_PATH" --locked --all-groups
           fi
 
       - name: Install production web browser
@@ -94,11 +122,41 @@ jobs:
 
           make -C "$MODULE_PATH" ci
 
+  persistence-integration:
+    name: Persistence integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26.5"
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.16"
+          enable-cache: true
+          cache-dependency-glob: apps/ingestion/uv.lock
+
+      - name: Verify persistence foundation
+        run: make persistence-integration
+
   sonar:
     name: SonarQube Cloud
     needs:
       - repository-validation
       - module-builds
+      - persistence-integration
     if: >-
       github.event_name == 'push' ||
       github.event.pull_request.head.repo.full_name == github.repository
@@ -149,12 +207,14 @@ jobs:
     needs:
       - repository-validation
       - module-builds
+      - persistence-integration
       - sonar
     if: >-
       always() &&
       !cancelled() &&
       (needs.repository-validation.result == 'failure' ||
        needs.module-builds.result == 'failure' ||
+       needs.persistence-integration.result == 'failure' ||
        needs.sonar.result == 'failure') &&
       (github.event_name == 'push' ||
        github.event.pull_request.head.repo.full_name == github.repository)

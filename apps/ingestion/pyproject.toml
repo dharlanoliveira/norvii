@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "norvii-ingestion"
+version = "0.1.0"
+description = "Offline ingestion module for the Norvii legal research POC"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "neo4j==6.2.0",
+  "psycopg[binary]==3.3.4",
+]
+
+[project.scripts]
+norvii-verify-persistence = "norvii_ingestion.publication.persistence.__main__:main"
+
+[dependency-groups]
+dev = [
+  "mypy==2.3.0",
+  "pytest==9.1.1",
+  "ruff==0.16.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/norvii_ingestion"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers -m 'not integration'"
+testpaths = ["tests"]
+markers = ["integration: requires the local persistence services"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "COM812",
+  "CPY001",
+  "D107",
+  "D203",
+  "D213",
+  "EM101",
+  "EM102",
+  "T201",
+  "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D", "INP001", "PLR2004", "S101", "S105"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+packages = ["norvii_ingestion"]
+
+[tool.uv]
+required-version = ">=0.11.0,<0.12.0"

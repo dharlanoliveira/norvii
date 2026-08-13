@@ -72,3 +72,22 @@ checkpoint, and MUST be safe to retry or rebuild.
 - integration tests for network, database, embedding, and graph adapters;
 - deterministic replacements for network and model calls in unit tests;
 - formatting, type checking, linting, and tests for affected packages.
+
+## Implemented persistence foundation
+
+Feature 003 initializes the Python 3.13 uv package and adds class-based persistence
+adapters under `publication/persistence/`. Immutable configuration objects validate
+the shared environment contract. `PostgresStore`, `Neo4jStore`, and
+`PersistenceVerifier` keep driver lifecycles, bounded read-only checks, and safe
+service attribution outside future ingestion domain behavior.
+
+The package publishes no ingestion artifact and creates no product or graph data.
+Run module quality and local connectivity independently:
+
+```bash
+make -C apps/ingestion ci
+python infra/scripts/run-with-environment.py infra/.env make -C apps/ingestion verify-persistence
+```
+
+Tests marked `integration` require the local stores and are executed by the dedicated
+persistence journey rather than the standard module test target.

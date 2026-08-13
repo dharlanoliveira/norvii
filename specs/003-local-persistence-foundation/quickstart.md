@@ -143,3 +143,23 @@ python .github/scripts/validate_repository_language.py
 
 Continuous integration additionally runs the service-backed foundation journey and
 makes SonarQube Cloud plus failure notification depend on it.
+
+## Recorded implementation evidence
+
+Validation completed on 2026-08-13 on the reference Linux amd64 environment with
+Docker Engine 29.1.5, Docker Compose 5.0.1, Go 1.26, and uv 0.11.16:
+
+- a cached-image default startup reached authenticated health in 7.28 seconds;
+- aggregate Go and Python runtime verification completed in 0.48 seconds;
+- migration version 1 remained current after repeated initialization and normal
+  restart;
+- the isolated integration journey passed restart retention, graph-volume removal,
+  canonical-marker isolation, invalid-credential and unavailable-store failures, and
+  clean-volume reproduction;
+- the guarded default reset removed only the two validated `norvii` data volumes,
+  after which startup, migration, and both runtime verifiers passed from clean state;
+- Neo4j logs use bounded tmpfs storage, so the default environment creates no
+  anonymous log volume.
+
+Timing values describe this reference run rather than a guarantee for image download,
+host scheduling, or other machines. The success criteria remain the normative limits.

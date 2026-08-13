@@ -17,7 +17,11 @@ The project is a technical demonstration and does not provide legal advice.
 
 The first production React client is available under `apps/web/`. It implements the approved bilingual corpus catalog and research workspace with production-owned deterministic data, source browsing, simulated structured chat, citations, abstention, and failure states.
 
-This feature does not require Docker, PostgreSQL, Neo4j, the Go API, Python ingestion, remote corpus requests, or model credentials. PostgreSQL with pgvector and Neo4j have been selected for later persistence and GraphRAG features, but they are not runtime dependencies of the current client.
+The local persistence foundation is also available. It runs PostgreSQL with pgvector
+as canonical storage and standalone Neo4j Community as a rebuildable graph
+projection, applies the initial vector migration, and verifies both stores through
+independent Go and Python production drivers. The current React client remains
+independently runnable and does not yet call these modules.
 
 ## Run the production client
 
@@ -37,6 +41,22 @@ make -C apps/web ci
 
 See the [production web client guide](apps/web/README.md) for browser tests, supported behavior, and current limitations.
 
+## Run the persistence foundation
+
+Prerequisites: Docker Compose, Go 1.26, Python 3.13, uv, Make, and Bash.
+
+```bash
+cp infra/.env.example infra/.env
+# Replace both password markers in infra/.env.
+make persistence-up
+make persistence-migrate
+make persistence-verify
+```
+
+See the [local environment guide](docs/operations/local-environment.md) for health,
+troubleshooting, isolated integration, non-destructive stop, and guarded reset
+commands.
+
 ## Code quality analysis
 
 GitHub Actions is prepared to analyze Norvii with SonarQube Cloud after the public project is imported and its repository variables and analysis token are configured. Each same-repository pull request and push to `main` waits for the Sonar quality gate, then applies the stricter Norvii policy that fails the build when any unresolved Sonar issue remains.
@@ -54,6 +74,7 @@ View the [Norvii analysis dashboard on SonarQube Cloud](https://sonarcloud.io/pr
   contributors move from capability to verified code.
 - [Development tooling](docs/development/tooling.md): pinned Spec Kit version, project preset, workflow overlay, and upgrade rules.
 - [Continuous integration](docs/development/continuous-integration.md): GitHub Actions builds, SonarQube Cloud gates, and failure notifications.
+- [Local environment](docs/operations/local-environment.md): PostgreSQL, Neo4j, migration, verification, and guarded reset commands.
 - [Executable prototyping](docs/development/prototyping.md): how React prototypes are built, reviewed, and approved before production.
 - [Prototype workspace](prototypes/README.md): executable product experiments kept separate from production applications.
 - [Production web client](apps/web/README.md): local startup, validation commands, and current client boundaries.
