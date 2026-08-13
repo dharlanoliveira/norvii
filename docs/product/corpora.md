@@ -21,7 +21,19 @@ A `Source` belongs to exactly one corpus and has one of two source types.
 
 Common source fields include a stable identifier, corpus identifier, title, processing status, latest error message, and creation, update, and processing timestamps.
 
-Derived text, legal units, chunks, embeddings, and graph relations are ingestion artifacts associated with a source. They are not part of the original source record. A URL source keeps its link as origin and also records extracted text, capture date, and hash so citations remain reproducible. Persisting the raw downloaded web page is outside the initial scope.
+Derived documents, legal units, retrieval fragments, embeddings, and semantic extractions are versioned ingestion artifacts associated with a source revision. They are not part of the original source record. A URL source keeps its link as origin and also records extracted text, capture date, and hash so citations remain reproducible. Persisting the raw downloaded web page is outside the initial scope.
+
+## Document structure and provenance
+
+Each successfully processed source revision produces an immutable document version. The version stores the complete normalized document and links it to a hierarchy of addressable units such as title, chapter, section, article, paragraph, item, recital, or page.
+
+Each unit records its parent, order, visible marker, page range when available, text offsets, content hash, and stable source locator. Retrieval fragments and citations resolve back to these units and their evidence spans instead of duplicating document structure.
+
+Official metadata remains separate from knowledge inferred by a model. Every extraction run records its pipeline, model, prompt, and artifact versions. Extracted artifacts may include entities, relationships, factual assertions, allegations, legal rules, definitions, rights, obligations, and timeline events. Each artifact retains its source revision and supporting evidence spans.
+
+An extracted fact is an attributed assertion until a review or an authoritative source establishes a stronger status. Confidence scores express model certainty; they do not establish legal authority or truth.
+
+PostgreSQL with pgvector is the canonical store for these records. Neo4j receives a rebuildable graph projection linked by canonical identifiers. The persistence boundary is defined in [ADR 0005](../decisions/0005-postgresql-and-neo4j-persistence.md).
 
 ## Source lifecycle
 

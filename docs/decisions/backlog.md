@@ -6,11 +6,8 @@ These choices remain open. A feature plan may research one when implementation r
 | --- | --- |
 | LLM | Hosted model, local model, or both |
 | Embeddings | Model that performs adequately for Portuguese and English |
-| Vector index | Storage and query technology for the POC |
-| Legal graph | Dedicated graph database or graph representation over another store |
 | Reranking | Whether evaluation justifies a dedicated reranker |
 | Extraction source | Prefer structured official HTML when available or normalize all content from PDF |
-| Primary database | Storage for corpus metadata, source binaries, and derived artifacts |
 | Ingestion dispatch | Queue, polling, or explicit command |
 | Source limits | Maximum PDF size, URL response size, capture duration, and redirects |
 | URL policy | Allowed protocols, domains, redirects, DNS results, and resolved IP ranges |
@@ -21,6 +18,13 @@ These choices remain open. A feature plan may research one when implementation r
 | Cross-jurisdiction comparison | Initial POC capability or later extension |
 | Conversation history | Whether conversations persist |
 | Evaluation thresholds | Minimum retrieval, citation, abstention, latency, and cost targets |
+
+## Resolved decisions
+
+| Topic | Decision |
+| --- | --- |
+| Primary database and vector storage | [ADR 0005](0005-postgresql-and-neo4j-persistence.md) selects PostgreSQL with pgvector as canonical persistence |
+| Legal graph | [ADR 0005](0005-postgresql-and-neo4j-persistence.md) selects standalone Neo4j Community as a rebuildable projection |
 
 ## Decision rule
 

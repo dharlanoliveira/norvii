@@ -39,3 +39,4 @@ choice. Do not use an ADR as a substitute for feature requirements or task track
 | [0002](0002-corpus-and-source-model.md) | Model isolated corpora with PDF or URL sources |
 | [0003](0003-spec-driven-delivery.md) | Deliver product capabilities through Spec Kit features |
 | [0004](0004-executable-react-prototype.md) | Approve an executable React prototype before production implementation |
+| [0005](0005-postgresql-and-neo4j-persistence.md) | Use PostgreSQL with pgvector as canonical storage and standalone Neo4j Community as a rebuildable GraphRAG projection |

@@ -108,6 +108,14 @@ The MVP is complete when:
 
 GraphRAG, MCP, and skills are required for the final demonstration but do not block the first navigable RAG delivery.
 
+## Persistence direction
+
+PostgreSQL with pgvector is the canonical store for corpora, sources, PDF binaries, URL metadata, versioned documents, document units, retrieval fragments, embeddings, and LLM-derived semantic artifacts. One standalone Neo4j Community instance contains a rebuildable GraphRAG projection. The React client uses these stores only through the Go API; Python ingestion publishes canonical artifacts and graph projection work through explicit versioned contracts.
+
+Complete normalized documents remain distinct from their navigable parts. Articles, sections, paragraphs, items, pages, and other legal units form a hierarchy attached to an immutable document version. LLM-derived facts, allegations, legal rules, entities, relationships, and timeline events remain separate from official metadata and retain links to exact evidence spans.
+
+See [ADR 0005](../decisions/0005-postgresql-and-neo4j-persistence.md) for the accepted topology and boundaries.
+
 ## Related documents
 
 - [Corpus definition](corpora.md)
@@ -116,3 +124,4 @@ GraphRAG, MCP, and skills are required for the final demonstration but do not bl
 - [Evaluation](evaluation.md)
 - [System architecture](../architecture/overview.md)
 - [Executable prototyping](../development/prototyping.md)
+- [Persistence decision](../decisions/0005-postgresql-and-neo4j-persistence.md)

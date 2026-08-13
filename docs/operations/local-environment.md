@@ -6,15 +6,12 @@ Node.js toolchains unless a later deployment feature decides otherwise.
 
 ## Compose ownership
 
-The canonical file will be `infra/compose.yaml`. It is created by the first feature
-that selects a backing service. Until database research is complete, the repository
-MUST not contain placeholder images that imply an architectural decision.
+The canonical file will be `infra/compose.yaml`. The local foundation feature creates it according to [ADR 0005](../decisions/0005-postgresql-and-neo4j-persistence.md). The default environment starts PostgreSQL with pgvector and one standalone Neo4j Community instance. Exact image versions remain feature-owned and must be pinned before the Compose file is committed.
 
 Compose is responsible for infrastructure such as:
 
-- relational or document persistence;
-- vector indexing when not provided by the primary database;
-- graph storage when a dedicated graph database is justified;
+- canonical relational, document, binary, and vector persistence in PostgreSQL with pgvector;
+- rebuildable graph projection in standalone Neo4j Community;
 - queues or object storage only when a feature requires them;
 - optional local model services when explicitly selected.
 
@@ -34,30 +31,19 @@ Every service added to Compose MUST include:
 
 ## Profiles
 
-Use Compose profiles only when they express real optional capabilities, such as a
-dedicated graph database or local observability stack. The default profile MUST be
-the smallest environment required by the current MVP.
+Use Compose profiles only when they express real optional capabilities, such as local observability or local model services. PostgreSQL and Neo4j are both part of the default POC persistence environment. The default profile MUST not introduce clustered database modes or unrelated services.
 
-## Database decision gate
+## Persistence implementation gate
 
-The feature that first requires persistence MUST compare at least these concerns:
+[ADR 0005](../decisions/0005-postgresql-and-neo4j-persistence.md) resolves the database topology. The local foundation feature must still research and record deliberate versions, resource limits, credentials, ports, migration tooling, driver versions, and health checks. `infra/compose.yaml`, the initial PostgreSQL migration, environment template, and feature quickstart are delivered together.
 
-- binary PDF storage at POC scale;
-- structured corpus and source metadata;
-- vector search needs and language support;
-- graph traversal needs and whether they justify a separate database;
-- migrations, backups, health checks, and local resource use;
-- Go and Python driver maturity;
-- operational complexity versus demonstration value.
-
-The accepted choice is recorded as an ADR. `infra/compose.yaml`, migrations, and the
-feature quickstart are delivered together after that decision.
+PostgreSQL is the canonical service. Neo4j contains only a projection that can be rebuilt from a published PostgreSQL artifact release. Removing the Neo4j volume must not remove source documents or canonical extraction artifacts.
 
 ## Expected operator commands
 
 The foundation feature should provide one documented command for each operation:
 
-- start the minimum backing services;
+- start PostgreSQL with pgvector and standalone Neo4j Community;
 - inspect health;
 - run migrations or initialization;
 - stop services without deleting data;

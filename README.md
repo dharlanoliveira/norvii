@@ -15,7 +15,27 @@ The project is a technical demonstration and does not provide legal advice.
 
 ## Project status
 
-The repository is in the specification and product-prototyping phase. Production application modules have not been scaffolded yet. The first feature will create an executable React prototype with deterministic data before production implementation begins. The database, vector index, graph storage, models, and ingestion trigger remain intentionally undecided and will be selected through feature research and architecture decisions.
+The first production React client is available under `apps/web/`. It implements the approved bilingual corpus catalog and research workspace with production-owned deterministic data, source browsing, simulated structured chat, citations, abstention, and failure states.
+
+This feature does not require Docker, PostgreSQL, Neo4j, the Go API, Python ingestion, remote corpus requests, or model credentials. PostgreSQL with pgvector and Neo4j have been selected for later persistence and GraphRAG features, but they are not runtime dependencies of the current client.
+
+## Run the production client
+
+Prerequisites: Node.js 24 and npm.
+
+```bash
+npm --prefix apps/web ci
+npm --prefix apps/web run dev
+```
+
+Open the local address printed by Vite. Validate the complete module with:
+
+```bash
+npm --prefix apps/web exec playwright install chromium
+make -C apps/web ci
+```
+
+See the [production web client guide](apps/web/README.md) for browser tests, supported behavior, and current limitations.
 
 ## Code quality analysis
 
@@ -36,6 +56,7 @@ View the [Norvii analysis dashboard on SonarQube Cloud](https://sonarcloud.io/pr
 - [Continuous integration](docs/development/continuous-integration.md): GitHub Actions builds, SonarQube Cloud gates, and failure notifications.
 - [Executable prototyping](docs/development/prototyping.md): how React prototypes are built, reviewed, and approved before production.
 - [Prototype workspace](prototypes/README.md): executable product experiments kept separate from production applications.
+- [Production web client](apps/web/README.md): local startup, validation commands, and current client boundaries.
 - [Repository structure](docs/architecture/repository-structure.md): target monorepo
   boundaries.
 - [Module models](docs/modules/README.md): client, Go API, and Python ingestion

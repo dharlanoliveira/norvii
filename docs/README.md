@@ -19,6 +19,7 @@ belong in the numbered Spec Kit directory that introduced them.
 | Continuous integration and quality gates | [Continuous integration](development/continuous-integration.md) | CI gate, Sonar, build, or notification behavior changes |
 | Repository and module ownership | [Repository structure](architecture/repository-structure.md) | Durable boundary changes |
 | System flows and retrieval model | [System architecture](architecture/overview.md) | Cross-module flow changes |
+| Persistence topology and ownership | [ADR 0005](decisions/0005-postgresql-and-neo4j-persistence.md) | Canonical store or graph projection boundaries change |
 | Cross-feature risks | [Architecture risks](architecture/risks.md) | Risk or mitigation direction changes |
 | Client model | [Web client](modules/web-client.md) | Client responsibility changes |
 | Online backend model | [Go API](modules/go-api.md) | API responsibility changes |

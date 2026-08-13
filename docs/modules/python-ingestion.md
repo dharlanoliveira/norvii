@@ -13,8 +13,9 @@ request path.
 - source hashing, capture metadata, and manifest updates;
 - text extraction and legal-structure normalization;
 - legal-aware chunking and stable source locations;
-- embeddings and graph extraction when their features are enabled;
-- artifact validation, publication, retry classification, and processing outcomes;
+- embeddings and evidence-backed semantic extraction when their features are enabled;
+- idempotent publication of the rebuildable Neo4j graph projection;
+- artifact validation, publication checkpoints, retry classification, and processing outcomes;
 - offline corpus evaluation inputs and measurements.
 
 ## Does not own
@@ -56,10 +57,12 @@ apps/ingestion/
 
 ## Failure and idempotency model
 
-Every run has a source identity, source hash, pipeline version, and attempt identity.
-Repeating the same source and pipeline version MUST not publish duplicate active
-artifacts. A failure identifies its stage and whether retry is safe. Partial output
-MUST not become visible to online retrieval.
+Every run has a source identity, source hash, pipeline version, model version, prompt
+version, and attempt identity. Repeating the same source and pipeline version MUST
+not publish duplicate active artifacts. A failure identifies its stage and whether
+retry is safe. Partial canonical output MUST not become visible to online retrieval.
+Graph publication happens after canonical PostgreSQL publication, records a
+checkpoint, and MUST be safe to retry or rebuild.
 
 ## Verification model
 
