@@ -46,6 +46,13 @@ class SonarMonorepoConfigurationTest(unittest.TestCase):
 
         self.assertFalse((REPOSITORY_ROOT / "sonar-project.properties").exists())
 
+    def test_web_coverage_generates_the_lcov_report_consumed_by_sonar(self) -> None:
+        vitest_config = (REPOSITORY_ROOT / "apps/web/vitest.config.ts").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('reporter: ["text", "lcov"]', vitest_config)
+
 
 if __name__ == "__main__":
     unittest.main()

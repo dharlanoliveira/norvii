@@ -197,7 +197,7 @@ export function SourceTree({
         <FolderTree aria-hidden="true" size={16} />
         <span>{corpus.name}</span>
       </div>
-      <div role="presentation">
+      <div>
         {groups.map((group) => (
           <div className="source-tree__group" key={group.id}>
             <button
@@ -220,7 +220,7 @@ export function SourceTree({
               <small>{group.sources.length}</small>
             </button>
             {expanded[group.id] && group.sources.length > 0 ? (
-              <div role="presentation" className="source-tree__leaves">
+              <div className="source-tree__leaves">
                 {group.sources.map((source) => {
                   const selected = source.id === selectedSourceId;
                   const typeLabel =
