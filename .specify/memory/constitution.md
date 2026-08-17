@@ -1,21 +1,24 @@
 <!--
 Sync Impact Report
-- Version change: 1.0.1 -> 1.1.0
+- Version change: 1.1.0 -> 1.2.0
 - Modified principles:
-  - I. Specification Before Implementation: added executable prototype approval gate
+  - none
+- Added principles:
+  - VIII. English as the Engineering Language
 - Added sections: none
 - Removed sections: none
-- Templates:
-  - updated: .specify/templates/plan-template.md
-  - updated: .specify/templates/spec-template.md
-  - updated: .specify/templates/tasks-template.md
-  - compatible: .specify/templates/checklist-template.md
+- Templates: compatible; commands read the constitution at runtime
 - Runtime guidance:
-  - updated: README.md
-  - updated: docs/README.md
-  - updated: docs/development/spec-driven-development.md
-  - added: docs/development/prototyping.md
   - updated: AGENTS.md
+  - updated: CONTRIBUTING.md
+  - updated: .agents/skills/norvii-code-quality/SKILL.md
+  - updated: docs/README.md
+  - updated: docs/development/continuous-integration.md
+  - updated: specs/001-product-experience-prototype/spec.md
+- Enforcement:
+  - added: .github/scripts/validate_repository_language.py
+  - added: .github/scripts/tests/test_validate_repository_language.py
+  - updated: .github/workflows/ci.yml
 - Deferred items: none
 -->
 # Norvii Constitution
@@ -112,6 +115,27 @@ that introduces the risk, not postponed to a generic cleanup phase.
 Rationale: a trustworthy AI demonstration must make its behavior explainable without
 creating avoidable data or network risk.
 
+### VIII. English as the Engineering Language
+
+All project-owned source code, technical documentation, specifications, plans,
+tasks, ADRs, runbooks, configuration, schemas, migrations, tests, logs, error
+messages, comments, docstrings, commit messages, and review artifacts MUST be written
+in English. Identifiers, package and module names, file and directory names,
+localization keys, and test descriptions MUST also use English. English is the
+project's default product and engineering language.
+
+Portuguese is permitted only as user-facing content in Portuguese localization
+resources, as legal source or corpus content, as a quotation or citation that must
+preserve its source, or as deterministic fixture data and test literals that verify
+such content. The surrounding code, keys, structure, explanations, and assertions
+MUST remain in English. Legal source content MUST NOT be translated automatically to
+satisfy this principle. Third-party managed artifacts MAY retain their upstream
+language, but project-owned integrations and explanations MUST use English.
+
+Rationale: one engineering language makes the multilingual repository consistent,
+searchable, and reviewable without conflating interface localization with technical
+communication or altering authoritative legal material.
+
 ## Authoritative Project Context
 
 `docs/README.md` defines the single source of truth for product scope, architecture,
@@ -163,4 +187,4 @@ major version; adding or materially expanding governance requires a minor versio
 clarifications require a patch version. Compliance MUST be checked before research
 and again after feature design.
 
-**Version**: 1.1.0 | **Ratified**: 2026-08-12 | **Last Amended**: 2026-08-12
+**Version**: 1.2.0 | **Ratified**: 2026-08-12 | **Last Amended**: 2026-08-12

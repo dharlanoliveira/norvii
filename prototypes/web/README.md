@@ -1,9 +1,15 @@
-# Web Experience Prototype
+# Norvii Web Prototype
 
-This directory will contain the React, TypeScript, and Vite prototype for Norvii. It is created and evolved by the first Spec Kit feature, `001-product-experience-prototype`.
+This executable React prototype validates the Feature 001 corpus catalog and research workspace before production implementation. It uses deterministic local fixtures and does not call a backend, retrieve remote documents, ingest data, or invoke a model.
 
-The prototype will use deterministic fixtures to demonstrate corpus selection, source management, grounded chat, citations, abstention, and technical inspection without a backend.
+## Commands
 
-No application scaffold exists yet. The owning feature must define dependencies, commands, test strategy, and visual baselines before code is generated.
+```bash
+npm ci
+npm run dev
+npm run test
+npm run test:e2e
+make ci
+```
 
-See the [prototype workflow](../../docs/development/prototyping.md) and [feature map](../../docs/product/feature-map.md).
+See the [Feature 001 quickstart](../../specs/001-product-experience-prototype/quickstart.md) for the required review journeys and viewport sizes.

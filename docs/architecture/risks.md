@@ -13,6 +13,8 @@ This register contains known cross-feature risks. The feature that introduces or
 | External URL changes or disappears | Citation no longer matches current page | Preserve captured text, hash, and capture date as versioned artifacts |
 | External URL reaches private networks | SSRF and internal network exposure | Validate protocol, DNS, resolved IP, redirect chain, size, and timeout before capture |
 | Large PDF binaries | Database and backup growth | Set a low POC upload limit and track total corpus size |
+| Stale or partial graph projection | GraphRAG omits or misrepresents canonical evidence | Publish versioned releases, checkpoint projection, detect lag, and rebuild Neo4j from PostgreSQL |
+| Model-derived assertion treated as fact | Users infer unsupported legal certainty | Store attributed statements separately from official metadata and require exact evidence spans and review state |
 | Python and Go schema drift | Unreadable artifacts or failed ingestion | Use versioned schemas and provider-consumer contract tests |
 | Go stream differs from client semantics | Broken message parts or tool rendering | Keep stream types small and verify them with contract tests |
 | Excessive technical presentation | Demonstration value is difficult to understand | Keep the default answer simple and place traces in inspection views |

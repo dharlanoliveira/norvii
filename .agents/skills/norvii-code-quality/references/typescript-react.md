@@ -20,6 +20,8 @@
 - Keep accessibility in component contracts: semantic elements, keyboard behavior, labels, focus management, and announced async states.
 - Render assistant messages from structured parts. Do not parse generated Markdown to reconstruct citations, tool calls, graph paths, or metrics.
 - Treat assistant-ui and AI SDK as adapters. Keep Norvii domain models independent of library-specific message types where practical.
+- Reference stable localization keys for all product-authored user-facing and assistive text. Do not embed interface copy in React pages, components, hooks, schemas, or adapters.
+- Keep English and Portuguese resources structurally complete and type-safe, with English as the default locale. Do not translate legal content, citations, user input, or generated answers through interface resources.
 - Avoid large page components, prop drilling across many layers, effect-driven state machines, and premature memoization.
 
 ## Network and streaming
@@ -35,5 +37,6 @@
 - Test user-visible behavior with Testing Library semantics rather than component internals.
 - Add focused tests for reducers, parsers, schema validation, and streaming reconciliation.
 - Cover keyboard and accessible-name behavior for interactive components.
+- Verify locale-resource parity and fail checks for missing keys or hardcoded product-authored interface copy.
 - Run the configured formatter, linter, type checker, unit tests, and production build.
 - If tools are not selected yet, propose ESLint, Prettier, Vitest, and Testing Library rather than silently adding a stack.

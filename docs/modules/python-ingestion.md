@@ -13,8 +13,9 @@ request path.
 - source hashing, capture metadata, and manifest updates;
 - text extraction and legal-structure normalization;
 - legal-aware chunking and stable source locations;
-- embeddings and graph extraction when their features are enabled;
-- artifact validation, publication, retry classification, and processing outcomes;
+- embeddings and evidence-backed semantic extraction when their features are enabled;
+- idempotent publication of the rebuildable Neo4j graph projection;
+- artifact validation, publication checkpoints, retry classification, and processing outcomes;
 - offline corpus evaluation inputs and measurements.
 
 ## Does not own
@@ -56,10 +57,12 @@ apps/ingestion/
 
 ## Failure and idempotency model
 
-Every run has a source identity, source hash, pipeline version, and attempt identity.
-Repeating the same source and pipeline version MUST not publish duplicate active
-artifacts. A failure identifies its stage and whether retry is safe. Partial output
-MUST not become visible to online retrieval.
+Every run has a source identity, source hash, pipeline version, model version, prompt
+version, and attempt identity. Repeating the same source and pipeline version MUST
+not publish duplicate active artifacts. A failure identifies its stage and whether
+retry is safe. Partial canonical output MUST not become visible to online retrieval.
+Graph publication happens after canonical PostgreSQL publication, records a
+checkpoint, and MUST be safe to retry or rebuild.
 
 ## Verification model
 
@@ -69,3 +72,22 @@ MUST not become visible to online retrieval.
 - integration tests for network, database, embedding, and graph adapters;
 - deterministic replacements for network and model calls in unit tests;
 - formatting, type checking, linting, and tests for affected packages.
+
+## Implemented persistence foundation
+
+Feature 003 initializes the Python 3.13 uv package and adds class-based persistence
+adapters under `publication/persistence/`. Immutable configuration objects validate
+the shared environment contract. `PostgresStore`, `Neo4jStore`, and
+`PersistenceVerifier` keep driver lifecycles, bounded read-only checks, and safe
+service attribution outside future ingestion domain behavior.
+
+The package publishes no ingestion artifact and creates no product or graph data.
+Run module quality and local connectivity independently:
+
+```bash
+make -C apps/ingestion ci
+python infra/scripts/run-with-environment.py infra/.env make -C apps/ingestion verify-persistence
+```
+
+Tests marked `integration` require the local stores and are executed by the dedicated
+persistence journey rather than the standard module test target.

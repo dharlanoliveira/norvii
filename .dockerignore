@@ -1,0 +1,17 @@
+.git/
+.github/
+.specify/
+.agents/
+node_modules/
+dist/
+build/
+coverage/
+*.log*
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+*.test
+*.out

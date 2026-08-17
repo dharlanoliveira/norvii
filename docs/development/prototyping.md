@@ -8,8 +8,8 @@ The prototype answers product questions while change is inexpensive:
 
 - whether users understand corpus selection and isolation;
 - whether sources and chat can share the workspace without competing for attention;
-- how streaming, citations, abstention, errors, and ingestion states appear;
-- which information belongs in the default experience or technical inspection;
+- how deterministic response staging, citations, abstention, and recoverable errors appear;
+- which information belongs in the default research experience;
 - which client data is required before public API contracts are designed;
 - how the experience behaves on desktop and notebook-sized viewports.
 
@@ -28,9 +28,11 @@ The web prototype uses the intended client technologies where they help validate
 - React and TypeScript for executable interactions;
 - Vite for local development;
 - assistant-ui for chat primitives and streaming presentation;
-- Storybook for isolated component states;
 - deterministic fixtures and in-memory adapters instead of backend services;
-- Playwright for approved journeys and visual baselines when the first prototype feature selects its exact setup.
+- Vitest and Testing Library for isolated interaction and accessibility states;
+- Playwright for approved journeys and visual baselines.
+
+The prototype supports English and Portuguese interface resources from its first executable slice, with English as the default. Product-authored React copy is referenced through localization keys and maintained once per supported language. Legal fixture content remains separate from interface localization.
 
 Package versions and supporting libraries belong to the prototype feature plan. The prototype does not require the Go API, Python ingestion, databases, external URLs, model providers, embeddings, or Docker Compose.
 
@@ -40,25 +42,26 @@ The initial prototype covers:
 
 1. Browse and select a Portuguese or English corpus.
 2. Open a corpus workspace with sources on the left and chat on the right.
-3. Add a PDF or URL source and observe simulated processing states.
-4. Ask a question and observe a deterministic streamed response.
+3. Open prepared PDF and external-link sources without leaving the workspace.
+4. Ask a question and observe a deterministic staged response.
 5. Open a citation and locate its source passage.
-6. Inspect simulated chunks, graph paths, tool calls, latency, and token use.
-7. Receive explicit abstention when simulated evidence is insufficient.
+6. Receive explicit abstention when simulated evidence is insufficient.
+7. Review a recoverable deterministic response failure.
+8. Complete the primary journeys in English and Portuguese without losing state when the interface language changes.
+
+Source registration, ingestion states, retrieval inspection, GraphRAG visualization, MCP execution, and skills execution belong to later numbered features and are not part of the initial prototype baseline.
 
 ## Required state coverage
 
 | Area | Required states |
 | --- | --- |
-| Corpus catalog | Loading, empty, populated, and failed |
-| Corpus | Ready, no ready sources, processing, and disabled |
-| Source | Pending, processing, ready, failed, and disabled |
-| Source form | PDF, URL, validation error, submitting, and failed |
-| Chat | Empty, retrieving, streaming, complete, aborted, and failed |
-| Answer | Cited, insufficient evidence, and conflicting evidence |
+| Corpus catalog | Populated and unknown-route recovery |
+| Corpus | Ready and isolated by active selection |
+| Source | Available and preview unavailable |
+| Chat | Empty, composing, responding, complete, abstained, and failed |
+| Answer | Cited and insufficient evidence |
 | Citation | Collapsed, open, passage located, and source unavailable |
-| Inspection | Vector RAG, GraphRAG, hybrid, and no trace |
-| Layout | Wide desktop, notebook, and collapsed secondary panel |
+| Layout | Wide desktop and notebook |
 
 ## Fixtures and simulated behavior
 
@@ -73,7 +76,7 @@ Simulated streaming uses a deterministic scheduler or controllable clock. Tests 
 1. Define journeys, state matrix, and acceptance criteria in the prototype feature specification.
 2. Generate two or three materially different workspace directions when the layout is still open.
 3. Review the directions in the browser and record the selected direction and rejected tradeoffs.
-4. Build the selected journey with fixtures and isolated Storybook states.
+4. Build the selected journey with fixtures and isolated component tests.
 5. Review keyboard behavior, responsive layout, content, and failure states.
 6. Capture approved screenshots and journey tests.
 7. Mark the prototype baseline approved or return to an earlier step.
@@ -88,10 +91,10 @@ Production feature implementation starts only after the prototype baseline is ap
 - required states are represented and reviewable;
 - corpus isolation is understandable in the interface;
 - citations and abstention are understandable without technical explanation;
-- the default experience remains usable with the inspection panel closed;
 - keyboard navigation and visible focus have been reviewed;
+- English and Portuguese interface coverage is complete, with English verified as the default and no hardcoded product-authored React copy;
 - notebook and wide desktop layouts have been reviewed;
-- approved screenshots, stories, and outstanding product questions are recorded;
+- approved screenshots, interaction evidence, and outstanding product questions are recorded;
 - the prototype feature is marked `Verified`.
 
 Approval freezes a baseline, not the product forever. Later production features may change it through explicit specification and updated visual evidence.

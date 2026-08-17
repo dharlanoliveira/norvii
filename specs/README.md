@@ -40,3 +40,9 @@ The status in `spec.md` is one of `Draft`, `Specified`, `Planned`, `In Progress`
 See the [feature map](../docs/product/feature-map.md) for proposed sequencing and the
 [development workflow](../docs/development/spec-driven-development.md) for the full
 process.
+
+## Active features
+
+| Feature | Status | Purpose |
+| --- | --- | --- |
+| [001 - Product experience prototype](001-product-experience-prototype/spec.md) | Verified | Establish the executable bilingual product experience baseline |

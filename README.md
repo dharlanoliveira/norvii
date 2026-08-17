@@ -4,6 +4,11 @@
 
 # Norvii
 
+[![CI](https://github.com/dharlanoliveira/norvii/actions/workflows/ci.yml/badge.svg)](https://github.com/dharlanoliveira/norvii/actions/workflows/ci.yml)
+[![Web Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-web&metric=alert_status)](https://sonarcloud.io/dashboard?id=dharlanoliveira_norvii-web)
+[![API Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-api&metric=alert_status)](https://sonarcloud.io/dashboard?id=dharlanoliveira_norvii-api)
+[![Ingestion Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-ingestion&metric=alert_status)](https://sonarcloud.io/dashboard?id=dharlanoliveira_norvii-ingestion)
+
 Norvii is a proof of concept for evidence-grounded legal research using RAG,
 GraphRAG, LLMs, MCP, and reusable skills. The application will let a user select a
 small Portuguese or English corpus, browse its sources, and ask questions in a chat
@@ -13,7 +18,59 @@ The project is a technical demonstration and does not provide legal advice.
 
 ## Project status
 
-The repository is in the specification and product-prototyping phase. Production application modules have not been scaffolded yet. The first feature will create an executable React prototype with deterministic data before production implementation begins. The database, vector index, graph storage, models, and ingestion trigger remain intentionally undecided and will be selected through feature research and architecture decisions.
+The first production React client is available under `apps/web/`. It implements the approved bilingual corpus catalog and research workspace with production-owned deterministic data, source browsing, simulated structured chat, citations, abstention, and failure states.
+
+The local persistence foundation is also available. It runs PostgreSQL with pgvector
+as canonical storage and standalone Neo4j Community as a rebuildable graph
+projection, applies the initial vector migration, and verifies both stores through
+independent Go and Python production drivers. The current React client remains
+independently runnable and does not yet call these modules.
+
+## Run the production client
+
+Prerequisites: Node.js 24 and npm.
+
+```bash
+npm --prefix apps/web ci
+npm --prefix apps/web run dev
+```
+
+Open the local address printed by Vite. Validate the complete module with:
+
+```bash
+npm --prefix apps/web exec playwright install chromium
+make -C apps/web ci
+```
+
+See the [production web client guide](apps/web/README.md) for browser tests, supported behavior, and current limitations.
+
+## Run the persistence foundation
+
+Prerequisites: Docker Compose, Go 1.26, Python 3.13, uv, Make, and Bash.
+
+```bash
+cp infra/.env.example infra/.env
+# Replace both password markers in infra/.env.
+make persistence-up
+make persistence-migrate
+make persistence-verify
+```
+
+See the [local environment guide](docs/operations/local-environment.md) for health,
+troubleshooting, isolated integration, non-destructive stop, and guarded reset
+commands.
+
+## Code quality analysis
+
+GitHub Actions analyzes the production web, API, and ingestion modules as separate SonarQube Cloud projects within the Norvii monorepo. Each same-repository pull request and push to `main` waits for all three quality gates, then applies the stricter Norvii policy that fails the build when any analyzed module has an unresolved Sonar issue.
+
+| Module | Quality gate | Coverage |
+| --- | --- | --- |
+| Web | [![Web quality gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-web&metric=alert_status)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-web) | [![Web coverage](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-web&metric=coverage)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-web) |
+| API | [![API quality gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-api&metric=alert_status)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-api) | [![API coverage](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-api&metric=coverage)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-api) |
+| Ingestion | [![Ingestion quality gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-ingestion&metric=alert_status)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-ingestion) | [![Ingestion coverage](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-ingestion&metric=coverage)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-ingestion) |
+
+View the SonarQube Cloud dashboards for [norvii-web](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-web), [norvii-api](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-api), and [norvii-ingestion](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-ingestion). See [continuous integration](docs/development/continuous-integration.md#sonarqube-cloud-free-setup) for the monorepo configuration and gate behavior.
 
 ## Documentation map
 
@@ -25,8 +82,11 @@ The repository is in the specification and product-prototyping phase. Production
 - [Spec-driven workflow](docs/development/spec-driven-development.md): how Codex and
   contributors move from capability to verified code.
 - [Development tooling](docs/development/tooling.md): pinned Spec Kit version, project preset, workflow overlay, and upgrade rules.
+- [Continuous integration](docs/development/continuous-integration.md): GitHub Actions builds, SonarQube Cloud gates, and failure notifications.
+- [Local environment](docs/operations/local-environment.md): PostgreSQL, Neo4j, migration, verification, and guarded reset commands.
 - [Executable prototyping](docs/development/prototyping.md): how React prototypes are built, reviewed, and approved before production.
 - [Prototype workspace](prototypes/README.md): executable product experiments kept separate from production applications.
+- [Production web client](apps/web/README.md): local startup, validation commands, and current client boundaries.
 - [Repository structure](docs/architecture/repository-structure.md): target monorepo
   boundaries.
 - [Module models](docs/modules/README.md): client, Go API, and Python ingestion

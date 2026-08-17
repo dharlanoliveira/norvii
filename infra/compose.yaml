@@ -1,0 +1,65 @@
+name: ${NORVII_COMPOSE_PROJECT_NAME:-norvii}
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg18-trixie@sha256:1963bc48febf543433baa1ce3edcc6cc08154de722e22495f86681cc9a849026
+    init: true
+    environment:
+      POSTGRES_DB: ${NORVII_POSTGRES_DATABASE:?NORVII_POSTGRES_DATABASE is required}
+      POSTGRES_PASSWORD: ${NORVII_POSTGRES_PASSWORD:?NORVII_POSTGRES_PASSWORD is required}
+      POSTGRES_USER: ${NORVII_POSTGRES_USER:?NORVII_POSTGRES_USER is required}
+    ports:
+      - "${NORVII_POSTGRES_PORT:?NORVII_POSTGRES_PORT is required}:5432"
+    volumes:
+      - norvii_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          PGPASSWORD="$${POSTGRES_PASSWORD}" psql --host 127.0.0.1
+          --username "$${POSTGRES_USER}" --dbname "$${POSTGRES_DB}"
+          --no-psqlrc --tuples-only --command 'SELECT 1' >/dev/null
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    mem_limit: 512m
+    stop_grace_period: 30s
+
+  neo4j:
+    image: neo4j:2026.06.0-community-trixie@sha256:42fd5b9ead4dd4211f6f91bd831c358e4e2117367d04633fbf88682ca4792b30
+    init: true
+    environment:
+      NEO4J_AUTH: ${NORVII_NEO4J_USER:?NORVII_NEO4J_USER is required}/${NORVII_NEO4J_PASSWORD:?NORVII_NEO4J_PASSWORD is required}
+      NORVII_NEO4J_DATABASE: neo4j
+      NORVII_NEO4J_PASSWORD: ${NORVII_NEO4J_PASSWORD:?NORVII_NEO4J_PASSWORD is required}
+      NORVII_NEO4J_USER: ${NORVII_NEO4J_USER:?NORVII_NEO4J_USER is required}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    ports:
+      - "${NORVII_NEO4J_HTTP_PORT:?NORVII_NEO4J_HTTP_PORT is required}:7474"
+      - "${NORVII_NEO4J_BOLT_PORT:?NORVII_NEO4J_BOLT_PORT is required}:7687"
+    volumes:
+      - norvii_neo4j_data:/data
+    tmpfs:
+      - /logs:size=64m
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          cypher-shell --address neo4j://127.0.0.1:7687
+          --username "$${NORVII_NEO4J_USER}" --password "$${NORVII_NEO4J_PASSWORD}"
+          --database "$${NORVII_NEO4J_DATABASE}" 'RETURN 1' >/dev/null
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+    mem_limit: 1536m
+    stop_grace_period: 60s
+
+volumes:
+  norvii_postgres_data:
+    name: ${NORVII_POSTGRES_VOLUME_NAME:-norvii_postgres_data}
+  norvii_neo4j_data:
+    name: ${NORVII_NEO4J_VOLUME_NAME:-norvii_neo4j_data}

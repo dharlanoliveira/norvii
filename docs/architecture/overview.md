@@ -13,18 +13,19 @@ flowchart LR
     A --> K[AI SDK message model]
     K --> B[Go API]
     B --> R[Retrieval orchestration]
-    R --> V[Vector index]
-    R --> G[Legal graph]
+    R --> V[PostgreSQL pgvector index]
+    R --> G[Neo4j graph projection]
     B --> L[LLM]
     L --> C[Citation verification]
     C --> B
     B -->|structured stream| K
 
     F[Official sources] --> I[Python ingestion]
-    D[Source persistence] --> I
+    D[Canonical PostgreSQL storage] --> I
     I --> N[Versioned artifacts]
     N --> V
-    N --> G
+    N --> P[Graph projector]
+    P --> G
     I --> D
 
     B --> D
@@ -39,6 +40,30 @@ Detailed ownership lives in the module models:
 
 The [repository structure](repository-structure.md) defines source roots and dependency direction. The [contract registry](../../contracts/README.md) defines how data crosses language boundaries.
 
+## Persistence topology
+
+[ADR 0005](../decisions/0005-postgresql-and-neo4j-persistence.md) selects PostgreSQL with pgvector as the canonical system of record and one standalone Neo4j Community instance as a derived GraphRAG projection. The default local Docker Compose profile starts both services. Exact image versions and initialization contracts belong to the persistence foundation feature and must be pinned before implementation.
+
+The React client has no direct database access. The Go API coordinates online reads from PostgreSQL and Neo4j. Python ingestion publishes canonical artifacts to PostgreSQL and then updates the graph projection through an idempotent, checkpointed operation.
+
+PostgreSQL owns corpora, sources, source revisions, PDF binaries, URL origins, complete normalized document versions, hierarchical document units, retrieval fragments, embeddings, semantic extractions, evidence spans, and ingestion state. Neo4j stores versioned nodes and relationships that reference those canonical identifiers and evidence locations.
+
+```mermaid
+flowchart LR
+    S[Source] --> R[Source revision]
+    R --> D[Complete document version]
+    D --> U[Hierarchical document units]
+    U --> F[Retrieval fragments]
+    F --> E[Embeddings]
+
+    R --> X[Extraction run]
+    X --> K[Statements, entities, and events]
+    K --> P[Evidence spans]
+    P --> U
+```
+
+Graph publication does not use a distributed transaction. PostgreSQL becomes authoritative first; the graph projection may lag temporarily and can be retried or rebuilt from canonical records.
+
 ## Ingestion flow
 
 The Python pipeline runs outside the chat request path.
@@ -46,13 +71,14 @@ The Python pipeline runs outside the chat request path.
 1. Claim a `pending` source and mark it `processing`.
 2. Read the stored binary for a PDF or safely capture content for a URL.
 3. Record official metadata, hash, and capture date.
-4. Extract text while preserving legal structure.
+4. Create a complete normalized document version while preserving legal structure.
 5. Normalize headings, notes, articles, and references.
 6. Split text along legal units instead of fixed size alone.
 7. Generate embeddings when vector retrieval is enabled.
-8. Extract graph entities and relations when GraphRAG is enabled.
-9. Validate counts, references, and representative text samples.
-10. Atomically publish artifacts and mark the source `ready`, or record a classified error and mark it `failed`.
+8. Extract evidence-backed statements, allegations, timeline events, entities, and relationships when GraphRAG is enabled.
+9. Validate document hierarchy, evidence spans, counts, references, and representative text samples.
+10. Atomically publish canonical PostgreSQL artifacts and mark the source `ready`, or record a classified error and mark it `failed`.
+11. Project eligible artifacts into Neo4j and checkpoint publication so retries do not create duplicate active nodes or relationships.
 
 The dispatch mechanism remains an [open decision](../decisions/backlog.md).
 
@@ -100,5 +126,6 @@ Add a node or relation type only when an evaluation question requires it.
 - [Corpus and source model](../decisions/0002-corpus-and-source-model.md)
 - [Spec-driven delivery](../decisions/0003-spec-driven-delivery.md)
 - [Executable React prototype](../decisions/0004-executable-react-prototype.md)
+- [PostgreSQL and Neo4j persistence](../decisions/0005-postgresql-and-neo4j-persistence.md)
 
 Technology selections that remain unresolved are tracked in the [decision backlog](../decisions/backlog.md).

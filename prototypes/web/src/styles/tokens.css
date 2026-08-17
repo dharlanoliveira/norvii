@@ -1,0 +1,28 @@
+:root {
+  color-scheme: light;
+  --font-display: "Fraunces Variable", Georgia, serif;
+  --font-interface: "Manrope Variable", sans-serif;
+  --paper: #f3eee5;
+  --paper-raised: #fbf8f2;
+  --paper-deep: #e9e0d4;
+  --ink: #17201e;
+  --ink-soft: #53605c;
+  --ink-faint: #5c6661;
+  --line: #d4cabc;
+  --line-strong: #a99b89;
+  --burgundy: #7a2937;
+  --burgundy-deep: #531923;
+  --burgundy-wash: #f0dfe1;
+  --teal: #1f625e;
+  --teal-deep: #164945;
+  --teal-wash: #dceae7;
+  --amber: #9c6b28;
+  --white: #ffffff;
+  --shadow-soft: 0 18px 60px rgb(49 37 23 / 8%);
+  --shadow-lift: 0 12px 30px rgb(49 37 23 / 12%);
+  --radius-small: 6px;
+  --radius-medium: 12px;
+  --radius-large: 20px;
+  --focus: 0 0 0 3px var(--teal);
+  --page-width: 1440px;
+}
