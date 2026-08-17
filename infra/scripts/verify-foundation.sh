@@ -52,8 +52,9 @@ echo "Applying initialization twice."
 
 echo "Running service-backed runtime checks."
 "${environment_command[@]}" go -C "${repository_root}/apps/api" test \
-  -tags=integration ./tests/integration -count=1
-"${environment_command[@]}" make -C "${repository_root}/apps/ingestion" test-integration
+  -tags=integration -covermode=atomic -coverpkg=./... \
+  -coverprofile=coverage.out ./... -count=1
+"${environment_command[@]}" make -C "${repository_root}/apps/ingestion" coverage-integration
 "${environment_command[@]}" go -C "${repository_root}/apps/api" run ./cmd/verify-persistence
 "${environment_command[@]}" make -C "${repository_root}/apps/ingestion" verify-persistence
 

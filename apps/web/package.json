@@ -16,6 +16,7 @@
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
   },
@@ -40,6 +41,7 @@
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "6.0.5",
+    "@vitest/coverage-v8": "4.1.10",
     "axe-core": "4.13.0",
     "eslint": "9.39.5",
     "eslint-plugin-react-hooks": "7.1.1",

@@ -23,19 +23,25 @@ class SonarMonorepoConfigurationTest(unittest.TestCase):
                 )
 
         self.assertIn("projectBaseDir: ${{ matrix.project_path }}", workflow)
+        self.assertIn('make -C "${{ matrix.project_path }}" coverage', workflow)
+        self.assertIn("name: sonar-coverage-${{ matrix.project_name }}", workflow)
         self.assertNotIn("vars.SONAR_PROJECT_KEY", workflow)
 
     def test_each_production_module_owns_a_sonar_configuration(self) -> None:
-        expected_sources = {
-            "apps/web": "sonar.sources=src",
-            "apps/api": "sonar.sources=.",
-            "apps/ingestion": "sonar.sources=src",
+        expected_properties = {
+            "apps/web": ("sonar.sources=src", "sonar.javascript.lcov.reportPaths="),
+            "apps/api": ("sonar.sources=.", "sonar.go.coverage.reportPaths="),
+            "apps/ingestion": (
+                "sonar.sources=src",
+                "sonar.python.coverage.reportPaths=",
+            ),
         }
-        for module_path, sources_property in expected_sources.items():
+        for module_path, required_properties in expected_properties.items():
             with self.subTest(module_path=module_path):
                 properties_path = REPOSITORY_ROOT / module_path / "sonar-project.properties"
                 properties = properties_path.read_text(encoding="utf-8")
-                self.assertIn(sources_property, properties)
+                for required_property in required_properties:
+                    self.assertIn(required_property, properties)
                 self.assertIn("sonar.tests=", properties)
 
         self.assertFalse((REPOSITORY_ROOT / "sonar-project.properties").exists())

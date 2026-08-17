@@ -151,6 +151,22 @@ jobs:
       - name: Verify persistence foundation
         run: make persistence-integration
 
+      - name: Upload API coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sonar-coverage-api
+          path: apps/api/coverage.out
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload ingestion coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sonar-coverage-ingestion
+          path: apps/ingestion/coverage.xml
+          if-no-files-found: error
+          retention-days: 1
+
   sonar:
     name: SonarQube Cloud (${{ matrix.project_name }})
     needs:
@@ -185,6 +201,53 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
+
+      - name: Set up Node.js
+        if: matrix.project_name == 'web'
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Set up Go
+        if: matrix.project_name == 'api'
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26.5"
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Set up uv
+        if: matrix.project_name == 'ingestion'
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.16"
+          enable-cache: true
+          cache-dependency-glob: apps/ingestion/uv.lock
+
+      - name: Install analysis dependencies
+        env:
+          MODULE_PATH: ${{ matrix.project_path }}
+        run: |
+          if [ -f "$MODULE_PATH/package.json" ]; then
+            npm --prefix "$MODULE_PATH" ci
+          fi
+          if [ -f "$MODULE_PATH/go.mod" ]; then
+            go -C "$MODULE_PATH" mod download
+          fi
+          if [ -f "$MODULE_PATH/pyproject.toml" ]; then
+            uv sync --directory "$MODULE_PATH" --locked --all-groups
+          fi
+
+      - name: Generate test coverage
+        if: matrix.project_name == 'web'
+        run: make -C "${{ matrix.project_path }}" coverage
+
+      - name: Download integration coverage
+        if: matrix.project_name != 'web'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sonar-coverage-${{ matrix.project_name }}
+          path: ${{ matrix.project_path }}
 
       - name: Validate SonarQube Cloud configuration
         env:

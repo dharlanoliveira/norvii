@@ -12,7 +12,7 @@ import {
   type TextMessagePartProps,
 } from "@assistant-ui/react";
 import { ArrowUp, BookMarked, RotateCcw, Sparkles } from "lucide-react";
-import { useMemo } from "react";
+import { createContext, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Citation, Corpus } from "../../research/domain/models";
@@ -24,6 +24,10 @@ interface ResearchChatProps {
   readonly onOpenCitation: (citation: Citation) => void;
 }
 
+const CitationNavigationContext = createContext<
+  ResearchChatProps["onOpenCitation"] | undefined
+>(undefined);
+
 const selectEmptyThread = (state: AssistantState) => state.thread.isEmpty;
 const selectRunningThread = (state: AssistantState) => state.thread.isRunning;
 
@@ -31,15 +35,12 @@ function TextPart({ text }: TextMessagePartProps) {
   return <p className="message-text">{text}</p>;
 }
 
-type CitationPartProps = SourceMessagePartProps & {
-  readonly onOpenCitation: (citation: Citation) => void;
-};
-
-function CitationPart({ id, title, onOpenCitation }: CitationPartProps) {
+function CitationPart({ id, title }: SourceMessagePartProps) {
   const { t } = useTranslation();
+  const onOpenCitation = useContext(CitationNavigationContext);
   const [citationId, sourceId, locationId] = id.split("::");
 
-  if (!citationId || !sourceId || !locationId) return null;
+  if (!citationId || !sourceId || !locationId || !onOpenCitation) return null;
 
   const label = title ?? sourceId;
   return (
@@ -72,9 +73,7 @@ function UserMessage() {
   );
 }
 
-function AssistantMessage({
-  onOpenCitation,
-}: Pick<ResearchChatProps, "onOpenCitation">) {
+function AssistantMessage() {
   const { t } = useTranslation();
   return (
     <MessagePrimitive.Root className="chat-message chat-message--assistant">
@@ -88,9 +87,7 @@ function AssistantMessage({
       <MessagePrimitive.Parts
         components={{
           Text: TextPart,
-          Source: (props) => (
-            <CitationPart {...props} onOpenCitation={onOpenCitation} />
-          ),
+          Source: CitationPart,
         }}
       />
       <MessagePrimitive.Error>
@@ -109,7 +106,7 @@ function AssistantMessage({
   );
 }
 
-function ChatThread({ corpus, onOpenCitation }: ResearchChatProps) {
+function ChatThread({ corpus }: Pick<ResearchChatProps, "corpus">) {
   const { t } = useTranslation();
 
   return (
@@ -143,18 +140,14 @@ function ChatThread({ corpus, onOpenCitation }: ResearchChatProps) {
         </AuiIf>
         <ThreadPrimitive.Messages>
           {({ message }) =>
-            message.role === "user" ? (
-              <UserMessage />
-            ) : (
-              <AssistantMessage onOpenCitation={onOpenCitation} />
-            )
+            message.role === "user" ? <UserMessage /> : <AssistantMessage />
           }
         </ThreadPrimitive.Messages>
         <AuiIf condition={selectRunningThread}>
-          <div className="chat-responding" role="status">
+          <output className="chat-responding">
             <span aria-hidden="true" />
             {t("chat.responding")}
-          </div>
+          </output>
         </AuiIf>
         <ThreadPrimitive.ViewportFooter className="composer-dock">
           <ComposerPrimitive.Root className="chat-composer">
@@ -202,7 +195,9 @@ export function ResearchChat({ corpus, onOpenCitation }: ResearchChatProps) {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <ChatThread corpus={corpus} onOpenCitation={onOpenCitation} />
+      <CitationNavigationContext.Provider value={onOpenCitation}>
+        <ChatThread corpus={corpus} />
+      </CitationNavigationContext.Provider>
     </AssistantRuntimeProvider>
   );
 }

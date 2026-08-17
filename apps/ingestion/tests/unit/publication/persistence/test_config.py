@@ -36,9 +36,10 @@ def test_loader_rejects_invalid_environment_without_disclosing_secrets(
         "NORVII_NEO4J_PASSWORD": neo4j_secret,
         variable: value,
     }
+    loader = EnvironmentConfigurationLoader(environment)
 
     with pytest.raises(ConfigurationError) as error:
-        EnvironmentConfigurationLoader(environment).load()
+        loader.load()
 
     assert variable in str(error.value)
     assert postgres_secret not in str(error.value)

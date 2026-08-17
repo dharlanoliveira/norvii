@@ -1,7 +1,10 @@
-.PHONY: build ci dependencies-check format format-check migrate migration-status test test-race verify-persistence vet
+.PHONY: build ci coverage dependencies-check format format-check migrate migration-status test test-race verify-persistence vet
 
 build:
 	go build ./...
+
+coverage:
+	go test -covermode=atomic -coverprofile=coverage.out ./...
 
 dependencies-check:
 	go mod tidy -diff

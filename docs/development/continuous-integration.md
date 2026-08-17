@@ -54,6 +54,8 @@ The production modules are separate SonarQube Cloud projects bound to the same G
 
 The approved prototype is not an independently maintained production module and is therefore excluded from SonarQube Cloud analysis.
 
+The web scanner generates LCOV coverage from the client unit tests. API and ingestion coverage comes from the service-backed persistence job, so PostgreSQL and Neo4j adapters remain part of the measured code rather than being excluded as external infrastructure. The workflow retains those temporary coverage artifacts for one day and downloads each report only into its owning module before analysis. Composition roots and deterministic localization or fixture data may be excluded from coverage or duplication metrics when the metric cannot provide meaningful engineering feedback; production behavior remains in scope.
+
 Create a SonarQube Cloud analysis token and store it as a GitHub Actions secret. Store organization and project identifiers as repository variables:
 
 ```bash

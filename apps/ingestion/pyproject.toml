@@ -19,6 +19,7 @@ norvii-verify-persistence = "norvii_ingestion.publication.persistence.__main__:m
 dev = [
   "mypy==2.3.0",
   "pytest==9.1.1",
+  "pytest-cov==7.0.0",
   "ruff==0.16.3",
 ]
 

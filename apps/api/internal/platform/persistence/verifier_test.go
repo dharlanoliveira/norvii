@@ -76,7 +76,7 @@ func (store *fakeStore) Close(context.Context) error {
 	return nil
 }
 
-func equalStrings(left []string, right []string) bool {
+func equalStrings(left, right []string) bool {
 	if len(left) != len(right) {
 		return false
 	}

@@ -1,6 +1,9 @@
-.PHONY: ci format-check lint test typecheck build bundle-check e2e
+.PHONY: ci coverage format-check lint test typecheck build bundle-check e2e
 
 ci: format-check lint typecheck test build e2e
+
+coverage:
+	npm run test:coverage
 
 format-check:
 	npm run format:check

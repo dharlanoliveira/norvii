@@ -1,7 +1,13 @@
-.PHONY: build ci format format-check lint lock-check test test-integration type-check verify-persistence
+.PHONY: build ci coverage coverage-integration format format-check lint lock-check test test-integration type-check verify-persistence
 
 build:
 	uv build
+
+coverage:
+	uv run pytest --cov=norvii_ingestion --cov-report=xml:coverage.xml
+
+coverage-integration:
+	uv run pytest -m "" --cov=norvii_ingestion --cov-report=xml:coverage.xml
 
 format:
 	uv run ruff format .

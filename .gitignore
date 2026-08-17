@@ -30,6 +30,7 @@ __pycache__/
 *.egg-info/
 build/
 htmlcov/
+coverage.xml
 
 # Go
 bin/

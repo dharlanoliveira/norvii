@@ -18,6 +18,83 @@ interface GroupDefinition {
   readonly sources: readonly Source[];
 }
 
+interface TreeNavigationState {
+  readonly currentIndex: number;
+  readonly items: readonly HTMLElement[];
+  readonly target: HTMLElement;
+  readonly focusItem: (item: HTMLElement | undefined) => void;
+  readonly toggleGroup: (group: SourceGroup) => void;
+  readonly tree: HTMLDivElement;
+}
+
+function preventAndMove(
+  event: KeyboardEvent<HTMLDivElement>,
+  navigation: TreeNavigationState,
+  index: number,
+): void {
+  event.preventDefault();
+  navigation.focusItem(navigation.items[index]);
+}
+
+function moveByOffset(
+  event: KeyboardEvent<HTMLDivElement>,
+  navigation: TreeNavigationState,
+  offset: number,
+): void {
+  const nextIndex = Math.min(
+    Math.max(navigation.currentIndex + offset, 0),
+    navigation.items.length - 1,
+  );
+  preventAndMove(event, navigation, nextIndex);
+}
+
+function moveToBoundary(
+  event: KeyboardEvent<HTMLDivElement>,
+  navigation: TreeNavigationState,
+  index: number,
+): void {
+  preventAndMove(event, navigation, index);
+}
+
+function moveRight(
+  event: KeyboardEvent<HTMLDivElement>,
+  navigation: TreeNavigationState,
+): void {
+  event.preventDefault();
+  if (navigation.target.dataset.treeKind === "root") {
+    navigation.focusItem(navigation.items[navigation.currentIndex + 1]);
+    return;
+  }
+  if (navigation.target.dataset.treeKind !== "group") return;
+
+  const groupId = navigation.target.dataset.groupId as SourceGroup;
+  if (navigation.target.getAttribute("aria-expanded") === "false") {
+    navigation.toggleGroup(groupId);
+    return;
+  }
+  navigation.focusItem(navigation.items[navigation.currentIndex + 1]);
+}
+
+function moveLeft(
+  event: KeyboardEvent<HTMLDivElement>,
+  navigation: TreeNavigationState,
+): void {
+  event.preventDefault();
+  if (
+    navigation.target.dataset.treeKind === "group" &&
+    navigation.target.getAttribute("aria-expanded") === "true"
+  ) {
+    navigation.toggleGroup(navigation.target.dataset.groupId as SourceGroup);
+    return;
+  }
+
+  const parentId = navigation.target.dataset.parentId;
+  const parent = parentId
+    ? navigation.tree.querySelector<HTMLElement>(`[data-tree-id='${parentId}']`)
+    : navigation.items[0];
+  navigation.focusItem(parent ?? undefined);
+}
+
 export function SourceTree({
   corpus,
   selectedSourceId,
@@ -54,66 +131,47 @@ export function SourceTree({
   };
 
   const handleTreeKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    const tree = treeRef.current;
     const target = (event.target as HTMLElement).closest<HTMLElement>(
       "[role='treeitem']",
     );
     const items = Array.from(
-      treeRef.current?.querySelectorAll<HTMLElement>("[role='treeitem']") ?? [],
+      tree?.querySelectorAll<HTMLElement>("[role='treeitem']") ?? [],
     );
-    if (!target || !treeRef.current?.contains(target)) return;
+    if (!tree || !target || !tree.contains(target)) return;
 
     const currentIndex = items.indexOf(target);
     if (currentIndex < 0) return;
 
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const offset = event.key === "ArrowDown" ? 1 : -1;
-      const nextIndex = Math.min(
-        Math.max(currentIndex + offset, 0),
-        items.length - 1,
-      );
-      focusItem(items[nextIndex]);
-      return;
-    }
+    const navigation: TreeNavigationState = {
+      currentIndex,
+      items,
+      target,
+      focusItem,
+      toggleGroup,
+      tree,
+    };
 
-    if (event.key === "Home" || event.key === "End") {
-      event.preventDefault();
-      focusItem(event.key === "Home" ? items[0] : items.at(-1));
-      return;
+    switch (event.key) {
+      case "ArrowDown":
+        moveByOffset(event, navigation, 1);
+        break;
+      case "ArrowUp":
+        moveByOffset(event, navigation, -1);
+        break;
+      case "Home":
+        moveToBoundary(event, navigation, 0);
+        break;
+      case "End":
+        moveToBoundary(event, navigation, items.length - 1);
+        break;
+      case "ArrowRight":
+        moveRight(event, navigation);
+        break;
+      case "ArrowLeft":
+        moveLeft(event, navigation);
+        break;
     }
-
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      if (target.dataset.treeKind === "root") {
-        focusItem(items[currentIndex + 1]);
-        return;
-      }
-      if (target.dataset.treeKind !== "group") return;
-      const groupId = target.dataset.groupId as SourceGroup;
-      if (target.getAttribute("aria-expanded") === "false") {
-        toggleGroup(groupId);
-        return;
-      }
-      focusItem(items[currentIndex + 1]);
-      return;
-    }
-
-    if (event.key !== "ArrowLeft") return;
-    event.preventDefault();
-    if (
-      target.dataset.treeKind === "group" &&
-      target.getAttribute("aria-expanded") === "true"
-    ) {
-      toggleGroup(target.dataset.groupId as SourceGroup);
-      return;
-    }
-    const parentId = target.dataset.parentId;
-    const parent = parentId
-      ? treeRef.current.querySelector<HTMLElement>(
-          `[data-tree-id='${parentId}']`,
-        )
-      : items[0];
-    focusItem(parent ?? undefined);
   };
 
   return (
@@ -122,6 +180,7 @@ export function SourceTree({
       className="source-tree"
       role="tree"
       aria-label={t("tree.label")}
+      tabIndex={-1}
       onKeyDown={handleTreeKeyDown}
     >
       <div
@@ -129,6 +188,7 @@ export function SourceTree({
         role="treeitem"
         aria-expanded="true"
         aria-level={1}
+        aria-selected={false}
         data-tree-id="root"
         data-tree-kind="root"
         tabIndex={activeItemId === "root" ? 0 : -1}
@@ -137,7 +197,7 @@ export function SourceTree({
         <FolderTree aria-hidden="true" size={16} />
         <span>{corpus.name}</span>
       </div>
-      <div role="group">
+      <div role="presentation">
         {groups.map((group) => (
           <div className="source-tree__group" key={group.id}>
             <button
@@ -146,6 +206,7 @@ export function SourceTree({
               role="treeitem"
               aria-expanded={expanded[group.id]}
               aria-level={2}
+              aria-selected={false}
               aria-label={`${group.label}, ${t("catalog.sourceCount", { count: group.sources.length })}`}
               data-tree-id={`group-${group.id}`}
               data-tree-kind="group"
@@ -159,7 +220,7 @@ export function SourceTree({
               <small>{group.sources.length}</small>
             </button>
             {expanded[group.id] && group.sources.length > 0 ? (
-              <div role="group" className="source-tree__leaves">
+              <div role="presentation" className="source-tree__leaves">
                 {group.sources.map((source) => {
                   const selected = source.id === selectedSourceId;
                   const typeLabel =
@@ -172,6 +233,10 @@ export function SourceTree({
                       ? t("tree.unavailable")
                       : t("tree.available");
                   const availabilityId = `${corpus.id}-${source.id}-availability`;
+                  const selectionLabel = selected
+                    ? `, ${t("tree.selected")}`
+                    : "";
+                  const sourceLabel = `${typeLabel}: ${source.title}${selectionLabel}`;
                   return (
                     <button
                       type="button"
@@ -179,7 +244,7 @@ export function SourceTree({
                       aria-level={3}
                       aria-selected={selected}
                       aria-describedby={availabilityId}
-                      aria-label={`${typeLabel}: ${source.title}${selected ? `, ${t("tree.selected")}` : ""}`}
+                      aria-label={sourceLabel}
                       data-tree-id={`source-${source.id}`}
                       data-tree-kind="source"
                       data-parent-id={`group-${group.id}`}
