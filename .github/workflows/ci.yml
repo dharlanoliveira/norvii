@@ -152,7 +152,7 @@ jobs:
         run: make persistence-integration
 
   sonar:
-    name: SonarQube Cloud
+    name: SonarQube Cloud (${{ matrix.project_name }})
     needs:
       - repository-validation
       - module-builds
@@ -162,6 +162,19 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project_name: web
+            project_path: apps/web
+            project_key: ${{ vars.SONAR_WEB_PROJECT_KEY }}
+          - project_name: api
+            project_path: apps/api
+            project_key: ${{ vars.SONAR_API_PROJECT_KEY }}
+          - project_name: ingestion
+            project_path: apps/ingestion
+            project_key: ${{ vars.SONAR_INGESTION_PROJECT_KEY }}
     steps:
       - name: Check out full history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -176,7 +189,7 @@ jobs:
       - name: Validate SonarQube Cloud configuration
         env:
           SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
-          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+          SONAR_PROJECT_KEY: ${{ matrix.project_key }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           test -n "$SONAR_ORGANIZATION" || { echo "::error::Repository variable SONAR_ORGANIZATION is required."; exit 1; }
@@ -188,16 +201,17 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
+          projectBaseDir: ${{ matrix.project_path }}
           args: >-
             -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
-            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.projectKey=${{ matrix.project_key }}
             -Dsonar.qualitygate.wait=true
             -Dsonar.qualitygate.timeout=300
 
       - name: Enforce zero open Sonar issues
         env:
           SONAR_HOST_URL: https://sonarcloud.io
-          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+          SONAR_PROJECT_KEY: ${{ matrix.project_key }}
           SONAR_PULL_REQUEST: ${{ github.event.pull_request.number }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: python .github/scripts/enforce_sonar_issues.py

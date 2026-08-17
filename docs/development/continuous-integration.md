@@ -13,8 +13,8 @@ The [`CI` workflow](../../.github/workflows/ci.yml) executes these gates in orde
 3. Persistence integration starts digest-pinned PostgreSQL and Neo4j, then proves
    initialization, runtime connectivity, restart retention, volume isolation, and
    clean reproduction in an isolated Compose project.
-4. SonarQube Cloud scans the repository and waits for the built-in quality gate.
-5. A project policy queries the SonarQube Cloud API and fails when any open issue remains in the analyzed main branch or pull request.
+4. SonarQube Cloud independently scans the web, API, and ingestion production modules and waits for every built-in quality gate.
+5. A project policy queries the SonarQube Cloud API for each module and fails when any open issue remains in the analyzed main branch or pull request.
 6. A failed gate triggers an email notification when the event has access to repository secrets.
 
 The workflow uses read-only repository permissions. External actions are pinned to immutable commit SHAs with their release versions recorded in comments.
@@ -42,13 +42,25 @@ The module owns its exact commands and tool versions. Its `ci` target MUST perfo
 
 ## SonarQube Cloud Free setup
 
-Use the SonarQube Cloud Free plan for the public `dharlanoliveira/norvii` repository. Sign in with the personal GitHub account, create or select the SonarQube Cloud organization bound to that account, import `norvii`, and select CI-based analysis. Disable automatic analysis for the project so automatic and CI-based scans do not conflict.
+Use the SonarQube Cloud Free plan for the public `dharlanoliveira/norvii` repository. Sign in with the personal GitHub account, select the `dharlanoliveira` organization, and configure `norvii` as a monorepo using CI-based analysis. Disable automatic analysis so automatic and CI-based scans do not conflict.
+
+The production modules are separate SonarQube Cloud projects bound to the same GitHub repository:
+
+| Module | Project name | Project key variable |
+| --- | --- | --- |
+| `apps/web/` | `norvii-web` | `SONAR_WEB_PROJECT_KEY` |
+| `apps/api/` | `norvii-api` | `SONAR_API_PROJECT_KEY` |
+| `apps/ingestion/` | `norvii-ingestion` | `SONAR_INGESTION_PROJECT_KEY` |
+
+The approved prototype is not an independently maintained production module and is therefore excluded from SonarQube Cloud analysis.
 
 Create a SonarQube Cloud analysis token and store it as a GitHub Actions secret. Store organization and project identifiers as repository variables:
 
 ```bash
 gh variable set SONAR_ORGANIZATION --body '<sonar-organization-key>'
-gh variable set SONAR_PROJECT_KEY --body '<sonar-project-key>'
+gh variable set SONAR_WEB_PROJECT_KEY --body '<web-project-key>'
+gh variable set SONAR_API_PROJECT_KEY --body '<api-project-key>'
+gh variable set SONAR_INGESTION_PROJECT_KEY --body '<ingestion-project-key>'
 gh secret set SONAR_TOKEN
 ```
 
@@ -84,7 +96,9 @@ After the first workflow run creates its GitHub check names, protect `main` with
 - `Repository validation`
 - every `Build <module>` matrix check
 - `Persistence integration`
-- `SonarQube Cloud`
+- `SonarQube Cloud (web)`
+- `SonarQube Cloud (api)`
+- `SonarQube Cloud (ingestion)`
 
 Do not require `Email failure notification`; it runs only after another gate fails and cannot make a successful build more correct.
 

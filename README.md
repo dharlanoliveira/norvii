@@ -59,9 +59,9 @@ commands.
 
 ## Code quality analysis
 
-GitHub Actions is prepared to analyze Norvii with SonarQube Cloud after the public project is imported and its repository variables and analysis token are configured. Each same-repository pull request and push to `main` waits for the Sonar quality gate, then applies the stricter Norvii policy that fails the build when any unresolved Sonar issue remains.
+GitHub Actions analyzes the production web, API, and ingestion modules as separate SonarQube Cloud projects within the Norvii monorepo. Each same-repository pull request and push to `main` waits for all three quality gates, then applies the stricter Norvii policy that fails the build when any analyzed module has an unresolved Sonar issue.
 
-View the [Norvii analysis dashboard on SonarQube Cloud](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii). The dashboard will become available after the initial SonarQube Cloud setup and first successful analysis. See [continuous integration](docs/development/continuous-integration.md#sonarqube-cloud-free-setup) for the setup procedure, required GitHub configuration, and gate behavior.
+View the SonarQube Cloud dashboards for [norvii-web](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-web), [norvii-api](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-api), and [norvii-ingestion](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-ingestion). See [continuous integration](docs/development/continuous-integration.md#sonarqube-cloud-free-setup) for the monorepo configuration and gate behavior.
 
 ## Documentation map
 
