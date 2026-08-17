@@ -28,8 +28,42 @@ PostgreSQL data.
 - Python 3.13
 - uv 0.11
 - GNU Make and Bash on the reference Linux environment
+- Node.js 24 and npm
 
 The reference container platforms are Linux amd64 and arm64.
+
+## Complete local bootstrap
+
+After configuring `infra/.env`, start persistence, apply migrations, verify the Go
+and Python production drivers, install deterministic web dependencies, and start the
+React application with:
+
+```bash
+make bootstrap
+```
+
+The command is idempotent for long-running local processes. It retains output in the
+repository-root `.log/` directory:
+
+| File | Owner |
+| --- | --- |
+| `bootstrap.log` | Bootstrap orchestration and persistence startup |
+| `web.log` | Web dependency installation and React/Vite development server |
+| `api.log` | Go API migrations and persistence verification |
+| `ingestion.log` | Python ingestion persistence verification |
+| `postgres.log` | PostgreSQL container |
+| `neo4j.log` | Neo4j container |
+
+The Go API and Python ingestion module do not yet expose long-running local
+processes. Their current initialization output is retained in their component logs.
+
+Inspect lifecycle and health without starting duplicates, or stop all managed
+processes while retaining database volumes:
+
+```bash
+make local-status
+make local-stop
+```
 
 ## Configuration
 
@@ -53,6 +87,16 @@ make persistence-config
 The output must contain only `postgres` and `neo4j`.
 
 ## Lifecycle commands
+
+Start both stores, apply pending migrations, and verify the Go and Python production
+drivers with the recommended local journey:
+
+```bash
+make persistence
+```
+
+The aggregate command stops immediately if startup, migration, or verification
+fails. Use the commands below when operating or troubleshooting an individual step.
 
 Start both stores and wait up to two minutes for authenticated health:
 
@@ -143,9 +187,7 @@ other confirmation. Removed data cannot be recovered through Norvii.
 Recreate the foundation after reset:
 
 ```bash
-make persistence-up
-make persistence-migrate
-make persistence-verify
+make persistence
 ```
 
 The feature-specific executable evidence remains in

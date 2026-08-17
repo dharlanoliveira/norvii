@@ -36,15 +36,16 @@ printing credentials.
 ## Start and initialize
 
 ```bash
-make persistence-up
-make persistence-migrate
+make persistence
 ```
 
 Expected outcome:
 
 - PostgreSQL and Neo4j become healthy within two minutes after images are present;
 - migration version `1` is current;
-- PostgreSQL reports the `vector` extension installed.
+- PostgreSQL reports the `vector` extension installed;
+- the Go API and Python ingestion module verify both stores through their production
+  drivers.
 
 Inspect health and migration state independently:
 
@@ -64,7 +65,7 @@ docker compose --env-file infra/.env -f infra/compose.yaml logs --tail 100 neo4j
 Review logs before sharing them because third-party service logs are outside Norvii's
 structured logging boundary.
 
-## Verify production runtimes
+## Verify production runtimes independently
 
 ```bash
 make persistence-verify
@@ -128,9 +129,7 @@ path or caller-supplied volume name.
 Recreate the clean state:
 
 ```bash
-make persistence-up
-make persistence-migrate
-make persistence-verify
+make persistence
 ```
 
 ## Run affected quality checks
