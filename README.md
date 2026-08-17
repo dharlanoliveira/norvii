@@ -26,6 +26,23 @@ projection, applies the initial vector migration, and verifies both stores throu
 independent Go and Python production drivers. The current React client remains
 independently runnable and does not yet call these modules.
 
+## Bootstrap the complete local environment
+
+After creating `infra/.env` from the provided example and replacing both password
+markers, start and verify all currently executable local components with:
+
+```bash
+make bootstrap
+```
+
+Codex users can invoke `$bootstrap-norvii` for the same managed workflow. Runtime
+output is retained by component under `.log/`: `bootstrap.log`, `web.log`,
+`api.log`, `ingestion.log`, `postgres.log`, and `neo4j.log`. Repeated execution
+reuses healthy processes rather than starting duplicates.
+
+Inspect or stop the managed environment with `make local-status` and
+`make local-stop`. Stopping retains both database volumes.
+
 ## Run the production client
 
 Prerequisites: Node.js 24 and npm.
@@ -51,9 +68,7 @@ Prerequisites: Docker Compose, Go 1.26, Python 3.13, uv, Make, and Bash.
 ```bash
 cp infra/.env.example infra/.env
 # Replace both password markers in infra/.env.
-make persistence-up
-make persistence-migrate
-make persistence-verify
+make persistence
 ```
 
 See the [local environment guide](docs/operations/local-environment.md) for health,

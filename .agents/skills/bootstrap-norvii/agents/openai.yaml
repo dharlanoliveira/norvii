@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bootstrap Norvii"
+  short_description: "Start the complete local Norvii environment"
+  default_prompt: "Use $bootstrap-norvii to start Norvii locally and report its component logs and URLs."

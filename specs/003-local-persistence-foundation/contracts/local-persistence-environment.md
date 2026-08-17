@@ -49,6 +49,7 @@ delegate to module Makefiles and scripts but MUST preserve the behavior below.
 
 | Command | Success behavior | Failure behavior |
 | --- | --- | --- |
+| `make persistence` | Starts both stores, applies pending migrations, then verifies Go and Python connectivity in order. | Stops at the first failed step and preserves its diagnostic output. |
 | `make persistence-up` | Starts exactly PostgreSQL and Neo4j, waits for authenticated health, then returns zero. | Returns nonzero and names any unhealthy service. |
 | `make persistence-health` | Reports both services healthy and returns zero. | Returns nonzero with a service-scoped diagnostic command. |
 | `make persistence-migrate` | Applies pending migrations and reports the current version; repeat execution is safe. | Returns nonzero and identifies the failed migration or prerequisite. |
