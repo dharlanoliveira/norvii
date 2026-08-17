@@ -5,6 +5,9 @@
 # Norvii
 
 [![CI](https://github.com/dharlanoliveira/norvii/actions/workflows/ci.yml/badge.svg)](https://github.com/dharlanoliveira/norvii/actions/workflows/ci.yml)
+[![Web Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-web&metric=alert_status)](https://sonarcloud.io/dashboard?id=dharlanoliveira_norvii-web)
+[![API Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-api&metric=alert_status)](https://sonarcloud.io/dashboard?id=dharlanoliveira_norvii-api)
+[![Ingestion Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-ingestion&metric=alert_status)](https://sonarcloud.io/dashboard?id=dharlanoliveira_norvii-ingestion)
 
 Norvii is a proof of concept for evidence-grounded legal research using RAG,
 GraphRAG, LLMs, MCP, and reusable skills. The application will let a user select a
@@ -60,6 +63,12 @@ commands.
 ## Code quality analysis
 
 GitHub Actions analyzes the production web, API, and ingestion modules as separate SonarQube Cloud projects within the Norvii monorepo. Each same-repository pull request and push to `main` waits for all three quality gates, then applies the stricter Norvii policy that fails the build when any analyzed module has an unresolved Sonar issue.
+
+| Module | Quality gate | Coverage |
+| --- | --- | --- |
+| Web | [![Web quality gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-web&metric=alert_status)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-web) | [![Web coverage](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-web&metric=coverage)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-web) |
+| API | [![API quality gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-api&metric=alert_status)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-api) | [![API coverage](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-api&metric=coverage)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-api) |
+| Ingestion | [![Ingestion quality gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-ingestion&metric=alert_status)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-ingestion) | [![Ingestion coverage](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-ingestion&metric=coverage)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-ingestion) |
 
 View the SonarQube Cloud dashboards for [norvii-web](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-web), [norvii-api](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-api), and [norvii-ingestion](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-ingestion). See [continuous integration](docs/development/continuous-integration.md#sonarqube-cloud-free-setup) for the monorepo configuration and gate behavior.
 
