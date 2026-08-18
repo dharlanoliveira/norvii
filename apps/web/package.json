@@ -8,7 +8,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && npm run check:bundle",
+    "build": "npm run check:runtime-fixtures && tsc -b && vite build && npm run check:bundle",
+    "check:runtime-fixtures": "node scripts/check-runtime-fixtures.mjs",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "preview": "vite preview",
     "format": "prettier --write .",
@@ -21,9 +22,9 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@assistant-ui/react": "0.15.14",
     "@fontsource-variable/fraunces": "5.3.0",
     "@fontsource-variable/manrope": "5.3.0",
+    "@fontsource-variable/source-serif-4": "^5.3.0",
     "i18next": "26.3.6",
     "lucide-react": "1.31.0",
     "react": "19.2.8",

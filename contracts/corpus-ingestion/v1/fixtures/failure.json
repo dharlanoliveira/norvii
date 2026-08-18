@@ -1,0 +1,7 @@
+{
+  "kind": "failure",
+  "workId": "30000000-0000-4000-8000-000000000002",
+  "leaseToken": "80000000-0000-4000-8000-000000000001",
+  "category": "extraction_failed",
+  "detail": "The acquired content did not contain extractable text."
+}

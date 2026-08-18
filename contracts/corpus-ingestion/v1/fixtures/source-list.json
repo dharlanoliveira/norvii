@@ -1,0 +1,14 @@
+[
+  {
+    "id": "20000000-0000-4000-8000-000000000002",
+    "corpusId": "10000000-0000-4000-8000-000000000002",
+    "title": "Official English GDPR text",
+    "kind": "url",
+    "processingStatus": "pending",
+    "failureCategory": null,
+    "latestReadyDocumentId": null,
+    "version": 1,
+    "createdAt": "2026-08-17T12:00:00Z",
+    "updatedAt": "2026-08-17T12:00:00Z"
+  }
+]

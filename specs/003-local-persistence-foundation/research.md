@@ -158,8 +158,8 @@ machine-checkable ownership boundary. Normal shutdown never passes `--volumes`.
 **Decision**: Extend module CI with language-specific setup and add one isolated
 service-backed job that validates Compose, starts both stores, waits for authenticated
 health, applies migrations twice, runs Go and Python checks, verifies restart
-persistence and graph-volume isolation, then performs cleanup. Sonar and failure
-notification depend on this job.
+persistence and graph-volume isolation, then performs cleanup. Sonar analysis depends
+on this job.
 
 **Rationale**: Unit tests cannot prove image, migration, credential, and driver
 compatibility together. One bounded journey provides the required cross-layer
@@ -172,5 +172,5 @@ quality failures.
   scenarios.
 - Separate full environments per runtime were rejected because they duplicate image
   startup cost without testing a different boundary.
-- Leaving persistence out of Sonar and notification dependencies was rejected because
-  the project requires any affected build failure to fail and notify the workflow.
+- Leaving persistence out of Sonar dependencies was rejected because the project
+  requires any affected build failure to fail the workflow.

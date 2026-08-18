@@ -1,4 +1,5 @@
 import os
+import shutil
 import socket
 import stat
 import subprocess
@@ -22,6 +23,7 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
             try:
                 self.assertEqual(0, start_result.returncode, start_result.stderr)
                 self.assertIn("Norvii is ready", start_result.stdout)
+                self.assertIn("Initial sources: en=ready, pt=ready", start_result.stdout)
                 first_process_identities = {
                     path.name: path.read_text(encoding="utf-8")
                     for path in sorted((root / ".log").glob("*.pid"))
@@ -41,10 +43,8 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
                 self.assertEqual(0, status_result.returncode, status_result.stderr)
                 self.assertIn("PostgreSQL is healthy", status_result.stdout)
                 self.assertIn("Web is running", status_result.stdout)
-                self.assertIn("API initialization is complete", status_result.stdout)
-                self.assertIn(
-                    "Ingestion initialization is complete", status_result.stdout
-                )
+                self.assertIn("API is running", status_result.stdout)
+                self.assertIn("Ingestion is running", status_result.stdout)
 
                 pid_files = sorted((root / ".log").glob("*.pid"))
                 initial_identities = [path.read_text() for path in pid_files]
@@ -104,6 +104,19 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
             self.assertIn(".log/api.log", result.stderr)
             self.assertTrue((root / ".log" / "api.log").is_file())
 
+    def test_start_fails_safely_when_initial_sources_do_not_finish(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            environment = self.prepare_fixture(root) | {
+                "SOURCE_STATUS": "pending",
+                "NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS": "1",
+            }
+
+            result = self.run_manager(root, environment, "start")
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn(".log/ingestion.log", result.stderr)
+
     def test_rejects_non_repository_root_without_creating_runtime_files(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -128,14 +141,19 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
         )
 
     def prepare_fixture(self, root: Path) -> dict[str, str]:
-        (root / "infra").mkdir()
+        (root / "infra" / "scripts").mkdir(parents=True)
         (root / "apps" / "web").mkdir(parents=True)
+        api_port = self.available_port()
         (root / "infra" / ".env").write_text(
-            "TEST_ENVIRONMENT=true\n", encoding="utf-8"
+            f"TEST_ENVIRONMENT=true\nNORVII_API_PORT={api_port}\n", encoding="utf-8"
         )
         (root / "infra" / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
         (root / "Makefile").write_text("fixture:\n\t@true\n", encoding="utf-8")
         (root / "apps" / "web" / "package.json").write_text("{}\n", encoding="utf-8")
+        shutil.copyfile(
+            REPOSITORY_ROOT / "infra" / "scripts" / "run-with-environment.py",
+            root / "infra" / "scripts" / "run-with-environment.py",
+        )
 
         binary_directory = root / "bin"
         binary_directory.mkdir()
@@ -177,6 +195,31 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
             """
             service="${@: -1}"
             printf '%s container log\n' "$service"
+            while true; do sleep 1; done
+            """,
+        )
+        self.write_executable(
+            binary_directory / "go",
+            """
+            exec python3 -c 'from http.server import BaseHTTPRequestHandler, HTTPServer
+            class Handler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    payload = ([{"processingStatus": __import__("os").environ.get("SOURCE_STATUS", "ready")}]
+                               if self.path.endswith("/sources") else {"status": "ok"})
+                    body = __import__("json").dumps(payload).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                def log_message(self, format, *args):
+                    pass
+            HTTPServer(("127.0.0.1", int(__import__("os").environ["NORVII_API_PORT"])), Handler).serve_forever()'
+            """,
+        )
+        self.write_executable(
+            binary_directory / "uv",
+            """
             while true; do sleep 1; done
             """,
         )

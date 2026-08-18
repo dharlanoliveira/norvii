@@ -1,15 +1,21 @@
-import { ArrowUpRight, BookOpenText, MapPin } from "lucide-react";
+import {
+  ArrowUpRight,
+  BookOpenText,
+  MapPin,
+  MoreHorizontal,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
-import type { CorpusSummary } from "../../research/domain/models";
+import type { CorpusResponse } from "../../api/contract";
 
 interface CorpusCardProps {
-  readonly corpus: CorpusSummary;
+  readonly corpus: CorpusResponse;
   readonly index: number;
+  readonly onToggleStatus?: (corpus: CorpusResponse) => void;
 }
 
-export function CorpusCard({ corpus, index }: CorpusCardProps) {
+export function CorpusCard({ corpus, index, onToggleStatus }: CorpusCardProps) {
   const { t } = useTranslation();
 
   return (
@@ -25,9 +31,10 @@ export function CorpusCard({ corpus, index }: CorpusCardProps) {
           <span className="corpus-card__language">
             {t(`language.${corpus.language}`)}
           </span>
+          <span>{t(`catalog.status.${corpus.status}`)}</span>
         </div>
         <h2>{corpus.name}</h2>
-        <p className="corpus-card__summary">{corpus.summary}</p>
+        <p className="corpus-card__summary">{corpus.description}</p>
         <dl className="corpus-card__facts">
           <div>
             <dt>
@@ -44,14 +51,36 @@ export function CorpusCard({ corpus, index }: CorpusCardProps) {
             <dd>{t("catalog.sourceCount", { count: corpus.sourceCount })}</dd>
           </div>
         </dl>
-        <Link
-          className="corpus-card__action"
-          to={`/corpora/${corpus.id}`}
-          aria-label={`${t("catalog.openCorpus")} ${corpus.name}`}
-        >
-          <span>{t("catalog.openCorpus")}</span>
-          <ArrowUpRight aria-hidden="true" size={18} />
-        </Link>
+        <div className="corpus-card__actions">
+          <Link
+            className="corpus-card__action"
+            to={`/corpora/${corpus.id}`}
+            aria-label={`${t("catalog.openCorpus")} ${corpus.name}`}
+          >
+            <span>{t("catalog.openCorpus")}</span>
+            <ArrowUpRight aria-hidden="true" size={18} />
+          </Link>
+          <details className="corpus-card__menu">
+            <summary aria-label={`${t("catalog.manageCorpus")} ${corpus.name}`}>
+              <MoreHorizontal aria-hidden="true" size={19} />
+            </summary>
+            <div className="corpus-card__menu-panel">
+              <Link
+                to={`/corpora/${corpus.id}/edit`}
+                aria-label={`${t("catalog.editCorpus")} ${corpus.name}`}
+              >
+                {t("catalog.editCorpus")}
+              </Link>
+              {onToggleStatus ? (
+                <button type="button" onClick={() => onToggleStatus(corpus)}>
+                  {corpus.status === "enabled"
+                    ? t("catalog.disableCorpus")
+                    : t("catalog.enableCorpus")}
+                </button>
+              ) : null}
+            </div>
+          </details>
+        </div>
       </div>
     </article>
   );

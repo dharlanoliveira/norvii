@@ -149,7 +149,7 @@ changed in the plan.
 **Purpose**: Integrate all story evidence into CI and replace deferred global instructions with executable commands.
 
 - [X] T038 Extend module setup by language and add an isolated service-backed persistence job with cleanup in `.github/workflows/ci.yml` [FR-014, FR-020]
-- [X] T039 Make SonarQube Cloud and failure email notification depend on persistence integration results in `.github/workflows/ci.yml` [FR-020]
+- [X] T039 Make SonarQube Cloud analysis depend on persistence integration results in `.github/workflows/ci.yml` [FR-020]
 - [X] T040 Update executable lifecycle commands, resource expectations, security notes, and troubleshooting in `docs/operations/local-environment.md` [FR-002, FR-004, FR-013, FR-016]
 - [X] T041 [P] Update Go migration and connectivity verification guidance in `docs/modules/go-api.md` [FR-011, FR-014, FR-016]
 - [X] T042 [P] Update Python package and connectivity verification guidance in `docs/modules/python-ingestion.md` [FR-011, FR-014, FR-016]

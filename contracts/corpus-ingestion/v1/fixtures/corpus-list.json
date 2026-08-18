@@ -1,0 +1,26 @@
+[
+  {
+    "id": "10000000-0000-4000-8000-000000000002",
+    "name": "European Union General Data Protection Regulation",
+    "description": "Official European Union data-protection regulation.",
+    "language": "en",
+    "jurisdiction": "European Union",
+    "status": "enabled",
+    "sourceCount": 1,
+    "version": 1,
+    "createdAt": "2026-08-17T12:00:00Z",
+    "updatedAt": "2026-08-17T12:00:00Z"
+  },
+  {
+    "id": "10000000-0000-4000-8000-000000000001",
+    "name": "Brazilian General Data Protection Law",
+    "description": "Official Brazilian federal data-protection legislation.",
+    "language": "pt",
+    "jurisdiction": "Brazil",
+    "status": "enabled",
+    "sourceCount": 1,
+    "version": 1,
+    "createdAt": "2026-08-17T12:00:00Z",
+    "updatedAt": "2026-08-17T12:00:00Z"
+  }
+]

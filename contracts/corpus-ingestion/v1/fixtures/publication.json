@@ -1,0 +1,21 @@
+{
+  "kind": "publication",
+  "workId": "30000000-0000-4000-8000-000000000002",
+  "leaseToken": "80000000-0000-4000-8000-000000000001",
+  "pipelineVersion": "corpus-ingestion-v1",
+  "originSha256": "181fdd46fc4a7246b9f4f1eba3129ba5d724011af5f10223b3589955d1df108a",
+  "text": "Legal text",
+  "textSha256": "491d901b543fe7059800e5545d3449ee6f5551401983cd3c711c36ea22c2992c",
+  "units": [
+    {
+      "id": "60000000-0000-4000-8000-000000000001",
+      "parentId": null,
+      "kind": "document",
+      "ordinal": 0,
+      "startOffset": 0,
+      "endOffset": 10,
+      "locator": "document",
+      "contentSha256": "491d901b543fe7059800e5545d3449ee6f5551401983cd3c711c36ea22c2992c"
+    }
+  ]
+}

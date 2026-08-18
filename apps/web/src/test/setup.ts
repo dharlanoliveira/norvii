@@ -14,6 +14,7 @@ class ResizeObserverMock implements ResizeObserver {
 
 globalThis.ResizeObserver = ResizeObserverMock;
 Element.prototype.scrollTo = (): void => undefined;
+Element.prototype.scrollIntoView = (): void => undefined;
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");

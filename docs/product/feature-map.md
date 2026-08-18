@@ -11,16 +11,13 @@ document does not create feature branches or implementation commitments by itsel
 | [001](../../specs/001-product-experience-prototype/spec.md) | Product experience prototype | A reviewer navigates the bilingual core Norvii journeys and states in a deterministic React prototype without backend services | Prototype web | None |
 | [002](../../specs/002-production-web-experience/spec.md) | Production web experience | A reviewer uses the approved bilingual corpus research experience from the independently owned production React client | Web | 001 |
 | [003](../../specs/003-local-persistence-foundation/spec.md) | Local persistence foundation | A contributor starts both required stores and verifies initialization plus Go and Python connectivity from documented commands | Infra, API shell, ingestion shell | 002 |
-| 004 | Corpus catalog | A user can create, edit, list, select, and disable a corpus | Web, API, contracts | 002, 003 |
-| 005 | Corpus source management | A user can add a PDF or official URL and see its processing state | Web, API, contracts | 002, 004 |
-| 006 | Source ingestion | A pending source becomes a versioned, validated set of searchable artifacts | Ingestion, API, contracts, infra | 003, 005 |
-| 007 | Corpus workspace integration | A user opens one corpus and browses only its ready sources from the API | Web, API | 002, 004, 005 |
-| 008 | Grounded RAG chat | A user asks a question and receives a streamed, cited answer or explicit abstention | Web, API, contracts, infra | 006, 007 |
-| 009 | Citation navigation and inspection | A user opens cited evidence and an evaluator inspects retrieval, latency, and token use | Web, API, contracts | 002, 008 |
-| 010 | Portuguese and English snapshots | A user switches between two isolated, reproducible legal corpora | Ingestion, API, Web | 006, 008 |
-| 011 | GraphRAG and hybrid retrieval | An evaluator compares vector, graph, and hybrid evidence paths | Ingestion, API, Web, contracts, infra | 009, 010 |
-| 012 | MCP research tools and skills | An evaluator invokes explicit research tools and reusable evidence workflows | API, contracts | 009, 011 |
-| 013 | Evaluation showcase | A contributor runs versioned quality and cost evaluations and views comparable results | Ingestion, API, Web | 010, 011, 012 |
+| [004](../../specs/004-corpus-catalog/spec.md) | Corpus catalog and ingestion | A user manages corpora and PDF or URL sources, observes ingestion, and browses real versioned documents and sections | Web, API, ingestion, contracts, infra | 002, 003 |
+| 005 | Grounded RAG chat | A user asks a question and receives a streamed, cited answer or explicit abstention | Web, API, contracts, infra | 004 |
+| 006 | Citation navigation and inspection | A user opens cited evidence and an evaluator inspects retrieval, latency, and token use | Web, API, contracts | 002, 005 |
+| 007 | Portuguese and English snapshots | A user switches between two isolated, reproducible curated legal corpora | Ingestion, API, Web | 004, 005 |
+| 008 | GraphRAG and hybrid retrieval | An evaluator compares vector, graph, and hybrid evidence paths | Ingestion, API, Web, contracts, infra | 006, 007 |
+| 009 | MCP research tools and skills | An evaluator invokes explicit research tools and reusable evidence workflows | API, contracts | 006, 008 |
+| 010 | Evaluation showcase | A contributor runs versioned quality and cost evaluations and views comparable results | Ingestion, API, Web | 007, 008, 009 |
 
 ## Slicing rules
 
@@ -33,6 +30,11 @@ document does not create feature branches or implementation commitments by itsel
   unrelated contracts and data models.
 - Merge candidates only when neither produces meaningful standalone value.
 - Production UI features MUST link to the approved prototype baseline and record intentional differences.
+
+Feature 004 intentionally consolidates the earlier catalog, source-management,
+ingestion, and workspace-integration candidates. The combined slice avoids a mixed
+runtime where an authoritative catalog opens simulated documents, while keeping
+model-backed retrieval and graph behavior in later independently measurable features.
 
 ## Active foundation sequence
 

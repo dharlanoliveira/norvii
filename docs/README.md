@@ -16,7 +16,7 @@ belong in the numbered Spec Kit directory that introduced them.
 | Feature order and dependencies | [Feature map](product/feature-map.md) | Roadmap changes |
 | Prototype workflow and approval | [Executable prototyping](development/prototyping.md) | Prototype boundary or approval changes |
 | Development tools and Spec Kit layers | [Development tooling](development/tooling.md) | Tool version or workflow customization changes |
-| Continuous integration and quality gates | [Continuous integration](development/continuous-integration.md) | CI gate, Sonar, build, or notification behavior changes |
+| Continuous integration and quality gates | [Continuous integration](development/continuous-integration.md) | CI gate, Sonar, or build behavior changes |
 | Repository and module ownership | [Repository structure](architecture/repository-structure.md) | Durable boundary changes |
 | System flows and retrieval model | [System architecture](architecture/overview.md) | Cross-module flow changes |
 | Persistence topology and ownership | [ADR 0005](decisions/0005-postgresql-and-neo4j-persistence.md) | Canonical store or graph projection boundaries change |

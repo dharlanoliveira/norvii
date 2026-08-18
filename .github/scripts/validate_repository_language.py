@@ -214,9 +214,8 @@ class GitRepositoryFileDiscovery:
                 "Unable to discover project-owned files with Git."
             ) from error
 
-        return [
-            Path(item.decode("utf-8")) for item in result.stdout.split(b"\0") if item
-        ]
+        paths = [Path(item.decode("utf-8")) for item in result.stdout.split(b"\0") if item]
+        return [path for path in paths if (root / path).exists()]
 
 
 class RepositoryLanguageApplication:

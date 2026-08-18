@@ -1,5 +1,6 @@
 import "@fontsource-variable/fraunces";
 import "@fontsource-variable/manrope";
+import "@fontsource-variable/source-serif-4";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 

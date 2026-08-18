@@ -39,6 +39,9 @@ jobs:
       - name: Enforce English source and documentation
         run: python .github/scripts/validate_repository_language.py
 
+      - name: Validate promoted cross-language contracts
+        run: python .github/scripts/validate_contracts.py
+
       - name: Validate shell scripts
         run: bash -n .specify/scripts/bash/*.sh .specify/extensions/git/scripts/bash/*.sh infra/scripts/*.sh
 
@@ -123,7 +126,7 @@ jobs:
           make -C "$MODULE_PATH" ci
 
   persistence-integration:
-    name: Persistence integration
+    name: Corpus ingestion integration
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -148,7 +151,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/ingestion/uv.lock
 
-      - name: Verify persistence foundation
+      - name: Verify corpus ingestion and persistence
         run: make persistence-integration
 
       - name: Upload API coverage
@@ -278,42 +281,3 @@ jobs:
           SONAR_PULL_REQUEST: ${{ github.event.pull_request.number }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: python .github/scripts/enforce_sonar_issues.py
-
-  notify-failure:
-    name: Email failure notification
-    needs:
-      - repository-validation
-      - module-builds
-      - persistence-integration
-      - sonar
-    if: >-
-      always() &&
-      !cancelled() &&
-      (needs.repository-validation.result == 'failure' ||
-       needs.module-builds.result == 'failure' ||
-       needs.persistence-integration.result == 'failure' ||
-       needs.sonar.result == 'failure') &&
-      (github.event_name == 'push' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.13"
-
-      - name: Send failure email
-        env:
-          CI_FAILURE_EMAIL: ${{ vars.CI_FAILURE_EMAIL }}
-          CI_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          CI_WORKFLOW: ${{ github.workflow }}
-          GIT_BRANCH: ${{ github.head_ref || github.ref_name }}
-          GIT_COMMIT: ${{ github.sha }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-        run: python .github/scripts/send_ci_failure_email.py

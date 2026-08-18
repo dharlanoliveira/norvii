@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "stale_state",
+    "message": "The record changed; reload and retry.",
+    "fields": {},
+    "requestId": "70000000-0000-4000-8000-000000000001"
+  }
+}
