@@ -120,7 +120,9 @@ def test_extractor_preserves_brazilian_article_hierarchy() -> None:
 
 
 def test_extractor_rejects_empty_and_invalid_unicode_content() -> None:
+    extractor = HtmlExtractor()
+
     with pytest.raises(ExtractionError):
-        HtmlExtractor().extract(b"<html><body></body></html>")
+        extractor.extract(b"<html><body></body></html>")
     with pytest.raises(ExtractionError):
-        HtmlExtractor().extract(b"\xff")
+        extractor.extract(b"\xff")

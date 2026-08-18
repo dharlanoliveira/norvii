@@ -51,13 +51,17 @@ def test_pdf_extractor_preserves_pages_and_legal_children() -> None:
     ],
 )
 def test_pdf_extractor_rejects_encrypted_and_image_only_documents(reader: FakeReader) -> None:
+    extractor = PdfExtractor(lambda _content: reader)
+
     with pytest.raises(PdfExtractionError):
-        PdfExtractor(lambda _content: reader).extract(b"%PDF-invalid-for-policy")
+        extractor.extract(b"%PDF-invalid-for-policy")
 
 
 def test_pdf_extractor_rejects_malformed_documents() -> None:
     def fail(_content: BytesIO) -> FakeReader:
         raise PdfReadError("private parser detail")
 
+    extractor = PdfExtractor(fail)
+
     with pytest.raises(PdfExtractionError, match="invalid"):
-        PdfExtractor(fail).extract(b"not a PDF")
+        extractor.extract(b"not a PDF")

@@ -62,14 +62,16 @@ def test_publication_command_rejects_incorrect_text_hash() -> None:
         ),
     )
 
+    command = PublicationCommand(
+        work_id=uuid4(),
+        lease_token=uuid4(),
+        pipeline_version="corpus-ingestion-v1",
+        origin_sha256=_hash("origin"),
+        artifact=artifact,
+    )
+
     with pytest.raises(ValueError, match="text hash"):
-        PublicationCommand(
-            work_id=uuid4(),
-            lease_token=uuid4(),
-            pipeline_version="corpus-ingestion-v1",
-            origin_sha256=_hash("origin"),
-            artifact=artifact,
-        ).validate()
+        command.validate()
 
 
 @dataclass(frozen=True)

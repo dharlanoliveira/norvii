@@ -11,7 +11,7 @@ from threading import Event
 from typing import TYPE_CHECKING
 
 from norvii_ingestion.acquisition.https import HttpsAcquirer
-from norvii_ingestion.config import ConfigurationError, WorkerConfig
+from norvii_ingestion.config import WorkerConfig
 from norvii_ingestion.extraction.html import HtmlExtractor
 from norvii_ingestion.extraction.pdf import PdfExtractor
 from norvii_ingestion.orchestration.composition import (
@@ -44,7 +44,7 @@ def main() -> int:
             persistence_config.postgres,
             persistence_config.timeout_seconds,
         )
-    except (ConfigurationError, ValueError, WorkRepositoryError):
+    except (ValueError, WorkRepositoryError):
         return _startup_failure()
 
     stop = Event()

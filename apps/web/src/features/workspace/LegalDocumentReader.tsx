@@ -158,8 +158,8 @@ function displayMarker(unit: DocumentUnitResponse): string | null {
   const marker = unit.marker?.trim() ?? null;
   if (unit.kind !== "article" || marker === null) return marker;
   return (
-    /^(?:Article|Artigo)\s+\d+[A-Za-z]?[.\u00ba]?/iu.exec(marker)?.[0] ??
-    /^Art\.\s*\d+(?:-[A-Za-z])?[\u00ba]?/iu.exec(marker)?.[0] ??
+    /^(?:Article|Artigo)\s+\d+[A-Z]?(?:\.|\u00ba)?/iu.exec(marker)?.[0] ??
+    /^Art\.\s*\d+(?:-[A-Z])?\u00ba?/iu.exec(marker)?.[0] ??
     marker
   );
 }
