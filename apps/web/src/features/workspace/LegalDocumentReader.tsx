@@ -158,8 +158,15 @@ function displayMarker(unit: DocumentUnitResponse): string | null {
   const marker = unit.marker?.trim() ?? null;
   if (unit.kind !== "article" || marker === null) return marker;
   return (
-    /^(?:Article|Artigo)\s+\d+[A-Z]?(?:\.|\u00ba)?/iu.exec(marker)?.[0] ??
-    /^Art\.\s*\d+(?:-[A-Z])?\u00ba?/iu.exec(marker)?.[0] ??
+    legalMarker(marker, /^(?:Article|Artigo)\s+\d+[A-Z]?/iu) ??
+    legalMarker(marker, /^Art\.\s*\d+(?:-[A-Z])?/iu) ??
     marker
   );
+}
+
+function legalMarker(marker: string, pattern: RegExp): string | null {
+  const match = pattern.exec(marker)?.[0];
+  if (match === undefined) return null;
+  const suffix = marker.at(match.length);
+  return suffix === "." || suffix === "\u00ba" ? match + suffix : match;
 }
