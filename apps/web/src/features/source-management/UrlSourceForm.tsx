@@ -76,9 +76,9 @@ export function UrlSourceForm({ onSubmit }: UrlSourceFormProps) {
           : t("sourceManagement.url.submit")}
       </button>
       {status === "saved" ? (
-        <p className="source-form__message" role="status">
+        <output className="source-form__message">
           {t("sourceManagement.queued")}
-        </p>
+        </output>
       ) : null}
       {status === "duplicate" ? (
         <p

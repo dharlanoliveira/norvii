@@ -19,6 +19,7 @@ import (
 	sourcehttp "github.com/dharlanoliveira/norvii/apps/api/internal/source/http"
 	sourcepostgres "github.com/dharlanoliveira/norvii/apps/api/internal/source/postgres"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestPDFSourceAPIStoresAndDeliversCorpusScopedBytes(t *testing.T) {
@@ -100,16 +101,7 @@ func TestURLSourceAPICommitsOriginAndWorkWithoutCrossCorpusDisclosure(t *testing
 		t.Fatalf("OpenPostgresPool() error = %v", err)
 	}
 	t.Cleanup(pool.Close)
-	corpusIDs := []uuid.UUID{uuid.New(), uuid.New()}
-	for index, corpusID := range corpusIDs {
-		if _, err := pool.Exec(ctx, `
-			INSERT INTO corpora (id, name, description, language, jurisdiction)
-			VALUES ($1, $2, 'Integration test corpus.', 'en', 'Test jurisdiction')`,
-			corpusID, "URL source integration "+string(rune('A'+index)),
-		); err != nil {
-			t.Fatalf("insert test corpus error = %v", err)
-		}
-	}
+	corpusIDs := insertURLTestCorpora(t, ctx, pool)
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM ingestion_work WHERE corpus_id = ANY($1)", corpusIDs)
 		_, _ = pool.Exec(context.Background(), "DELETE FROM url_origins WHERE corpus_id = ANY($1)", corpusIDs)
@@ -122,19 +114,38 @@ func TestURLSourceAPICommitsOriginAndWorkWithoutCrossCorpusDisclosure(t *testing
 	mux := http.NewServeMux()
 	sourcehttp.NewHandler(repository, service).Register(mux)
 
-	first := postURLSource(t, mux, corpusIDs[0], "Official law", "https://EXAMPLE.org:443/law?b=2&a=1")
-	if first.Code != http.StatusAccepted || !strings.Contains(first.Body.String(), `"processingStatus":"pending"`) {
-		t.Fatalf("first response = %d/%s, want accepted pending source", first.Code, first.Body.String())
+	requireResponse(t, postURLSource(t, mux, corpusIDs[0], "Official law", "https://EXAMPLE.org:443/law?b=2&a=1"), http.StatusAccepted, `"processingStatus":"pending"`)
+	requireResponse(t, postURLSource(t, mux, corpusIDs[0], "Duplicate", "https://example.org/law?a=1&b=2#section"), http.StatusConflict, `"code":"duplicate_source"`)
+	requireResponse(t, postURLSource(t, mux, corpusIDs[1], "Independent law", "https://example.org/law?a=1&b=2"), http.StatusAccepted, "")
+	assertURLPersistence(t, ctx, pool, corpusIDs)
+	lifecycleSourceID := prepareFailedURLSource(t, ctx, pool, corpusIDs[0])
+	retry := postLifecycle(t, mux, corpusIDs[0], lifecycleSourceID, "retry", 2)
+	if retry.Code != http.StatusAccepted || !strings.Contains(retry.Body.String(), `"processingStatus":"pending"`) {
+		t.Fatalf("retry response = %d/%s, want pending", retry.Code, retry.Body.String())
 	}
-	duplicate := postURLSource(t, mux, corpusIDs[0], "Duplicate", "https://example.org/law?a=1&b=2#section")
-	if duplicate.Code != http.StatusConflict || !strings.Contains(duplicate.Body.String(), `"code":"duplicate_source"`) {
-		t.Fatalf("duplicate response = %d/%s, want safe conflict", duplicate.Code, duplicate.Body.String())
+	stale := postLifecycle(t, mux, corpusIDs[0], lifecycleSourceID, "retry", 2)
+	if stale.Code != http.StatusConflict || !strings.Contains(stale.Body.String(), `"code":"stale_state"`) {
+		t.Fatalf("stale response = %d/%s, want stale conflict", stale.Code, stale.Body.String())
 	}
-	otherCorpus := postURLSource(t, mux, corpusIDs[1], "Independent law", "https://example.org/law?a=1&b=2")
-	if otherCorpus.Code != http.StatusAccepted {
-		t.Fatalf("other corpus response = %d/%s, want isolated acceptance", otherCorpus.Code, otherCorpus.Body.String())
-	}
+}
 
+func insertURLTestCorpora(t *testing.T, ctx context.Context, pool *pgxpool.Pool) []uuid.UUID {
+	t.Helper()
+	corpusIDs := []uuid.UUID{uuid.New(), uuid.New()}
+	for index, corpusID := range corpusIDs {
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO corpora (id, name, description, language, jurisdiction)
+			VALUES ($1, $2, 'Integration test corpus.', 'en', 'Test jurisdiction')`,
+			corpusID, "URL source integration "+string(rune('A'+index)),
+		); err != nil {
+			t.Fatalf("insert test corpus error = %v", err)
+		}
+	}
+	return corpusIDs
+}
+
+func assertURLPersistence(t *testing.T, ctx context.Context, pool *pgxpool.Pool, corpusIDs []uuid.UUID) {
+	t.Helper()
 	for _, corpusID := range corpusIDs {
 		var sources, origins, work int
 		if err := pool.QueryRow(ctx, `
@@ -150,30 +161,34 @@ func TestURLSourceAPICommitsOriginAndWorkWithoutCrossCorpusDisclosure(t *testing
 			t.Fatalf("committed counts = %d/%d/%d, want 1/1/1", sources, origins, work)
 		}
 	}
-	var lifecycleSourceID uuid.UUID
+}
+
+func prepareFailedURLSource(t *testing.T, ctx context.Context, pool *pgxpool.Pool, corpusID uuid.UUID) uuid.UUID {
+	t.Helper()
+	var sourceID uuid.UUID
 	if err := pool.QueryRow(ctx,
-		"SELECT id FROM sources WHERE corpus_id = $1 AND kind = 'url'", corpusIDs[0],
-	).Scan(&lifecycleSourceID); err != nil {
+		"SELECT id FROM sources WHERE corpus_id = $1 AND kind = 'url'", corpusID,
+	).Scan(&sourceID); err != nil {
 		t.Fatalf("query lifecycle source error = %v", err)
 	}
 	if _, err := pool.Exec(ctx,
-		"UPDATE ingestion_work SET status = 'failed' WHERE source_id = $1", lifecycleSourceID,
+		"UPDATE ingestion_work SET status = 'failed' WHERE source_id = $1", sourceID,
 	); err != nil {
 		t.Fatalf("prepare failed work error = %v", err)
 	}
 	if _, err := pool.Exec(ctx, `
 		UPDATE sources
 		SET processing_status = 'failed', latest_failure_category = 'acquisition_failed', version = 2
-		WHERE id = $1`, lifecycleSourceID); err != nil {
+		WHERE id = $1`, sourceID); err != nil {
 		t.Fatalf("prepare failed source error = %v", err)
 	}
-	retry := postLifecycle(t, mux, corpusIDs[0], lifecycleSourceID, "retry", 2)
-	if retry.Code != http.StatusAccepted || !strings.Contains(retry.Body.String(), `"processingStatus":"pending"`) {
-		t.Fatalf("retry response = %d/%s, want pending", retry.Code, retry.Body.String())
-	}
-	stale := postLifecycle(t, mux, corpusIDs[0], lifecycleSourceID, "retry", 2)
-	if stale.Code != http.StatusConflict || !strings.Contains(stale.Body.String(), `"code":"stale_state"`) {
-		t.Fatalf("stale response = %d/%s, want stale conflict", stale.Code, stale.Body.String())
+	return sourceID
+}
+
+func requireResponse(t *testing.T, response *httptest.ResponseRecorder, status int, bodyFragment string) {
+	t.Helper()
+	if response.Code != status || !strings.Contains(response.Body.String(), bodyFragment) {
+		t.Fatalf("response = %d/%s, want status %d containing %q", response.Code, response.Body.String(), status, bodyFragment)
 	}
 }
 

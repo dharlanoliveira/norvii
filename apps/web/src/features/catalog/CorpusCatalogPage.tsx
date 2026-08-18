@@ -88,7 +88,7 @@ export function CorpusCatalogPage({ provider }: CorpusCatalogPageProps) {
         <p role="alert">{t("catalog.mutationFailed")}</p>
       ) : null}
       {state.status === "loading" ? (
-        <p role="status">{t("catalog.loading")}</p>
+        <output>{t("catalog.loading")}</output>
       ) : null}
       {state.status === "failed" ? (
         <p role="alert">{t("catalog.loadFailed")}</p>

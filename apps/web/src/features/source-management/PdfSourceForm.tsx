@@ -87,9 +87,9 @@ export function PdfSourceForm({ onSubmit }: PdfSourceFormProps) {
         />
       ) : null}
       {status === "queued" ? (
-        <p className="source-form__message" role="status">
+        <output className="source-form__message">
           {t("sourceManagement.queued")}
-        </p>
+        </output>
       ) : null}
       {status === "failed" ? (
         <p

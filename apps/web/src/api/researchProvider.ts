@@ -6,9 +6,9 @@ import {
   parseSourceList,
   type CorpusResponse,
   type DocumentResponse,
+  type PublicErrorCode,
   type SourceResponse,
 } from "./contract";
-import type { PublicErrorCode } from "./contract";
 import type {
   CorpusDraft,
   CorpusUpdate,

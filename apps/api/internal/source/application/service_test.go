@@ -45,16 +45,10 @@ func (repository *fakeURLRepository) CreatePDF(
 
 func (repository *fakeURLRepository) QueueLifecycle(
 	_ context.Context,
-	_ uuid.UUID,
-	_ uuid.UUID,
-	_ int,
-	status domain.Status,
-	reason string,
-	_ uuid.UUID,
-	_ time.Time,
+	command sourcepostgres.LifecycleCommand,
 ) (sourcepostgres.Record, error) {
-	repository.queuedStatus = status
-	repository.queuedReason = reason
+	repository.queuedStatus = command.RequiredStatus
+	repository.queuedReason = command.Reason
 	return sourcepostgres.Record{}, nil
 }
 

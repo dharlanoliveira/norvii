@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +17,12 @@ import (
 )
 
 type fakeReader struct {
-	record sourcepostgres.Record
+	record    sourcepostgres.Record
+	err       error
+	pdfOrigin sourcepostgres.PDFOriginRecord
+	pdfError  error
+	urlOrigin sourcepostgres.URLOriginRecord
+	urlError  error
 }
 
 type fakeCommands struct {
@@ -72,23 +78,26 @@ func (commands *fakeCommands) Reprocess(
 }
 
 func (reader *fakeReader) ListByCorpus(context.Context, uuid.UUID) ([]sourcepostgres.Record, error) {
-	return []sourcepostgres.Record{reader.record}, nil
+	return []sourcepostgres.Record{reader.record}, reader.err
 }
 
 func (reader *fakeReader) Get(context.Context, uuid.UUID, uuid.UUID) (sourcepostgres.Record, error) {
-	return reader.record, nil
+	return reader.record, reader.err
 }
 
 func (reader *fakeReader) GetPDFOrigin(
 	context.Context, uuid.UUID, uuid.UUID,
 ) (sourcepostgres.PDFOriginRecord, error) {
-	return sourcepostgres.PDFOriginRecord{}, sourcepostgres.ErrNotFound
+	return reader.pdfOrigin, reader.pdfError
 }
 
 func (reader *fakeReader) GetURLOrigin(
 	context.Context, uuid.UUID, uuid.UUID,
 ) (sourcepostgres.URLOriginRecord, error) {
-	return sourcepostgres.URLOriginRecord{URL: "https://example.org/final"}, nil
+	if reader.urlOrigin.URL == "" {
+		return sourcepostgres.URLOriginRecord{URL: "https://example.org/final"}, reader.urlError
+	}
+	return reader.urlOrigin, reader.urlError
 }
 
 func TestListWritesOnlyCorpusOwnedSources(t *testing.T) {
@@ -254,4 +263,120 @@ func TestRetryAcceptsCurrentVersionAndReturnsPendingSource(t *testing.T) {
 	if recorder.Code != http.StatusAccepted || !strings.Contains(recorder.Body.String(), `"version":4`) {
 		t.Fatalf("response = %d/%s, want accepted versioned retry", recorder.Code, recorder.Body.String())
 	}
+}
+
+func TestReprocessAcceptsReadySource(t *testing.T) {
+	corpusID, sourceID := uuid.New(), uuid.New()
+	mux := http.NewServeMux()
+	NewHandler(&fakeReader{}, &fakeCommands{}).Register(mux)
+
+	recorder := serveSourceRequest(
+		mux, http.MethodPost,
+		"/api/v1/corpora/"+corpusID.String()+"/sources/"+sourceID.String()+"/reprocess",
+		`{"version":3}`,
+	)
+
+	if recorder.Code != http.StatusAccepted || !strings.Contains(recorder.Body.String(), `"version":4`) {
+		t.Fatalf("response = %d/%s, want accepted reprocessing", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestPDFOriginIsDeliveredAsSafeAttachment(t *testing.T) {
+	corpusID, sourceID := uuid.New(), uuid.New()
+	reader := &fakeReader{pdfOrigin: sourcepostgres.PDFOriginRecord{
+		DeliveryFilename: "official.pdf", MediaType: "application/pdf", Content: []byte("%PDF-safe"),
+	}}
+	mux := http.NewServeMux()
+	NewHandler(reader).Register(mux)
+
+	recorder := serveSourceRequest(
+		mux, http.MethodGet,
+		"/api/v1/corpora/"+corpusID.String()+"/sources/"+sourceID.String()+"/origin/pdf", "",
+	)
+
+	if recorder.Code != http.StatusOK || recorder.Body.String() != "%PDF-safe" {
+		t.Fatalf("response = %d/%q, want preserved PDF", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Header().Get("Content-Disposition"), "official.pdf") {
+		t.Fatalf("Content-Disposition = %q, want safe filename", recorder.Header().Get("Content-Disposition"))
+	}
+}
+
+func TestGenericOriginRedirectsToPreservedOfficialURL(t *testing.T) {
+	corpusID, sourceID := uuid.New(), uuid.New()
+	reader := &fakeReader{
+		pdfError:  sourcepostgres.ErrNotFound,
+		urlOrigin: sourcepostgres.URLOriginRecord{URL: "https://example.org/final"},
+	}
+	mux := http.NewServeMux()
+	NewHandler(reader).Register(mux)
+
+	recorder := serveSourceRequest(
+		mux, http.MethodGet,
+		"/api/v1/corpora/"+corpusID.String()+"/sources/"+sourceID.String()+"/origin", "",
+	)
+
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "https://example.org/final" {
+		t.Fatalf("response = %d/%s, want safe official redirect", recorder.Code, recorder.Header().Get("Location"))
+	}
+}
+
+func TestSourceCommandsMapDomainFailures(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{name: "invalid", err: domain.ErrInvalidInput, status: http.StatusBadRequest, code: "invalid_input"},
+		{name: "limit", err: domain.ErrSourceLimit, status: http.StatusConflict, code: "payload_too_large"},
+		{name: "missing corpus", err: domain.ErrCorpusUnavailable, status: http.StatusNotFound, code: "not_found"},
+		{name: "unsupported", err: domain.ErrUnsupportedContent, status: http.StatusBadRequest, code: "unsupported_content"},
+		{name: "stale", err: sourcepostgres.ErrStaleState, status: http.StatusConflict, code: "stale_state"},
+		{name: "transition", err: domain.ErrInvalidTransition, status: http.StatusConflict, code: "unavailable"},
+		{name: "unavailable", err: errors.New("database unavailable"), status: http.StatusServiceUnavailable, code: "unavailable"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			NewHandler(&fakeReader{}, &fakeCommands{err: test.err}).Register(mux)
+			recorder := serveSourceRequest(
+				mux, http.MethodPost, "/api/v1/corpora/"+uuid.NewString()+"/sources/url",
+				`{"title":"Official law","url":"https://example.org/law"}`,
+			)
+			if recorder.Code != test.status || !strings.Contains(recorder.Body.String(), `"code":"`+test.code+`"`) {
+				t.Fatalf("response = %d/%s, want %d/%s", recorder.Code, recorder.Body.String(), test.status, test.code)
+			}
+		})
+	}
+}
+
+func TestSourceReadsMapInvalidAndUnavailableRequests(t *testing.T) {
+	tests := []struct {
+		name   string
+		reader *fakeReader
+		path   string
+		status int
+	}{
+		{name: "invalid corpus", reader: &fakeReader{}, path: "/api/v1/corpora/not-a-uuid/sources", status: http.StatusBadRequest},
+		{name: "unavailable list", reader: &fakeReader{err: errors.New("database unavailable")}, path: "/api/v1/corpora/" + uuid.NewString() + "/sources", status: http.StatusServiceUnavailable},
+		{name: "missing source", reader: &fakeReader{err: sourcepostgres.ErrNotFound}, path: "/api/v1/corpora/" + uuid.NewString() + "/sources/" + uuid.NewString(), status: http.StatusNotFound},
+		{name: "unavailable source", reader: &fakeReader{err: errors.New("database unavailable")}, path: "/api/v1/corpora/" + uuid.NewString() + "/sources/" + uuid.NewString(), status: http.StatusServiceUnavailable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			NewHandler(test.reader).Register(mux)
+			recorder := serveSourceRequest(mux, http.MethodGet, test.path, "")
+			if recorder.Code != test.status {
+				t.Fatalf("response status = %d, want %d", recorder.Code, test.status)
+			}
+		})
+	}
+}
+
+func serveSourceRequest(handler http.Handler, method string, path string, body string) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(method, path, strings.NewReader(body)))
+	return recorder
 }

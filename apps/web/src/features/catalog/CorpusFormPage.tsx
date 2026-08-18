@@ -98,9 +98,9 @@ export function CorpusFormPage({ provider }: CorpusFormPageProps) {
 
   if (state.status === "loading") {
     return (
-      <p className="corpus-form-status" role="status">
+      <output className="corpus-form-status">
         {t("catalog.form.loading")}
-      </p>
+      </output>
     );
   }
   if (state.status === "failed" && state.reason === "load") {
@@ -204,16 +204,23 @@ export function CorpusFormPage({ provider }: CorpusFormPageProps) {
               disabled={saving}
             >
               <Check aria-hidden="true" size={17} />
-              {saving
-                ? t("catalog.form.saving")
-                : isEditing
-                  ? t("catalog.form.saveChanges")
-                  : t("catalog.form.create")}
+              {submitLabel(t, saving, isEditing)}
             </button>
           </div>
         </form>
       </div>
     </section>
+  );
+}
+
+function submitLabel(
+  translate: (key: string) => string,
+  saving: boolean,
+  editing: boolean,
+): string {
+  if (saving) return translate("catalog.form.saving");
+  return translate(
+    editing ? "catalog.form.saveChanges" : "catalog.form.create",
   );
 }
 

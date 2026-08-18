@@ -262,16 +262,21 @@ func (repository *Repository) GetURLOrigin(
 	return origin, nil
 }
 
+// LifecycleCommand describes one optimistic source lifecycle transition.
+type LifecycleCommand struct {
+	CorpusID        uuid.UUID
+	SourceID        uuid.UUID
+	ExpectedVersion int
+	RequiredStatus  domain.Status
+	Reason          string
+	WorkID          uuid.UUID
+	RequestedAt     time.Time
+}
+
 // QueueLifecycle atomically transitions a source to pending and creates explicit work.
 func (repository *Repository) QueueLifecycle(
 	ctx context.Context,
-	corpusID uuid.UUID,
-	sourceID uuid.UUID,
-	expectedVersion int,
-	requiredStatus domain.Status,
-	reason string,
-	workID uuid.UUID,
-	now time.Time,
+	command LifecycleCommand,
 ) (Record, error) {
 	transaction, err := repository.database.Begin(ctx)
 	if err != nil {
@@ -283,29 +288,35 @@ func (repository *Repository) QueueLifecycle(
 		SET processing_status = 'pending', latest_failure_category = NULL,
 		    version = version + 1, updated_at = $5
 		WHERE corpus_id = $1 AND id = $2 AND version = $3 AND processing_status = $4`,
-		corpusID, sourceID, expectedVersion, requiredStatus, now.UTC(),
+		command.CorpusID, command.SourceID, command.ExpectedVersion,
+		command.RequiredStatus, command.RequestedAt.UTC(),
 	)
 	if err != nil {
 		return Record{}, fmt.Errorf("transition source lifecycle: %w", err)
 	}
 	if result.RowsAffected() != 1 {
-		return Record{}, repository.classifyLifecycleMiss(ctx, transaction, corpusID, sourceID, expectedVersion)
+		return Record{}, repository.classifyLifecycleMiss(
+			ctx, transaction, command.CorpusID, command.SourceID, command.ExpectedVersion,
+		)
 	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO ingestion_work (
 			id, source_id, corpus_id, reason, requested_at, created_at, updated_at
 		) VALUES ($1, $2, $3, $4, $5, $5, $5)`,
-		workID, sourceID, corpusID, reason, now.UTC(),
+		command.WorkID, command.SourceID, command.CorpusID,
+		command.Reason, command.RequestedAt.UTC(),
 	); err != nil {
 		return Record{}, classifyCreateError("insert lifecycle ingestion work", err)
 	}
 	record, err := scanRecord(transaction.QueryRow(ctx, `
 		`+sourceProjectionSQL+`
-		WHERE s.corpus_id = $1 AND s.id = $2`, corpusID, sourceID))
+		WHERE s.corpus_id = $1 AND s.id = $2`, command.CorpusID, command.SourceID))
 	if err != nil {
 		return Record{}, fmt.Errorf("read transitioned source: %w", err)
 	}
-	record.Attempts, err = listAttempts(ctx, transaction, corpusID, sourceID)
+	record.Attempts, err = listAttempts(
+		ctx, transaction, command.CorpusID, command.SourceID,
+	)
 	if err != nil {
 		return Record{}, err
 	}

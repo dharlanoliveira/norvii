@@ -99,20 +99,21 @@ function LoadedCorpusWorkspace({
     let attempts = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = (): void => {
-      timer = setTimeout(() => {
+      timer = setTimeout(async () => {
         const controller = new AbortController();
-        void provider
-          .listSources(corpusId, controller.signal)
-          .then((sources) => {
-            if (cancelled) return;
-            attempts += 1;
-            setState((current) =>
-              current.status === "ready" ? { ...current, sources } : current,
-            );
-            if (attempts < 90 && sources.some(isActiveSource)) poll();
-            else setPollSources(false);
-          })
-          .catch(() => setPollSources(false));
+        try {
+          const sources = await provider.listSources(
+            corpusId,
+            controller.signal,
+          );
+          if (cancelled) return;
+          attempts += 1;
+          setState((current) => replaceWorkspaceSources(current, sources));
+          if (attempts < 90 && sources.some(isActiveSource)) poll();
+          else setPollSources(false);
+        } catch {
+          setPollSources(false);
+        }
       }, 1000);
     };
     poll();
@@ -146,7 +147,7 @@ function LoadedCorpusWorkspace({
   };
 
   if (state.status === "loading")
-    return <p role="status">{t("workspace.loading")}</p>;
+    return <output>{t("workspace.loading")}</output>;
   if (state.status === "failed")
     return <p role="alert">{t("workspace.loadFailed")}</p>;
 
@@ -245,28 +246,31 @@ function LoadedCorpusWorkspace({
             />
           ) : null}
           {state.sources.length === 0 ? (
-            <p role="status">{t("workspace.emptySources")}</p>
+            <output>{t("workspace.emptySources")}</output>
           ) : null}
           <div className="source-tree" role="tree" aria-label={t("tree.label")}>
-            {state.sources.map((source) => (
-              <button
-                type="button"
-                role="treeitem"
-                aria-selected={source.id === selectedSourceId}
-                aria-label={`${source.title} (${t(`sourceStatus.${source.processingStatus}`)})`}
-                className="source-tree__source"
-                key={source.id}
-                onClick={() => selectSource(source)}
-              >
-                {source.kind === "pdf" ? (
-                  <FileText aria-hidden="true" size={15} />
-                ) : (
-                  <ExternalLink aria-hidden="true" size={15} />
-                )}
-                <span>{source.title}</span>
-                <small>{t(`sourceStatus.${source.processingStatus}`)}</small>
-              </button>
-            ))}
+            {state.sources.map((source) => {
+              const statusLabel = t(`sourceStatus.${source.processingStatus}`);
+              return (
+                <button
+                  type="button"
+                  role="treeitem"
+                  aria-selected={source.id === selectedSourceId}
+                  aria-label={`${source.title} (${statusLabel})`}
+                  className="source-tree__source"
+                  key={source.id}
+                  onClick={() => selectSource(source)}
+                >
+                  {source.kind === "pdf" ? (
+                    <FileText aria-hidden="true" size={15} />
+                  ) : (
+                    <ExternalLink aria-hidden="true" size={15} />
+                  )}
+                  <span>{source.title}</span>
+                  <small>{statusLabel}</small>
+                </button>
+              );
+            })}
           </div>
         </aside>
         <section className="workspace-primary">
@@ -302,12 +306,12 @@ function LoadedCorpusWorkspace({
               />
             ) : null}
             {selectedSource && selectedSource.processingStatus !== "ready" ? (
-              <p role="status">
+              <output>
                 {t(`sourceStatus.${selectedSource.processingStatus}`)}
-              </p>
+              </output>
             ) : null}
             {documentState.status === "loading" ? (
-              <p role="status">{t("viewer.loading")}</p>
+              <output>{t("viewer.loading")}</output>
             ) : null}
             {documentState.status === "failed" ? (
               <p role="alert">{t("viewer.loadFailed")}</p>
@@ -340,6 +344,13 @@ function LoadedCorpusWorkspace({
     );
     setPollSources(isActiveSource(updated));
   }
+}
+
+function replaceWorkspaceSources(
+  state: WorkspaceState,
+  sources: readonly SourceResponse[],
+): WorkspaceState {
+  return state.status === "ready" ? { ...state, sources } : state;
 }
 
 function isActiveSource(source: SourceResponse): boolean {

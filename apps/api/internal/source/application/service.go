@@ -15,7 +15,7 @@ type urlRepository interface {
 	CreateURL(context.Context, domain.Source, string, string, uuid.UUID) (sourcepostgres.Record, error)
 	CreatePDF(context.Context, domain.Source, domain.PDFOrigin, uuid.UUID) (sourcepostgres.Record, error)
 	QueueLifecycle(
-		context.Context, uuid.UUID, uuid.UUID, int, domain.Status, string, uuid.UUID, time.Time,
+		context.Context, sourcepostgres.LifecycleCommand,
 	) (sourcepostgres.Record, error)
 }
 
@@ -24,7 +24,11 @@ func (service *Service) Retry(
 	ctx context.Context, corpusID uuid.UUID, sourceID uuid.UUID, version int,
 ) (sourcepostgres.Record, error) {
 	return service.repository.QueueLifecycle(
-		ctx, corpusID, sourceID, version, domain.StatusFailed, "retry", service.newID(), service.now(),
+		ctx, sourcepostgres.LifecycleCommand{
+			CorpusID: corpusID, SourceID: sourceID, ExpectedVersion: version,
+			RequiredStatus: domain.StatusFailed, Reason: "retry",
+			WorkID: service.newID(), RequestedAt: service.now(),
+		},
 	)
 }
 
@@ -33,7 +37,11 @@ func (service *Service) Reprocess(
 	ctx context.Context, corpusID uuid.UUID, sourceID uuid.UUID, version int,
 ) (sourcepostgres.Record, error) {
 	return service.repository.QueueLifecycle(
-		ctx, corpusID, sourceID, version, domain.StatusReady, "reprocess", service.newID(), service.now(),
+		ctx, sourcepostgres.LifecycleCommand{
+			CorpusID: corpusID, SourceID: sourceID, ExpectedVersion: version,
+			RequiredStatus: domain.StatusReady, Reason: "reprocess",
+			WorkID: service.newID(), RequestedAt: service.now(),
+		},
 	)
 }
 

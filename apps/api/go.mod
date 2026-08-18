@@ -7,6 +7,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jackc/tern/v2 v2.4.2
 	github.com/neo4j/neo4j-go-driver/v6 v6.2.0
+	github.com/pashagolub/pgxmock/v4 v4.9.0
 )
 
 require (

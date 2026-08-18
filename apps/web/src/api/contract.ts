@@ -134,7 +134,7 @@ const errorCodes = new Set<PublicErrorCode>([
 
 export function parseCorpusList(value: unknown): readonly CorpusResponse[] {
   if (!Array.isArray(value)) {
-    throw new Error("Corpus list response must be an array.");
+    throw new TypeError("Corpus list response must be an array.");
   }
   return value.map((item, index) => parseCorpus(item, index));
 }
@@ -145,7 +145,7 @@ export function parseCorpusResponse(value: unknown): CorpusResponse {
 
 export function parseSourceList(value: unknown): readonly SourceResponse[] {
   if (!Array.isArray(value)) {
-    throw new Error("Source list response must be an array.");
+    throw new TypeError("Source list response must be an array.");
   }
   return value.map((item, index) => parseSource(item, index));
 }
@@ -154,7 +154,7 @@ export function parseDocumentResponse(value: unknown): DocumentResponse {
   const document = record(value, "Document response");
   const rawUnits = document.units;
   if (!Array.isArray(rawUnits)) {
-    throw new Error("Document units must be an array.");
+    throw new TypeError("Document units must be an array.");
   }
   return {
     id: uuidValue(document.id, "document ID"),
@@ -435,7 +435,7 @@ function nullableNonnegativeInteger(
 function dateTimeValue(value: unknown, label: string): string {
   const text = stringValue(value, label);
   if (Number.isNaN(Date.parse(text))) {
-    throw new Error(`${label} must be an RFC 3339 timestamp.`);
+    throw new TypeError(`${label} must be an RFC 3339 timestamp.`);
   }
   return text;
 }

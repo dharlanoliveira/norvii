@@ -107,7 +107,7 @@ func decodeStrict(payload []byte, destination any) error {
 	if err := decoder.Decode(destination); err != nil {
 		return fmt.Errorf("decode v1 contract payload: %w", err)
 	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+	if decoder.Decode(&struct{}{}) != io.EOF {
 		return fmt.Errorf("decode v1 contract payload: trailing JSON value")
 	}
 	return nil
