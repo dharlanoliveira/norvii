@@ -18,13 +18,16 @@ The project is a technical demonstration and does not provide legal advice.
 
 ## Project status
 
-The first production React client is available under `apps/web/`. It implements the approved bilingual corpus catalog and research workspace with production-owned deterministic data, source browsing, simulated structured chat, citations, abstention, and failure states.
+Feature 004 provides the first authoritative end-to-end product slice. The React
+client reads and manages corpora through the Go API, accepts public HTTPS pages and
+PDF uploads, follows ingestion status, and browses persisted documents and legal
+units. The Python worker safely acquires and extracts source content and atomically
+publishes immutable document revisions to PostgreSQL. Chat is intentionally
+unavailable until the grounded RAG feature is implemented.
 
-The local persistence foundation is also available. It runs PostgreSQL with pgvector
-as canonical storage and standalone Neo4j Community as a rebuildable graph
-projection, applies the initial vector migration, and verifies both stores through
-independent Go and Python production drivers. The current React client remains
-independently runnable and does not yet call these modules.
+PostgreSQL with pgvector is the canonical store. Standalone Neo4j Community remains
+a rebuildable graph projection for later GraphRAG features and is not written by
+Feature 004.
 
 ## Bootstrap the complete local environment
 
@@ -38,12 +41,14 @@ make bootstrap
 Codex users can invoke `$bootstrap-norvii` for the same managed workflow. Runtime
 output is retained by component under `.log/`: `bootstrap.log`, `web.log`,
 `api.log`, `ingestion.log`, `postgres.log`, and `neo4j.log`. Repeated execution
-reuses healthy processes rather than starting duplicates.
+reuses healthy processes rather than starting duplicates. Readiness is reported only
+after both stable initial sources reach `ready` or an explicit retryable `failed`
+state within the configured bound.
 
 Inspect or stop the managed environment with `make local-status` and
 `make local-stop`. Stopping retains both database volumes.
 
-## Run the production client
+## Run an individual module
 
 Prerequisites: Node.js 24 and npm.
 
@@ -52,14 +57,16 @@ npm --prefix apps/web ci
 npm --prefix apps/web run dev
 ```
 
-Open the local address printed by Vite. Validate the complete module with:
+The web development server expects the API on `127.0.0.1:8080`; use `make bootstrap`
+for the complete environment. Validate the web module with:
 
 ```bash
 npm --prefix apps/web exec playwright install chromium
 make -C apps/web ci
 ```
 
-See the [production web client guide](apps/web/README.md) for browser tests, supported behavior, and current limitations.
+See the [web](apps/web/README.md), [API](apps/api/README.md), and
+[ingestion](apps/ingestion/README.md) module guides for focused development.
 
 ## Run the persistence foundation
 
@@ -98,7 +105,7 @@ View the SonarQube Cloud dashboards for [norvii-web](https://sonarcloud.io/proje
   contributors move from capability to verified code.
 - [Development tooling](docs/development/tooling.md): pinned Spec Kit version, project preset, workflow overlay, and upgrade rules.
 - [Continuous integration](docs/development/continuous-integration.md): GitHub Actions builds, SonarQube Cloud gates, and failure notifications.
-- [Local environment](docs/operations/local-environment.md): PostgreSQL, Neo4j, migration, verification, and guarded reset commands.
+- [Local environment](docs/operations/local-environment.md): full application bootstrap, logs, health, persistence, and guarded reset commands.
 - [Executable prototyping](docs/development/prototyping.md): how React prototypes are built, reviewed, and approved before production.
 - [Prototype workspace](prototypes/README.md): executable product experiments kept separate from production applications.
 - [Production web client](apps/web/README.md): local startup, validation commands, and current client boundaries.

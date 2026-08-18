@@ -2,7 +2,7 @@ import { BookOpenText, MessagesSquare } from "lucide-react";
 import { useRef, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { WorkspaceMode } from "./useWorkspaceController";
+export type WorkspaceMode = "chat" | "source";
 
 interface WorkspaceModeSelectorProps {
   readonly mode: WorkspaceMode;

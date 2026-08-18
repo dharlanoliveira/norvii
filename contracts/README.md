@@ -18,6 +18,12 @@ compatibility rules are stable enough for reuse.
 Formats remain proposals until feature research confirms them. Do not add an empty
 schema or choose a generator outside a feature plan.
 
+## Active contracts
+
+| Family | Version | Producer | Consumers | Location |
+| --- | --- | --- | --- | --- |
+| Corpus ingestion | v1 | Go API and Python ingestion | React client, Go API, Python ingestion | [`corpus-ingestion/v1`](corpus-ingestion/v1/) |
+
 ## Contract requirements
 
 Every promoted contract documents:
@@ -30,6 +36,16 @@ Every promoted contract documents:
 - generated-code commands, if any;
 - provider and consumer contract tests;
 - deprecation and migration procedure.
+
+Validate all promoted contracts and committed examples with:
+
+```bash
+python .github/scripts/validate_contracts.py
+```
+
+CI runs this validator before module builds. Go provider tests, Python consumer
+tests, and TypeScript response parsers additionally prove the v1 contract at their
+runtime boundaries.
 
 Contract names and payload fields use English. Corpus text and user-visible content
 retain their original language.

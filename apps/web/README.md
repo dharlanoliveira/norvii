@@ -1,53 +1,44 @@
-# Norvii Production Web Client
+# Norvii Web
 
-This React and TypeScript application implements Norvii's approved corpus research experience. It presents one Portuguese and one English legal corpus, an accessible source library, prepared document and external-link viewers, and a structured simulated chat with citations and abstention.
+The React and TypeScript client presents the authoritative bilingual corpus catalog
+and research workspace. It consumes the Go HTTP API, manages corpus lifecycle,
+submits public HTTPS pages and PDFs, polls bounded ingestion state, and renders
+persisted documents and addressable units. Product-authored text comes exclusively
+from the English and Portuguese localization resources.
 
-## Prerequisites
+## Run locally
 
-- Node.js 24
-- npm
-- Chromium for Playwright browser tests
-
-Docker, PostgreSQL, Neo4j, the Go API, Python ingestion, model credentials, and network access to corpus sources are not required.
-
-## Start the client
-
-From the repository root:
+Use `make bootstrap` at the repository root for the complete product. For focused web
+development, first run persistence, the API, and worker, then:
 
 ```bash
 npm --prefix apps/web ci
 npm --prefix apps/web run dev
 ```
 
-Open the local address printed by Vite. The client starts in English; use the language control to switch product-authored interface text to Portuguese.
+Vite proxies `/api` to `http://127.0.0.1:8080`. Open
+`http://127.0.0.1:5173` unless Vite reports another configured port.
 
-## Validate the module
-
-Run the module CI contract:
+## Quality contract
 
 ```bash
 npm --prefix apps/web exec playwright install chromium
 make -C apps/web ci
 ```
 
-The command verifies formatting, lint rules, strict TypeScript checks, component and accessibility tests, the production build, the compressed initial JavaScript entry budget, and Playwright browser journeys.
+The contract enforces formatting, ESLint, strict TypeScript, unit and accessibility
+tests, production build, runtime-fixture exclusion, bundle budget, and Playwright
+journeys. Browser tests start controlled API responses; they do not require a live
+database.
 
-Run browser journeys independently when iterating on the interface:
+## Current boundary
 
-```bash
-npm --prefix apps/web exec playwright install chromium
-npm --prefix apps/web run test:e2e
-```
+- PostgreSQL-backed API responses are authoritative; runtime demonstration fixtures
+  are prohibited.
+- English is the default interface and Portuguese has complete key parity.
+- Legal content remains in its source language and is not translated.
+- PDF origin bytes and captured URL origins are opened only after user activation.
+- Chat clearly reports that grounded answers are unavailable until Feature 005.
 
-Playwright covers the approved 1280 by 720 and 1440 by 900 viewports, keyboard navigation, citation navigation, locale switching, unknown routes, and visual references.
-
-## Current boundaries
-
-- Corpus and source records are immutable production-owned demonstration data.
-- Chat responses are deterministic and simulated; they do not call an LLM.
-- Conversations and interface language are limited to the mounted browser session.
-- Legal content, corpus titles, citations, and user questions are not automatically translated.
-- Fixed external HTTPS links open only after explicit user activation.
-- The client imports no code, fixture, style, or asset from `prototypes/web/`.
-
-The [Feature 002 quickstart](../../specs/002-production-web-experience/quickstart.md) defines the acceptance review sequence.
+The [Feature 004 quickstart](../../specs/004-corpus-catalog/quickstart.md) defines the
+end-to-end acceptance journey.

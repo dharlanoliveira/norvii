@@ -21,9 +21,8 @@ Start Norvii through its repository-owned orchestration and report a concise rea
      PostgreSQL and Neo4j data is preserved.
    Do not start Vite or Compose directly because that bypasses managed logging and
    process identity checks.
-4. On success, report the web URL and the absolute `.log/` path. State that the Go
-   API and Python ingestion module currently run migration and verification commands
-   during bootstrap; they do not yet expose long-lived server or worker processes.
+4. On success, report the web URL and the absolute `.log/` path. Confirm that the
+   Go API, Python ingestion worker, React client, PostgreSQL, and Neo4j are running.
 5. On failure, inspect only the relevant bounded tails from:
    - `.log/bootstrap.log` for persistence orchestration and startup failures;
    - `.log/web.log` for dependency installation, React, and Vite;

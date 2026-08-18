@@ -1,9 +1,9 @@
 import type { englishTranslation } from "../en/translation";
 
-type TranslationShape = {
-  [Section in keyof typeof englishTranslation]: {
-    [Key in keyof (typeof englishTranslation)[Section]]: string;
-  };
+type TranslationShape<Value> = {
+  [Key in keyof Value]: Value[Key] extends string
+    ? string
+    : TranslationShape<Value[Key]>;
 };
 
 export const portugueseTranslation = {
@@ -30,6 +30,46 @@ export const portugueseTranslation = {
     sourceCount: "{{count}} fonte",
     sourceCount_other: "{{count}} fontes",
     openCorpus: "Abrir corpus",
+    loading: "Carregando corpus autoritativos...",
+    loadFailed:
+      "Não foi possível carregar o catálogo. Verifique a API e tente novamente.",
+    empty: "Nenhum corpus está disponível.",
+    createCorpus: "Criar corpus",
+    editCorpus: "Editar corpus",
+    manageCorpus: "Gerenciar corpus",
+    disableCorpus: "Desabilitar corpus",
+    enableCorpus: "Habilitar corpus",
+    confirmDisable:
+      "Desabilitar {{name}}? Os documentos e o histórico de ingestão serão preservados.",
+    status: {
+      enabled: "Habilitado",
+      disabled: "Desabilitado",
+    },
+    mutationFailed:
+      "Não foi possível salvar a alteração. Recarregue e tente novamente.",
+    staleState:
+      "Este corpus mudou depois que você o abriu. Recarregue antes de salvar novamente.",
+    form: {
+      createKicker: "Defina um limite de evidências",
+      createTitle: "Criar um corpus jurídico",
+      createIntroduction:
+        "Estabeleça uma coleção focada antes de adicionar documentos e fontes oficiais da web.",
+      editKicker: "Configurações do corpus",
+      editTitle: "Refinar o limite do corpus",
+      editIntroduction:
+        "Atualize a identidade da coleção sem alterar seus documentos ou histórico de processamento.",
+      name: "Nome",
+      description: "Descrição",
+      language: "Idioma",
+      jurisdiction: "Jurisdição",
+      create: "Criar corpus",
+      saveChanges: "Salvar alterações",
+      saving: "Salvando…",
+      cancel: "Cancelar",
+      loading: "Carregando configurações do corpus…",
+      loadFailed: "Não foi possível carregar as configurações do corpus.",
+      backToCatalog: "Voltar ao catálogo",
+    },
   },
   workspace: {
     backToCatalog: "Todos os corpus",
@@ -39,6 +79,9 @@ export const portugueseTranslation = {
     chat: "Chat",
     source: "Fonte",
     modeLabel: "Modo de pesquisa",
+    loading: "Carregando o espaço do corpus...",
+    loadFailed: "Este espaço de corpus está indisponível.",
+    emptySources: "Ainda não há fontes cadastradas neste corpus.",
   },
   tree: {
     label: "Fontes do corpus",
@@ -57,6 +100,7 @@ export const portugueseTranslation = {
     noSourceTitle: "Selecione uma fonte na biblioteca.",
     noSourceBody:
       "Documentos e links oficiais abrem aqui enquanto sua conversa permanece disponível.",
+    sourceActions: "Ações da fonte",
     metadata: "Detalhes da fonte",
     authority: "Autoridade",
     reference: "Referência oficial",
@@ -68,30 +112,96 @@ export const portugueseTranslation = {
     preview: "Visão geral capturada",
     previewUnavailable: "Prévia indisponível",
     openOfficial: "Abrir fonte oficial",
+    downloadPdf: "Baixar PDF preservado",
     opensNewContext: "Abre a página HTTPS oficial em uma nova aba.",
+    loading: "Carregando o documento persistido...",
+    loadFailed: "Não foi possível carregar o documento persistido.",
+    pipelineVersion: "Pipeline de extração",
+    publishedAt: "Publicado em",
+    locations: "Locais do documento",
+    readerLabel: "Leitor de documento jurídico",
+    locationLabel: "Local do documento",
+    locationCount: "{{count}} locais",
+    unitKinds: {
+      document: "Documento",
+      title: "Preâmbulo e considerandos",
+      chapter: "Capítulo",
+      section: "Seção",
+      article: "Artigo",
+      recital: "Considerando",
+      paragraph: "Parágrafo",
+      item: "Item",
+      block: "Trecho",
+    },
+    sourceRevision: "Revisão da fonte",
+    capturedAt: "Capturado em",
+    mediaType: "Tipo de mídia",
+    byteSize: "Bytes da origem",
+    originHash: "SHA-256 da origem",
+    documentHash: "SHA-256 do documento",
   },
   chat: {
     regionLabel: "Conversa de pesquisa do corpus",
     kicker: "Assistente limitado ao corpus",
-    title: "Pergunte com base nas evidências desta sala.",
-    emptyBody:
-      "Experimente uma pergunta preparada para inspecionar uma resposta estruturada e sua fonte.",
-    userLabel: "Você",
-    assistantLabel: "Norvii",
-    simulated: "Resposta simulada",
-    responding: "Revisando as evidências preparadas do corpus...",
-    composerLabel: "Pergunta de pesquisa",
-    composerPlaceholder: "Pergunte sobre este corpus...",
-    send: "Enviar pergunta",
-    citationLabel: "Abrir citação {{label}}",
-    abstention:
-      "As evidências preparadas nesta demonstração não sustentam uma resposta. O Norvii se abstém em vez de inferir uma conclusão jurídica.",
-    failureTitle: "A resposta simulada não pôde ser concluída.",
-    failureBody: "Sua pergunta foi preservada. Tente enviá-la novamente.",
-    retry: "Tentar novamente",
-    retryComplete:
-      "A nova tentativa foi concluída. Nenhuma resposta foi adicionada porque este cenário preparado demonstra apenas a recuperação.",
-    localData: "Dados locais de demonstração",
+    unavailable: "O chat fundamentado ainda não está disponível nesta feature.",
+    unavailableTitle: "O chat fundamentado será a próxima etapa.",
+  },
+  sourceStatus: {
+    pending: "Pendente",
+    processing: "Processando",
+    ready: "Pronto",
+    failed: "Falhou",
+  },
+  sourceManagement: {
+    addUrl: "Adicionar URL oficial",
+    addPdf: "Enviar PDF",
+    titleLabel: "Título da fonte",
+    saving: "Adicionando fonte...",
+    queued: "Fonte adicionada à fila de ingestão.",
+    duplicate: "Esta fonte já está cadastrada neste corpus.",
+    failed:
+      "Não foi possível adicionar a fonte. Revise os valores e tente novamente.",
+    url: {
+      title: "Adicionar uma fonte oficial da web",
+      urlLabel: "URL HTTPS oficial",
+      submit: "Adicionar fonte URL",
+    },
+    pdf: {
+      title: "Enviar um PDF oficial",
+      fileLabel: "Documento PDF",
+      submit: "Enviar fonte PDF",
+      progress: "Enviando PDF",
+      failed: "Escolha um PDF válido de até 10 MB e tente novamente.",
+    },
+    lifecycle: {
+      label: "Ciclo de ingestão da fonte",
+      safeFailure:
+        "A tentativa mais recente terminou com uma categoria segura de falha.",
+      retry: "Tentar ingestão novamente",
+      reprocess: "Reprocessar fonte",
+      stale: "Esta fonte mudou. Recarregue antes de tentar a ação novamente.",
+      failed: "Não foi possível adicionar a ação da fonte à fila.",
+      attemptHistory: "Histórico de tentativas de processamento",
+      attemptNumber: "Tentativa {{number}}",
+      pipelineVersion: "Versão do pipeline",
+      startedAt: "Iniciada em",
+      finishedAt: "Concluída em",
+      attemptStatus: "Status da tentativa",
+      failureCategory: "Categoria da falha",
+      acquiredBytes: "Bytes adquiridos",
+      normalizedCharacters: "Caracteres normalizados",
+      unitCount: "Unidades do documento",
+      duration: "Duração em milissegundos",
+      attemptStates: {
+        processing: "Processando",
+        succeeded: "Concluída",
+        failed: "Falhou",
+      },
+      submittedUrl: "URL enviada",
+      originalFilename: "Nome original do arquivo",
+      confirmReprocess:
+        "Reprocessar {{title}}? O documento atual continuará disponível até que a substituição seja concluída.",
+    },
   },
   errors: {
     unknownCorpusKicker: "Sala de evidências desconhecida",
@@ -101,4 +211,4 @@ export const portugueseTranslation = {
     returnToCatalog: "Voltar ao catálogo de corpus",
     unavailableCitation: "O local citado está indisponível.",
   },
-} satisfies TranslationShape;
+} satisfies TranslationShape<typeof englishTranslation>;

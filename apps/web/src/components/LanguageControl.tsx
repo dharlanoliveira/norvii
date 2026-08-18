@@ -2,7 +2,7 @@ import { Languages } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { InterfaceLanguage } from "../research/domain/models";
+type InterfaceLanguage = "en" | "pt";
 
 export function LanguageControl() {
   const { i18n, t } = useTranslation();

@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -21,6 +24,12 @@ if TYPE_CHECKING:
 
 PID_IDENTITY_FIELD_COUNT = 2
 MAX_TCP_PORT = 65_535
+HTTP_OK = 200
+ENVIRONMENT_ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
+INITIAL_CORPORA = {
+    "en": "10000000-0000-4000-8000-000000000002",
+    "pt": "10000000-0000-4000-8000-000000000001",
+}
 
 
 class LocalEnvironmentError(RuntimeError):
@@ -57,6 +66,21 @@ class RepositoryLayout:
         return self.root / "apps" / "web"
 
     @property
+    def api_directory(self) -> Path:
+        """Return the Go API module directory."""
+        return self.root / "apps" / "api"
+
+    @property
+    def ingestion_directory(self) -> Path:
+        """Return the Python ingestion module directory."""
+        return self.root / "apps" / "ingestion"
+
+    @property
+    def environment_runner(self) -> Path:
+        """Return the non-evaluating environment wrapper."""
+        return self.root / "infra" / "scripts" / "run-with-environment.py"
+
+    @property
     def log_directory(self) -> Path:
         """Return the component log and lifecycle state directory."""
         return self.root / ".log"
@@ -87,9 +111,7 @@ class RepositoryLayout:
         if self.log_directory.is_symlink() or (
             self.log_directory.exists() and not self.log_directory.is_dir()
         ):
-            raise LocalEnvironmentError(
-                ".log must be a local directory, not a link or file."
-            )
+            raise LocalEnvironmentError(".log must be a local directory, not a link or file.")
 
     def validate_environment(self) -> None:
         """Validate local configuration without exposing credentials."""
@@ -100,6 +122,34 @@ class RepositoryLayout:
             raise LocalEnvironmentError(
                 "infra/.env still contains password markers; replace both before startup."
             )
+
+    def environment_values(self) -> dict[str, str]:
+        """Read the same strict dotenv subset accepted by the process wrapper."""
+        values: dict[str, str] = {}
+        for line_number, raw_line in enumerate(
+            self.environment_file.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            match = ENVIRONMENT_ASSIGNMENT.fullmatch(line)
+            if match is None:
+                raise LocalEnvironmentError(
+                    f"infra/.env has an invalid assignment on line {line_number}."
+                )
+            name, raw_value = match.groups()
+            try:
+                tokens = shlex.split(raw_value, comments=True, posix=True)
+            except ValueError as error:
+                raise LocalEnvironmentError(
+                    f"infra/.env has invalid quoting on line {line_number}."
+                ) from error
+            if len(tokens) > 1:
+                raise LocalEnvironmentError(
+                    f"infra/.env has an unquoted value on line {line_number}."
+                )
+            values[name] = tokens[0] if tokens else ""
+        return values
 
 
 class ComponentLogger:
@@ -116,9 +166,7 @@ class ComponentLogger:
         for component in self.COMPONENTS:
             log_path = self._layout.log(component)
             if log_path.is_symlink():
-                raise LocalEnvironmentError(
-                    f"Refusing linked component log .log/{log_path.name}."
-                )
+                raise LocalEnvironmentError(f"Refusing linked component log .log/{log_path.name}.")
             log_path.touch(exist_ok=True)
 
     def open(self, component: str) -> TextIO:
@@ -140,7 +188,7 @@ class CommandRunner:
     def run(self, component: str, command: list[str]) -> None:
         """Run an internal command and raise with its component log on failure."""
         with self._logger.open(component) as log:
-            completed = subprocess.run(
+            completed = subprocess.run(  # noqa: S603 - repository-owned argv only
                 command,
                 cwd=self._layout.root,
                 check=False,
@@ -156,7 +204,7 @@ class CommandRunner:
 
     def capture(self, component: str, command: list[str]) -> str:
         """Run an internal command while returning and logging its standard output."""
-        completed = subprocess.run(
+        completed = subprocess.run(  # noqa: S603 - repository-owned argv only
             command,
             cwd=self._layout.root,
             check=False,
@@ -196,7 +244,7 @@ class ManagedProcess:
         if self.is_running():
             return False
         with self._logger.open(self._component) as log:
-            process = subprocess.Popen(
+            process = subprocess.Popen(  # noqa: S603 - repository-owned argv only
                 self._command,
                 cwd=self._layout.root,
                 stdin=subprocess.DEVNULL,
@@ -242,10 +290,7 @@ class ManagedProcess:
         except (FileNotFoundError, ProcessLookupError):
             self._layout.pid(self._component).unlink(missing_ok=True)
             return
-        if (
-            current_start_time != recorded_start_time
-            or os.getpgid(process_id) != process_id
-        ):
+        if current_start_time != recorded_start_time or os.getpgid(process_id) != process_id:
             raise LocalEnvironmentError(
                 f"Refusing to stop unverified {self._component} PID {process_id}."
             )
@@ -267,9 +312,7 @@ class ManagedProcess:
 
     def _read_identity(self) -> tuple[int, int] | None:
         try:
-            values = (
-                self._layout.pid(self._component).read_text(encoding="utf-8").split()
-            )
+            values = self._layout.pid(self._component).read_text(encoding="utf-8").split()
         except FileNotFoundError:
             return None
         if len(values) == 1 and values[0].isdigit():
@@ -277,9 +320,7 @@ class ManagedProcess:
             self._validate_legacy_process(process_id)
             _, start_time = self._read_process_stat(process_id)
             return process_id, start_time
-        if len(values) != PID_IDENTITY_FIELD_COUNT or not all(
-            value.isdigit() for value in values
-        ):
+        if len(values) != PID_IDENTITY_FIELD_COUNT or not all(value.isdigit() for value in values):
             raise LocalEnvironmentError(f"Invalid {self._component} PID file.")
         return int(values[0]), int(values[1])
 
@@ -315,6 +356,21 @@ class LocalEnvironmentManager:
         if not web_port.isdigit() or not 1 <= int(web_port) <= MAX_TCP_PORT:
             raise LocalEnvironmentError("NORVII_WEB_PORT must be a valid TCP port.")
         self._web_url = f"http://127.0.0.1:{web_port}"
+        environment = layout.environment_values() if layout.environment_file.is_file() else {}
+        api_port = environment.get("NORVII_API_PORT", "8080")
+        if not api_port.isdigit() or not 1 <= int(api_port) <= MAX_TCP_PORT:
+            raise LocalEnvironmentError("NORVII_API_PORT must be a valid TCP port.")
+        self._api_health_url = f"http://127.0.0.1:{api_port}/healthz"
+        self._api_base_url = f"http://127.0.0.1:{api_port}/api/v1"
+        initial_timeout = os.environ.get(
+            "NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS",
+            environment.get("NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS", "90"),
+        )
+        if not initial_timeout.isdigit() or int(initial_timeout) <= 0:
+            raise LocalEnvironmentError(
+                "NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS must be a positive integer."
+            )
+        self._initial_ingestion_timeout = int(initial_timeout)
         compose = [
             "docker",
             "compose",
@@ -346,6 +402,38 @@ class LocalEnvironmentManager:
                 layout,
                 self._logger,
             ),
+            "api": ManagedProcess(
+                "api",
+                [
+                    sys.executable,
+                    str(layout.environment_runner),
+                    str(layout.environment_file),
+                    "go",
+                    "-C",
+                    str(layout.api_directory),
+                    "run",
+                    "./cmd/server",
+                ],
+                ("go", "cmd/server"),
+                layout,
+                self._logger,
+            ),
+            "ingestion": ManagedProcess(
+                "ingestion",
+                [
+                    sys.executable,
+                    str(layout.environment_runner),
+                    str(layout.environment_file),
+                    "uv",
+                    "run",
+                    "--directory",
+                    str(layout.ingestion_directory),
+                    "norvii-ingestion-worker",
+                ],
+                ("uv", "norvii-ingestion-worker"),
+                layout,
+                self._logger,
+            ),
             "web": ManagedProcess(
                 "web",
                 [
@@ -369,30 +457,32 @@ class LocalEnvironmentManager:
 
     def start(self) -> None:
         """Start and verify every currently executable local component."""
-        self._prepare(required_commands=("docker", "make", "npm"))
+        self._prepare(required_commands=("docker", "go", "make", "npm", "uv"))
         started_components: list[str] = []
         try:
             self._runner.run("bootstrap", self._make("persistence-up"))
             self._runner.run("api", self._make("persistence-migrate"))
             self._runner.run("api", self._make("persistence-verify-api"))
-            self._layout.ready_marker("api").touch()
             self._runner.run("ingestion", self._make("persistence-verify-ingestion"))
-            self._layout.ready_marker("ingestion").touch()
             if not self._processes["web"].is_running():
-                self._runner.run(
-                    "web", ["npm", "--prefix", str(self._layout.web_directory), "ci"]
-                )
+                self._runner.run("web", ["npm", "--prefix", str(self._layout.web_directory), "ci"])
             started_components.extend(
                 component
-                for component in ("postgres", "neo4j", "web")
+                for component in ("postgres", "neo4j", "api", "ingestion", "web")
                 if self._processes[component].start()
             )
+            self._wait_for_api()
             self._wait_for_web()
+            initial_states = self._wait_for_initial_sources()
         except LocalEnvironmentError:
             self._stop_managed_processes(reversed(started_components))
             raise
+        states = ", ".join(
+            f"{language}={initial_states[language]}" for language in sorted(initial_states)
+        )
         print(
-            f"Norvii is ready\nWeb: {self._web_url}\nLogs: {self._layout.log_directory}"
+            f"Norvii is ready\nWeb: {self._web_url}\n"
+            f"Initial sources: {states}\nLogs: {self._layout.log_directory}"
         )
 
     def status(self) -> None:
@@ -400,25 +490,17 @@ class LocalEnvironmentManager:
         self._prepare(required_commands=("make",))
         health = self._runner.capture("bootstrap", self._make("persistence-health"))
         print(health, end="")
-        print(
-            "Web is running."
-            if self._processes["web"].is_running()
-            else "Web is stopped."
-        )
+        print("Web is running." if self._processes["web"].is_running() else "Web is stopped.")
         for component in ("api", "ingestion"):
-            state = (
-                "complete"
-                if self._layout.ready_marker(component).exists()
-                else "incomplete"
-            )
+            state = "running" if self._processes[component].is_running() else "stopped"
             label = "API" if component == "api" else "Ingestion"
-            print(f"{label} initialization is {state}.")
+            print(f"{label} is {state}.")
 
     def stop(self) -> None:
         """Stop managed processes and persistence without deleting stored data."""
         self._layout.validate_root()
         self._logger.initialize()
-        self._stop_managed_processes(("web", "neo4j", "postgres"))
+        self._stop_managed_processes(("web", "ingestion", "api", "neo4j", "postgres"))
         if self._layout.environment_file.exists():
             self._runner.run("bootstrap", self._make("persistence-stop"))
         for component in ("api", "ingestion"):
@@ -431,9 +513,7 @@ class LocalEnvironmentManager:
         self._layout.validate_environment()
         for command in required_commands:
             if shutil.which(command) is None:
-                raise LocalEnvironmentError(
-                    f"Required command '{command}' is unavailable."
-                )
+                raise LocalEnvironmentError(f"Required command '{command}' is unavailable.")
 
     def _make(self, target: str) -> list[str]:
         return ["make", "-C", str(self._layout.root), target]
@@ -447,15 +527,56 @@ class LocalEnvironmentManager:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if not self._processes["web"].is_running():
-                raise ComponentCommandError(
-                    "Web", self._layout.log("web"), self._layout.root
-                )
+                raise ComponentCommandError("Web", self._layout.log("web"), self._layout.root)
             try:
-                with urllib.request.urlopen(self._web_url, timeout=1):
+                with urllib.request.urlopen(self._web_url, timeout=1):  # noqa: S310
                     return
             except (OSError, urllib.error.URLError):
                 time.sleep(0.2)
         raise ComponentCommandError("Web", self._layout.log("web"), self._layout.root)
+
+    def _wait_for_api(self) -> None:
+        """Wait for the API health contract before allowing web traffic."""
+        timeout = int(os.environ.get("NORVII_API_START_TIMEOUT_SECONDS", "30"))
+        if timeout <= 0:
+            raise LocalEnvironmentError(
+                "NORVII_API_START_TIMEOUT_SECONDS must be a positive integer."
+            )
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self._processes["api"].is_running():
+                raise ComponentCommandError("API", self._layout.log("api"), self._layout.root)
+            try:
+                with urllib.request.urlopen(self._api_health_url, timeout=1) as response:  # noqa: S310
+                    if response.status == HTTP_OK:
+                        return
+            except (OSError, urllib.error.URLError):
+                time.sleep(0.2)
+        raise ComponentCommandError("API", self._layout.log("api"), self._layout.root)
+
+    def _wait_for_initial_sources(self) -> dict[str, str]:
+        """Wait until each stable seed source reaches a bounded terminal state."""
+        deadline = time.monotonic() + self._initial_ingestion_timeout
+        while time.monotonic() < deadline:
+            states: dict[str, str] = {}
+            try:
+                for language, corpus_id in INITIAL_CORPORA.items():
+                    url = f"{self._api_base_url}/corpora/{corpus_id}/sources"
+                    with urllib.request.urlopen(url, timeout=2) as response:  # noqa: S310
+                        payload = json.load(response)
+                    if not isinstance(payload, list) or len(payload) != 1:
+                        states[language] = "pending"
+                        continue
+                    source = payload[0]
+                    status = source.get("processingStatus") if isinstance(source, dict) else None
+                    states[language] = status if isinstance(status, str) else "pending"
+            except (OSError, TypeError, ValueError, urllib.error.URLError):
+                time.sleep(0.25)
+                continue
+            if all(state in {"ready", "failed"} for state in states.values()):
+                return states
+            time.sleep(0.25)
+        raise ComponentCommandError("Ingestion", self._layout.log("ingestion"), self._layout.root)
 
     def _stop_managed_processes(self, components: Iterable[str]) -> None:
         for component in components:
@@ -466,9 +587,7 @@ def parse_arguments(arguments: list[str]) -> argparse.Namespace:
     """Parse a lifecycle action and optional repository root."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("start", "status", "stop"))
-    parser.add_argument(
-        "--repository-root", type=Path, default=Path(__file__).parents[2]
-    )
+    parser.add_argument("--repository-root", type=Path, default=Path(__file__).parents[2])
     return parser.parse_args(arguments)
 
 
@@ -476,9 +595,7 @@ def main(arguments: list[str]) -> int:
     """Execute the requested local lifecycle action."""
     options = parse_arguments(arguments)
     try:
-        manager = LocalEnvironmentManager(
-            RepositoryLayout(options.repository_root.resolve())
-        )
+        manager = LocalEnvironmentManager(RepositoryLayout(options.repository_root.resolve()))
         getattr(manager, options.action)()
     except (LocalEnvironmentError, ValueError) as error:
         print(f"Norvii local environment failed: {error}", file=sys.stderr)

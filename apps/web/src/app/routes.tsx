@@ -1,9 +1,11 @@
 import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 
+import { createHttpResearchProvider } from "../api/researchProvider";
 import { CorpusCatalogPage } from "../features/catalog/CorpusCatalogPage";
+import { CorpusFormPage } from "../features/catalog/CorpusFormPage";
 import { UnknownCorpusPage } from "../features/workspace/UnknownCorpusPage";
-import { createDemonstrationCatalog } from "../research/demonstration/createDemonstrationCatalog";
+import type { ResearchProvider } from "../research/domain/authoritative";
 import { AppShell } from "./AppShell";
 
 const CorpusWorkspacePage = lazy(async () => {
@@ -11,18 +13,30 @@ const CorpusWorkspacePage = lazy(async () => {
   return { default: module.CorpusWorkspacePage };
 });
 
-const catalog = createDemonstrationCatalog();
+const defaultProvider = createHttpResearchProvider();
 
-export function AppRoutes() {
+interface AppRoutesProps {
+  readonly provider?: ResearchProvider;
+}
+
+export function AppRoutes({ provider = defaultProvider }: AppRoutesProps) {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<CorpusCatalogPage catalog={catalog} />} />
+        <Route index element={<CorpusCatalogPage provider={provider} />} />
+        <Route
+          path="corpora/new"
+          element={<CorpusFormPage provider={provider} />}
+        />
+        <Route
+          path="corpora/:corpusId/edit"
+          element={<CorpusFormPage provider={provider} />}
+        />
         <Route
           path="corpora/:corpusId"
           element={
             <Suspense fallback={null}>
-              <CorpusWorkspacePage catalog={catalog} />
+              <CorpusWorkspacePage provider={provider} />
             </Suspense>
           }
         />

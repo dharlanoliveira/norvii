@@ -39,6 +39,9 @@ jobs:
       - name: Enforce English source and documentation
         run: python .github/scripts/validate_repository_language.py
 
+      - name: Validate promoted cross-language contracts
+        run: python .github/scripts/validate_contracts.py
+
       - name: Validate shell scripts
         run: bash -n .specify/scripts/bash/*.sh .specify/extensions/git/scripts/bash/*.sh infra/scripts/*.sh
 
@@ -123,7 +126,7 @@ jobs:
           make -C "$MODULE_PATH" ci
 
   persistence-integration:
-    name: Persistence integration
+    name: Corpus ingestion integration
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -148,7 +151,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/ingestion/uv.lock
 
-      - name: Verify persistence foundation
+      - name: Verify corpus ingestion and persistence
         run: make persistence-integration
 
       - name: Upload API coverage

@@ -1,0 +1,164 @@
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+
+import type { SourceResponse } from "../../api/contract";
+import { renderAtRoute } from "../../test/render";
+import { SourceStatus } from "./SourceStatus";
+
+describe("source lifecycle status", () => {
+  it("offers retry for a failed source without exposing failure detail", async () => {
+    const user = userEvent.setup();
+    const retry = vi.fn().mockResolvedValue(undefined);
+    renderAtRoute(
+      <SourceStatus
+        source={source("failed")}
+        onRetry={retry}
+        onReprocess={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "The latest attempt ended with a safe failure category.",
+      ),
+    ).toBeVisible();
+    await user.click(screen.getByText("Source details"));
+    expect(screen.getByText("https://example.org/law")).toBeVisible();
+    expect(screen.getAllByText("corpus-ingestion-v1")).toHaveLength(2);
+    expect(screen.getByRole("heading", { name: "Attempt 1" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Retry ingestion" }));
+    expect(retry).toHaveBeenCalledWith(
+      expect.objectContaining({ version: 3 }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("offers explicit reprocessing only for a ready source", async () => {
+    const user = userEvent.setup();
+    const reprocess = vi.fn().mockResolvedValue(undefined);
+    const confirm = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    renderAtRoute(
+      <SourceStatus
+        source={source("ready")}
+        onRetry={vi.fn()}
+        onReprocess={reprocess}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Official source" }),
+    ).toBeVisible();
+    const actions = screen.getByRole("toolbar", { name: "Source actions" });
+    expect(within(actions).getByText("Source details")).toBeVisible();
+    expect(
+      within(actions).getByRole("button", { name: "Reprocess source" }),
+    ).toBeVisible();
+    expect(
+      within(actions).getByRole("link", { name: "Open official source" }),
+    ).toHaveAttribute(
+      "href",
+      "/api/v1/corpora/10000000-0000-4000-8000-000000000009/sources/20000000-0000-4000-8000-000000000009/origin",
+    );
+    await user.click(screen.getByRole("button", { name: "Reprocess source" }));
+    expect(reprocess).toHaveBeenCalledOnce();
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "The current ready document will remain available",
+      ),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Retry ingestion" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not reprocess when confirmation is declined", async () => {
+    const user = userEvent.setup();
+    const reprocess = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(globalThis, "confirm").mockReturnValue(false);
+    renderAtRoute(
+      <SourceStatus
+        source={source("ready")}
+        onRetry={vi.fn()}
+        onReprocess={reprocess}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reprocess source" }));
+
+    expect(reprocess).not.toHaveBeenCalled();
+  });
+});
+
+function source(
+  processingStatus: SourceResponse["processingStatus"],
+): SourceResponse {
+  return {
+    id: "20000000-0000-4000-8000-000000000009",
+    corpusId: "10000000-0000-4000-8000-000000000009",
+    title: "Official source",
+    kind: "url",
+    processingStatus,
+    failureCategory:
+      processingStatus === "failed" ? "acquisition_failed" : null,
+    latestReadyDocumentId:
+      processingStatus === "ready"
+        ? "50000000-0000-4000-8000-000000000009"
+        : null,
+    version: 3,
+    createdAt: "2026-08-17T12:00:00Z",
+    updatedAt: "2026-08-17T12:01:00Z",
+    origin: {
+      kind: "url",
+      submittedUrl: "https://example.org/law",
+      normalizedUrl: "https://example.org/law",
+      originalFilename: null,
+      mediaType: "text/html",
+      byteSize: 1200,
+      sha256: "a".repeat(64),
+      finalUrl: "https://example.org/law",
+      capturedAt: "2026-08-17T12:00:30Z",
+      extractedContentSha256: "b".repeat(64),
+    },
+    latestAttempt: {
+      number: 2,
+      pipelineVersion: "corpus-ingestion-v1",
+      status: processingStatus === "failed" ? "failed" : "succeeded",
+      startedAt: "2026-08-17T12:00:00Z",
+      finishedAt: "2026-08-17T12:01:00Z",
+      failureCategory:
+        processingStatus === "failed" ? "acquisition_failed" : null,
+      acquiredByteCount: 1200,
+      normalizedCharacterCount: 800,
+      unitCount: 4,
+      durationMilliseconds: 1000,
+    },
+    attempts: [
+      {
+        number: 2,
+        pipelineVersion: "corpus-ingestion-v1",
+        status: processingStatus === "failed" ? "failed" : "succeeded",
+        startedAt: "2026-08-17T12:00:00Z",
+        finishedAt: "2026-08-17T12:01:00Z",
+        failureCategory:
+          processingStatus === "failed" ? "acquisition_failed" : null,
+        acquiredByteCount: 1200,
+        normalizedCharacterCount: 800,
+        unitCount: 4,
+        durationMilliseconds: 1000,
+      },
+      {
+        number: 1,
+        pipelineVersion: "corpus-ingestion-v1",
+        status: "failed",
+        startedAt: "2026-08-17T11:00:00Z",
+        finishedAt: "2026-08-17T11:01:00Z",
+        failureCategory: "acquisition_failed",
+        acquiredByteCount: null,
+        normalizedCharacterCount: null,
+        unitCount: null,
+        durationMilliseconds: 1000,
+      },
+    ],
+  };
+}

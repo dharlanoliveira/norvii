@@ -1,0 +1,539 @@
+"""Transactional PostgreSQL queue claim and immutable artifact publication."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, cast
+from uuid import UUID, uuid4
+
+import psycopg
+
+from norvii_ingestion.domain.models import (
+    IngestionWork,
+    SourceKind,
+    WorkClaim,
+    WorkReason,
+)
+
+if TYPE_CHECKING:
+    from norvii_ingestion.domain.artifacts import PublicationCommand
+    from norvii_ingestion.domain.models import OriginCapture, SafeFailure
+    from norvii_ingestion.publication.persistence.config import PostgresConfiguration
+
+
+class WorkRepositoryError(RuntimeError):
+    """Report a safe queue or publication transaction failure."""
+
+
+@dataclass(frozen=True, slots=True)
+class _Completion:
+    document_id: UUID
+    command: PublicationCommand
+    capture: OriginCapture
+    now: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _RevisionData:
+    capture: OriginCapture
+    extracted_content_sha256: str
+    now: datetime
+
+
+class PostgresWorkRepository:
+    """Own queue claim and atomic artifact publication transactions."""
+
+    def __init__(
+        self,
+        connection: psycopg.Connection[tuple[object, ...]],
+        pipeline_version: str = "corpus-ingestion-v2",
+    ) -> None:
+        self.connection = connection
+        self._pipeline_version = pipeline_version
+
+    @classmethod
+    def connect(
+        cls,
+        configuration: PostgresConfiguration,
+        timeout_seconds: int,
+    ) -> PostgresWorkRepository:
+        """Open a bounded canonical-store connection without credential URLs."""
+        try:
+            connection = psycopg.connect(
+                host=configuration.host,
+                port=configuration.port,
+                dbname=configuration.database,
+                user=configuration.user,
+                password=configuration.password,
+                connect_timeout=timeout_seconds,
+                options=f"-c statement_timeout={timeout_seconds * 1000}",
+            )
+        except psycopg.Error as error:
+            raise WorkRepositoryError("Connect to ingestion work storage failed.") from error
+        return cls(connection)
+
+    def claim(
+        self,
+        worker_id: str,
+        lease_duration: timedelta,
+        now: datetime,
+    ) -> IngestionWork | None:
+        """Atomically lease the oldest pending work and create its attempt."""
+        if not worker_id.strip() or lease_duration <= timedelta(0):
+            raise ValueError("worker identity and a positive lease duration are required")
+        lease_token = uuid4()
+        attempt_id = uuid4()
+        lease_expires_at = now + lease_duration
+        try:
+            with self.connection.transaction(), self.connection.cursor() as cursor:
+                self._recover_expired(cursor, now)
+                cursor.execute(
+                    """
+                    SELECT w.id, w.corpus_id, w.source_id, s.kind, w.reason,
+                           c.language, u.submitted_url, p.content,
+                           COALESCE((
+                               SELECT max(a.attempt_number)
+                               FROM processing_attempts a
+                               WHERE a.work_id = w.id
+                           ), 0) + 1
+                    FROM ingestion_work w
+                    JOIN sources s ON s.id = w.source_id AND s.corpus_id = w.corpus_id
+                    JOIN corpora c ON c.id = w.corpus_id
+                    LEFT JOIN url_origins u
+                      ON u.source_id = s.id AND u.corpus_id = s.corpus_id
+                    LEFT JOIN pdf_origins p
+                      ON p.source_id = s.id AND p.corpus_id = s.corpus_id
+                    WHERE w.status = 'pending'
+                    ORDER BY w.requested_at, w.id
+                    FOR UPDATE OF w, s SKIP LOCKED
+                    LIMIT 1
+                    """
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return None
+                work_id = cast("UUID", row[0])
+                corpus_id = cast("UUID", row[1])
+                source_id = cast("UUID", row[2])
+                source_kind = SourceKind(cast("str", row[3]))
+                reason = WorkReason(cast("str", row[4]))
+                corpus_language = cast("str", row[5])
+                url = cast("str | None", row[6])
+                pdf_content = cast("bytes | None", row[7])
+                attempt_number = cast("int", row[8])
+                cursor.execute(
+                    """
+                    UPDATE ingestion_work
+                    SET status = 'leased', lease_token = %s, worker_id = %s,
+                        lease_expires_at = %s, updated_at = %s
+                    WHERE id = %s
+                    """,
+                    (lease_token, worker_id, lease_expires_at, now, work_id),
+                )
+                cursor.execute(
+                    """
+                    UPDATE sources
+                    SET processing_status = 'processing', version = version + 1,
+                        updated_at = %s
+                    WHERE corpus_id = %s AND id = %s
+                    """,
+                    (now, corpus_id, source_id),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO processing_attempts (
+                        id, work_id, source_id, corpus_id, attempt_number,
+                        pipeline_version, status, lease_token, worker_id, started_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, 'processing', %s, %s, %s)
+                    """,
+                    (
+                        attempt_id,
+                        work_id,
+                        source_id,
+                        corpus_id,
+                        attempt_number,
+                        self._pipeline_version,
+                        lease_token,
+                        worker_id,
+                        now,
+                    ),
+                )
+        except psycopg.Error as error:
+            raise WorkRepositoryError("Claim ingestion work failed.") from error
+        return IngestionWork(
+            claim=WorkClaim(
+                work_id=work_id,
+                corpus_id=corpus_id,
+                source_id=source_id,
+                source_kind=source_kind,
+                reason=reason,
+                lease_token=lease_token,
+                lease_expires_at=lease_expires_at,
+            ),
+            attempt_id=attempt_id,
+            corpus_language=corpus_language,
+            url=url,
+            pdf_content=pdf_content,
+        )
+
+    def renew(
+        self,
+        work: IngestionWork,
+        lease_duration: timedelta,
+        now: datetime,
+    ) -> datetime:
+        """Extend an active owned lease before it expires."""
+        if lease_duration <= timedelta(0):
+            raise ValueError("lease renewal duration must be positive")
+        expires_at = now + lease_duration
+        try:
+            with self.connection.transaction(), self.connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE ingestion_work
+                    SET lease_expires_at = %s, updated_at = %s
+                    WHERE id = %s AND source_id = %s AND corpus_id = %s
+                      AND status = 'leased' AND lease_token = %s
+                      AND lease_expires_at >= %s
+                    """,
+                    (
+                        expires_at,
+                        now,
+                        work.claim.work_id,
+                        work.claim.source_id,
+                        work.claim.corpus_id,
+                        work.claim.lease_token,
+                        now,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise WorkRepositoryError("The ingestion lease is unavailable.")
+        except psycopg.Error as error:
+            raise WorkRepositoryError("Renew ingestion lease failed.") from error
+        return expires_at
+
+    @staticmethod
+    def _recover_expired(cursor: psycopg.Cursor[tuple[object, ...]], now: datetime) -> None:
+        cursor.execute(
+            """
+            UPDATE processing_attempts a
+            SET status = 'failed', finished_at = %s,
+                failure_category = 'lease_expired',
+                duration_milliseconds = GREATEST(
+                    0,
+                    FLOOR(EXTRACT(EPOCH FROM (%s - a.started_at)) * 1000)
+                )::bigint
+            FROM ingestion_work w
+            WHERE a.work_id = w.id AND a.status = 'processing'
+              AND w.status = 'leased' AND w.lease_expires_at < %s
+            """,
+            (now, now, now),
+        )
+        cursor.execute(
+            """
+            UPDATE sources s
+            SET processing_status = 'pending', latest_failure_category = 'lease_expired',
+                version = version + 1, updated_at = %s
+            FROM ingestion_work w
+            WHERE s.id = w.source_id AND s.corpus_id = w.corpus_id
+              AND w.status = 'leased' AND w.lease_expires_at < %s
+            """,
+            (now, now),
+        )
+        cursor.execute(
+            """
+            UPDATE ingestion_work
+            SET status = 'pending', lease_token = NULL, worker_id = NULL,
+                lease_expires_at = NULL, requested_at = %s, updated_at = %s
+            WHERE status = 'leased' AND lease_expires_at < %s
+            """,
+            (now, now, now),
+        )
+
+    def publish(
+        self,
+        work: IngestionWork,
+        capture: OriginCapture,
+        command: PublicationCommand,
+        now: datetime,
+    ) -> UUID:
+        """Atomically publish or reuse immutable artifacts and complete the lease."""
+        command.validate()
+        if (
+            command.work_id != work.claim.work_id
+            or command.lease_token != work.claim.lease_token
+            or command.origin_sha256 != capture.content_sha256
+        ):
+            raise ValueError("publication identity does not match the claimed work")
+        try:
+            with self.connection.transaction(), self.connection.cursor() as cursor:
+                self._lock_lease(cursor, work, now)
+                revision_id = self._upsert_revision(
+                    cursor,
+                    work,
+                    _RevisionData(capture, str(command.artifact.text_sha256), now),
+                )
+                document_id, created = self._upsert_document(
+                    cursor, work, revision_id, command, now
+                )
+                if created:
+                    self._insert_units(cursor, document_id, command)
+                self._complete_attempt(
+                    cursor,
+                    work,
+                    _Completion(document_id, command, capture, now),
+                )
+        except psycopg.Error as error:
+            raise WorkRepositoryError("Publish ingestion artifacts failed.") from error
+        return document_id
+
+    def close(self) -> None:
+        """Release the canonical-store connection."""
+        self.connection.close()
+
+    def fail(
+        self,
+        work: IngestionWork,
+        failure: SafeFailure,
+        now: datetime,
+    ) -> None:
+        """Atomically fail the attempt, preserve any ready document, and clear its lease."""
+        try:
+            with self.connection.transaction(), self.connection.cursor() as cursor:
+                self._lock_lease(cursor, work, now)
+                cursor.execute(
+                    """
+                    UPDATE processing_attempts
+                    SET status = 'failed', finished_at = %s,
+                        failure_category = %s, failure_detail = %s,
+                        duration_milliseconds = GREATEST(
+                            0,
+                            FLOOR(EXTRACT(EPOCH FROM (%s - started_at)) * 1000)
+                        )::bigint
+                    WHERE id = %s AND lease_token = %s
+                    """,
+                    (
+                        now,
+                        failure.category.value,
+                        failure.detail,
+                        now,
+                        work.attempt_id,
+                        work.claim.lease_token,
+                    ),
+                )
+                cursor.execute(
+                    """
+                    UPDATE sources
+                    SET processing_status = 'failed', latest_failure_category = %s,
+                        version = version + 1, updated_at = %s
+                    WHERE corpus_id = %s AND id = %s
+                    """,
+                    (
+                        failure.category.value,
+                        now,
+                        work.claim.corpus_id,
+                        work.claim.source_id,
+                    ),
+                )
+                cursor.execute(
+                    """
+                    UPDATE ingestion_work
+                    SET status = 'failed', lease_token = NULL, worker_id = NULL,
+                        lease_expires_at = NULL, updated_at = %s
+                    WHERE id = %s AND lease_token = %s
+                    """,
+                    (now, work.claim.work_id, work.claim.lease_token),
+                )
+        except psycopg.Error as error:
+            raise WorkRepositoryError("Record ingestion failure failed.") from error
+
+    @staticmethod
+    def _lock_lease(
+        cursor: psycopg.Cursor[tuple[object, ...]], work: IngestionWork, now: datetime
+    ) -> None:
+        cursor.execute(
+            """
+            SELECT 1 FROM ingestion_work
+            WHERE id = %s AND source_id = %s AND corpus_id = %s
+              AND status = 'leased' AND lease_token = %s AND lease_expires_at >= %s
+            FOR UPDATE
+            """,
+            (
+                work.claim.work_id,
+                work.claim.source_id,
+                work.claim.corpus_id,
+                work.claim.lease_token,
+                now,
+            ),
+        )
+        if cursor.fetchone() is None:
+            raise WorkRepositoryError("The ingestion lease is unavailable.")
+
+    def _upsert_revision(
+        self,
+        cursor: psycopg.Cursor[tuple[object, ...]],
+        work: IngestionWork,
+        data: _RevisionData,
+    ) -> UUID:
+        revision_id = uuid4()
+        cursor.execute(
+            """
+            INSERT INTO source_revisions (
+                id, source_id, corpus_id, attempt_id, content_sha256,
+                captured_at, media_type, byte_size, pipeline_version,
+                final_url, extracted_content_sha256, created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (source_id, content_sha256) DO NOTHING
+            RETURNING id
+            """,
+            (
+                revision_id,
+                work.claim.source_id,
+                work.claim.corpus_id,
+                work.attempt_id,
+                str(data.capture.content_sha256),
+                data.capture.captured_at,
+                data.capture.media_type,
+                data.capture.byte_size,
+                self._pipeline_version,
+                data.capture.final_url,
+                data.extracted_content_sha256,
+                data.now,
+            ),
+        )
+        row = cursor.fetchone()
+        if row is not None:
+            return cast("UUID", row[0])
+        cursor.execute(
+            "SELECT id FROM source_revisions WHERE source_id = %s AND content_sha256 = %s",
+            (work.claim.source_id, str(data.capture.content_sha256)),
+        )
+        return cast("UUID", cursor.fetchone()[0])  # type: ignore[index]
+
+    def _upsert_document(
+        self,
+        cursor: psycopg.Cursor[tuple[object, ...]],
+        work: IngestionWork,
+        revision_id: UUID,
+        command: PublicationCommand,
+        now: datetime,
+    ) -> tuple[UUID, bool]:
+        document_id = uuid4()
+        cursor.execute(
+            """
+            INSERT INTO document_versions (
+                id, source_revision_id, source_id, corpus_id, pipeline_version,
+                text_content, text_sha256, publication_status, published_at, created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'published', %s, %s)
+            ON CONFLICT (source_revision_id, pipeline_version) DO NOTHING
+            RETURNING id
+            """,
+            (
+                document_id,
+                revision_id,
+                work.claim.source_id,
+                work.claim.corpus_id,
+                command.pipeline_version,
+                command.artifact.text,
+                str(command.artifact.text_sha256),
+                now,
+                now,
+            ),
+        )
+        row = cursor.fetchone()
+        if row is not None:
+            return cast("UUID", row[0]), True
+        cursor.execute(
+            """
+            SELECT id FROM document_versions
+            WHERE source_revision_id = %s AND pipeline_version = %s
+            """,
+            (revision_id, command.pipeline_version),
+        )
+        return cast("UUID", cursor.fetchone()[0]), False  # type: ignore[index]
+
+    @staticmethod
+    def _insert_units(
+        cursor: psycopg.Cursor[tuple[object, ...]],
+        document_id: UUID,
+        command: PublicationCommand,
+    ) -> None:
+        cursor.executemany(
+            """
+            INSERT INTO document_units (
+                id, document_id, parent_id, kind, ordinal, marker, label,
+                start_offset, end_offset, start_page, end_page, locator, content_sha256
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            [
+                (
+                    unit.id,
+                    document_id,
+                    unit.parent_id,
+                    unit.kind.value,
+                    unit.ordinal,
+                    unit.marker,
+                    unit.label,
+                    unit.start_offset,
+                    unit.end_offset,
+                    unit.start_page,
+                    unit.end_page,
+                    unit.locator,
+                    str(unit.content_sha256),
+                )
+                for unit in command.artifact.units
+            ],
+        )
+
+    @staticmethod
+    def _complete_attempt(
+        cursor: psycopg.Cursor[tuple[object, ...]],
+        work: IngestionWork,
+        completion: _Completion,
+    ) -> None:
+        cursor.execute(
+            """
+            UPDATE sources
+            SET processing_status = 'ready', latest_failure_category = NULL,
+                latest_ready_document_id = %s, version = version + 1, updated_at = %s
+            WHERE corpus_id = %s AND id = %s
+            """,
+            (
+                completion.document_id,
+                completion.now,
+                work.claim.corpus_id,
+                work.claim.source_id,
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE processing_attempts
+            SET status = 'succeeded', finished_at = %s,
+                acquired_byte_count = %s, normalized_character_count = %s,
+                unit_count = %s,
+                duration_milliseconds = GREATEST(
+                    0,
+                    FLOOR(EXTRACT(EPOCH FROM (%s - started_at)) * 1000)
+                )::bigint
+            WHERE id = %s AND lease_token = %s
+            """,
+            (
+                completion.now,
+                completion.capture.byte_size,
+                len(completion.command.artifact.text),
+                len(completion.command.artifact.units),
+                completion.now,
+                work.attempt_id,
+                work.claim.lease_token,
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE ingestion_work
+            SET status = 'succeeded', lease_token = NULL, worker_id = NULL,
+                lease_expires_at = NULL, updated_at = %s
+            WHERE id = %s AND lease_token = %s
+            """,
+            (completion.now, work.claim.work_id, work.claim.lease_token),
+        )

@@ -10,9 +10,12 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
   "neo4j==6.2.0",
   "psycopg[binary]==3.3.4",
+  "pypdf==6.16.1",
+  "trafilatura==2.2.0",
 ]
 
 [project.scripts]
+norvii-ingestion-worker = "norvii_ingestion.orchestration.__main__:main"
 norvii-verify-persistence = "norvii_ingestion.publication.persistence.__main__:main"
 
 [dependency-groups]

@@ -35,8 +35,8 @@ The reference container platforms are Linux amd64 and arm64.
 ## Complete local bootstrap
 
 After configuring `infra/.env`, start persistence, apply migrations, verify the Go
-and Python production drivers, install deterministic web dependencies, and start the
-React application with:
+and Python production drivers, install locked module dependencies, and start the Go
+API, Python worker, and React application with:
 
 ```bash
 make bootstrap
@@ -49,13 +49,18 @@ repository-root `.log/` directory:
 | --- | --- |
 | `bootstrap.log` | Bootstrap orchestration and persistence startup |
 | `web.log` | Web dependency installation and React/Vite development server |
-| `api.log` | Go API migrations and persistence verification |
-| `ingestion.log` | Python ingestion persistence verification |
+| `api.log` | Go migrations, verification, and HTTP API process |
+| `ingestion.log` | Python verification and ingestion worker process |
 | `postgres.log` | PostgreSQL container |
 | `neo4j.log` | Neo4j container |
 
-The Go API and Python ingestion module do not yet expose long-running local
-processes. Their current initialization output is retained in their component logs.
+The command waits for authenticated database health, the API `/healthz` response,
+the web server, and both stable initial sources to reach `ready` or safe `failed`
+before reporting readiness. The initial-ingestion wait is bounded by
+`NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS`. Repeating bootstrap reapplies idempotent
+migrations and reuses verified process identities instead of creating duplicates.
+The worker claims pending work in PostgreSQL and turns URL or PDF sources into
+immutable document revisions.
 
 Inspect lifecycle and health without starting duplicates, or stop all managed
 processes while retaining database volumes:
@@ -104,15 +109,18 @@ Start both stores and wait up to two minutes for authenticated health:
 make persistence-up
 ```
 
-Initialize pgvector and inspect the tern migration ledger:
+Initialize pgvector plus the corpus-ingestion schema and inspect the tern migration
+ledger:
 
 ```bash
 make persistence-migrate
 make persistence-migration-status
 ```
 
-Initialization is idempotent. Feature 003 owns one migration,
-`001_enable_vector.sql`; it creates no product table.
+Initialization is idempotent. Migration `001_enable_vector.sql` enables pgvector;
+`002_corpus_ingestion.sql` creates corpora, sources, origins, work leases, attempts,
+immutable revisions, documents, and addressable units. It also inserts exactly one
+English GDPR corpus and one Portuguese LGPD corpus with official URL sources.
 
 Verify Go and Python through their production database drivers:
 
@@ -120,9 +128,9 @@ Verify Go and Python through their production database drivers:
 make persistence-verify
 ```
 
-Each runtime authenticates and executes constant read-only SQL and Cypher operations
-within the configured timeout. No corpus, source, document, ingestion artifact, node,
-or relationship is created.
+Each runtime authenticates and executes bounded read-only SQL and Cypher operations
+within the configured timeout. The migration step, not verification, owns schema and
+seed changes.
 
 Stop services while retaining both volumes:
 
@@ -157,6 +165,31 @@ before health succeeds. A normal stop never fixes a stale credential because Neo
 correctly retains authentication in its data volume; use the intentional reset only
 when local data may be discarded.
 
+## Product inspection and troubleshooting
+
+Open `http://127.0.0.1:5173` after bootstrap. The API health endpoint is
+`http://127.0.0.1:8080/healthz` with default configuration. Use the catalog UI to
+create or edit corpora, add HTTPS or PDF sources, observe lifecycle status, retry
+failures, and browse ready documents. Chat remains explicitly unavailable.
+
+Inspect canonical records with read-only commands:
+
+```bash
+docker compose --env-file infra/.env -f infra/compose.yaml exec postgres \
+  psql --username norvii --dbname norvii
+```
+
+Useful tables include `corpora`, `sources`, `url_origins`, `pdf_origins`,
+`ingestion_work`, `ingestion_attempts`, `source_revisions`, `documents`, and
+`document_units`. Neo4j remains empty of product graph data in this feature; inspect
+it at `http://127.0.0.1:7474` or with `cypher-shell` inside the container.
+
+For a failed component, inspect its dedicated `.log/<component>.log` file first.
+API errors include a request identifier but exclude credentials and document bodies.
+Worker failures expose a bounded category and retain prior ready revisions. A failed
+or expired attempt can be retried from the workspace; expired leases are recovered
+by the worker.
+
 ## Isolated integration journey
 
 Run the complete service-backed acceptance journey with:
@@ -167,7 +200,8 @@ make persistence-integration
 
 The journey uses project `norvii-integration`, alternate local ports, temporary
 credentials, and separately named integration volumes. It proves authenticated
-health, repeatable migration, Go and Python connectivity, safe failure, normal
+health, repeatable migration, Go and Python connectivity, corpus isolation, URL and
+PDF publication, work lease recovery, atomic publication, safe failure, normal
 restart retention, graph-volume isolation, and clean-volume reproduction. A trap
 removes the isolated containers and volumes; it never targets default local data.
 
@@ -190,5 +224,5 @@ Recreate the foundation after reset:
 make persistence
 ```
 
-The feature-specific executable evidence remains in
-[Feature 003 quickstart](../../specs/003-local-persistence-foundation/quickstart.md).
+Feature-specific executable evidence is recorded in the
+[Feature 004 quickstart](../../specs/004-corpus-catalog/quickstart.md).
