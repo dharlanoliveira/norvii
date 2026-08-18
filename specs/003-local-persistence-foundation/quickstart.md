@@ -141,7 +141,7 @@ python .github/scripts/validate_repository_language.py
 ```
 
 Continuous integration additionally runs the service-backed foundation journey and
-makes SonarQube Cloud plus failure notification depend on it.
+makes SonarQube Cloud analysis depend on it.
 
 ## Recorded implementation evidence
 
