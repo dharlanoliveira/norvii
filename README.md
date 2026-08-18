@@ -104,7 +104,7 @@ View the SonarQube Cloud dashboards for [norvii-web](https://sonarcloud.io/proje
 - [Spec-driven workflow](docs/development/spec-driven-development.md): how Codex and
   contributors move from capability to verified code.
 - [Development tooling](docs/development/tooling.md): pinned Spec Kit version, project preset, workflow overlay, and upgrade rules.
-- [Continuous integration](docs/development/continuous-integration.md): GitHub Actions builds, SonarQube Cloud gates, and failure notifications.
+- [Continuous integration](docs/development/continuous-integration.md): GitHub Actions builds and SonarQube Cloud gates.
 - [Local environment](docs/operations/local-environment.md): full application bootstrap, logs, health, persistence, and guarded reset commands.
 - [Executable prototyping](docs/development/prototyping.md): how React prototypes are built, reviewed, and approved before production.
 - [Prototype workspace](prototypes/README.md): executable product experiments kept separate from production applications.

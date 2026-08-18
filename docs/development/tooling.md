@@ -51,4 +51,4 @@ The Spec Kit Git extension creates feature branches and validates their naming. 
 
 Go, Python, React, database, and container tool versions remain intentionally unset until the feature that scaffolds each module researches and records them. Once selected, pin versions in executable toolchain files and record only repository-wide consequences here.
 
-Repository-wide build orchestration, SonarQube Cloud analysis, and failure notification are defined in [continuous integration](continuous-integration.md). Each module selects its tools independently and exposes them through the shared `Makefile` `ci` contract.
+Repository-wide build orchestration and SonarQube Cloud analysis are defined in [continuous integration](continuous-integration.md). Each module selects its tools independently and exposes them through the shared `Makefile` `ci` contract.
