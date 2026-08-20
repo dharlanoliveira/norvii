@@ -21,16 +21,16 @@ the approved prototype.
 **Purpose**: Build the immutable retrieval, provider, stream, and safety boundaries required by
 all user stories. No user-story implementation begins until this phase is green.
 
-- [ ] T004 [P] [US1] Write a failing PostgreSQL migration test for retrieval chunks, fixed-dimension embeddings, document-version ownership, latest-version filtering, idempotency, and corpus isolation in `apps/api/tests/integration/grounded_rag_schema_test.go` per FR-003, FR-006, FR-018.
-- [ ] T005 [US1] Implement migration `apps/api/migrations/005_grounded_rag.sql`, embed it through `apps/api/migrations/embed.go`, and make T004 pass without changing Feature 004 tables per FR-003, FR-006, FR-018.
-- [ ] T006 [P] [US1] Write failing Python unit tests for legal-aware chunk boundaries, article context for nested paragraphs/items, contiguous offsets, hash identity, and bounded chunk size in `apps/ingestion/tests/unit/enrichment/test_chunking.py` per FR-003, FR-005-FR-006, FR-018.
-- [ ] T007 [US1] Implement immutable chunking domain objects and legal-aware chunker in `apps/ingestion/src/norvii_ingestion/enrichment/chunking/` until T006 passes per FR-003, FR-005-FR-006.
-- [ ] T008 [P] [US1] Write failing provider contract tests for deterministic embedding dimensions, model version, timeout, malformed response, and safe error mapping in `apps/ingestion/tests/unit/enrichment/test_embedding_provider.py` and `apps/api/internal/platform/llm/provider_test.go` per FR-013, FR-016-FR-018.
-- [ ] T009 [US1] Implement consumer-owned embedding and chat-model ports plus provider-neutral configuration and fake adapters in `apps/ingestion/src/norvii_ingestion/enrichment/embedding/`, `apps/api/internal/chat/domain/`, and `apps/api/internal/platform/llm/` until T008 passes per FR-004, FR-012-FR-018.
-- [ ] T010 [P] [US1] Write failing Go retrieval repository tests for active-corpus filtering, latest published document filtering, ranked top-eight results, and immutable evidence projection in `apps/api/internal/retrieval/postgres/repository_test.go` per FR-002-FR-006, FR-018.
-- [ ] T011 [US1] Implement retrieval repository ports and PostgreSQL adapter in `apps/api/internal/retrieval/{domain,postgres}/` until T010 passes per FR-002-FR-006, FR-018.
-- [ ] T012 [P] [US1] Write failing stream contract tests for event ordering, exactly one terminal event, malformed provider events, and safe public errors in `apps/api/tests/contract/grounded_chat_stream_test.go` and `apps/web/src/api/chat.test.ts` per FR-007-FR-018.
-- [ ] T013 [US1] Implement the feature-local stream event encoder, decoder, and terminal-state validator in `apps/api/internal/platform/streaming/` and `apps/web/src/api/chat.ts` until T012 passes per FR-007-FR-013.
+- [ ] T004 [P] Write a failing PostgreSQL migration test for retrieval chunks, fixed-dimension embeddings, document-version ownership, latest-version filtering, idempotency, and corpus isolation in `apps/api/tests/integration/grounded_rag_schema_test.go` per FR-003, FR-006, FR-018.
+- [ ] T005 Implement migration `apps/api/migrations/005_grounded_rag.sql`, embed it through `apps/api/migrations/embed.go`, and make T004 pass without changing Feature 004 tables per FR-003, FR-006, FR-018.
+- [ ] T006 [P] Write failing Python unit tests for legal-aware chunk boundaries, article context for nested paragraphs/items, contiguous offsets, hash identity, and bounded chunk size in `apps/ingestion/tests/unit/enrichment/test_chunking.py` per FR-003, FR-005-FR-006, FR-018.
+- [ ] T007 Implement immutable chunking domain objects and legal-aware chunker in `apps/ingestion/src/norvii_ingestion/enrichment/chunking/` until T006 passes per FR-003, FR-005-FR-006.
+- [ ] T008 [P] Write failing provider contract tests for deterministic embedding dimensions, model version, timeout, malformed response, and safe error mapping in `apps/ingestion/tests/unit/enrichment/test_embedding_provider.py` and `apps/api/internal/platform/llm/provider_test.go` per FR-013, FR-016-FR-018.
+- [ ] T009 Implement consumer-owned embedding and chat-model ports plus provider-neutral configuration and fake adapters in `apps/ingestion/src/norvii_ingestion/enrichment/embedding/`, `apps/api/internal/chat/domain/`, and `apps/api/internal/platform/llm/` until T008 passes per FR-004, FR-012-FR-018.
+- [ ] T010 [P] Write failing Go retrieval repository tests for active-corpus filtering, latest published document filtering, ranked top-eight results, and immutable evidence projection in `apps/api/internal/retrieval/postgres/repository_test.go` per FR-002-FR-006, FR-018.
+- [ ] T011 Implement retrieval repository ports and PostgreSQL adapter in `apps/api/internal/retrieval/{domain,postgres}/` until T010 passes per FR-002-FR-006, FR-018.
+- [ ] T012 [P] Write failing stream contract tests for event ordering, exactly one terminal event, malformed provider events, and safe public errors in `apps/api/tests/contract/grounded_chat_stream_test.go` and `apps/web/src/api/chat.test.ts` per FR-007-FR-018.
+- [ ] T013 Implement the feature-local stream event encoder, decoder, and terminal-state validator in `apps/api/internal/platform/streaming/` and `apps/web/src/api/chat.ts` until T012 passes per FR-007-FR-013.
 
 **Checkpoint**: Migration, chunking, retrieval, provider ports, and stream contracts are green;
 user-story work can proceed.
