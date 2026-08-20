@@ -21,6 +21,7 @@ import { PdfSourceForm } from "../source-management/PdfSourceForm";
 import { SourceStatus } from "../source-management/SourceStatus";
 import { LegalDocumentReader } from "./LegalDocumentReader";
 import { ResearchChat } from "./ResearchChat";
+import { SourceSelectionPrompt } from "./SourceSelectionPrompt";
 import {
   WorkspaceModeSelector,
   type WorkspaceMode,
@@ -280,8 +281,13 @@ function LoadedCorpusWorkspace({
           <div id="chat-panel" role="tabpanel" hidden={mode !== "chat"}>
             <ResearchChat />
           </div>
-          <div id="source-panel" role="tabpanel" hidden={mode !== "source"}>
-            {!selectedSource ? <p>{t("viewer.noSourceTitle")}</p> : null}
+          <div
+            id="source-panel"
+            role="tabpanel"
+            hidden={mode !== "source"}
+            className={!selectedSource ? "source-panel--empty" : undefined}
+          >
+            {!selectedSource ? <SourceSelectionPrompt /> : null}
             {selectedSource ? (
               <SourceStatus
                 source={selectedSource}

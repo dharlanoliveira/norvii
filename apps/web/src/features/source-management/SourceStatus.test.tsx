@@ -25,8 +25,12 @@ describe("source lifecycle status", () => {
     ).toBeVisible();
     await user.click(screen.getByText("Source details"));
     expect(screen.getByText("https://example.org/law")).toBeVisible();
-    expect(screen.getAllByText("corpus-ingestion-v1")).toHaveLength(2);
-    expect(screen.getByRole("heading", { name: "Attempt 1" })).toBeVisible();
+    expect(screen.getAllByText("corpus-ingestion-v1")).toHaveLength(3);
+    expect(screen.getByRole("heading", { name: "Attempt 4" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Attempt 2" })).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Attempt 1" }),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Retry ingestion" }));
     expect(retry).toHaveBeenCalledWith(
       expect.objectContaining({ version: 3 }),
@@ -121,7 +125,7 @@ function source(
       extractedContentSha256: "b".repeat(64),
     },
     latestAttempt: {
-      number: 2,
+      number: 4,
       pipelineVersion: "corpus-ingestion-v1",
       status: processingStatus === "failed" ? "failed" : "succeeded",
       startedAt: "2026-08-17T12:00:00Z",
@@ -135,7 +139,7 @@ function source(
     },
     attempts: [
       {
-        number: 2,
+        number: 4,
         pipelineVersion: "corpus-ingestion-v1",
         status: processingStatus === "failed" ? "failed" : "succeeded",
         startedAt: "2026-08-17T12:00:00Z",
@@ -145,6 +149,30 @@ function source(
         acquiredByteCount: 1200,
         normalizedCharacterCount: 800,
         unitCount: 4,
+        durationMilliseconds: 1000,
+      },
+      {
+        number: 3,
+        pipelineVersion: "corpus-ingestion-v1",
+        status: "failed",
+        startedAt: "2026-08-17T11:30:00Z",
+        finishedAt: "2026-08-17T11:31:00Z",
+        failureCategory: "acquisition_failed",
+        acquiredByteCount: null,
+        normalizedCharacterCount: null,
+        unitCount: null,
+        durationMilliseconds: 1000,
+      },
+      {
+        number: 2,
+        pipelineVersion: "corpus-ingestion-v1",
+        status: "failed",
+        startedAt: "2026-08-17T11:15:00Z",
+        finishedAt: "2026-08-17T11:16:00Z",
+        failureCategory: "acquisition_failed",
+        acquiredByteCount: null,
+        normalizedCharacterCount: null,
+        unitCount: null,
         durationMilliseconds: 1000,
       },
       {

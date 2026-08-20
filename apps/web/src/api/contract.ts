@@ -156,6 +156,9 @@ export function parseDocumentResponse(value: unknown): DocumentResponse {
   if (!Array.isArray(rawUnits)) {
     throw new TypeError("Document units must be an array.");
   }
+  const units = rawUnits
+    .map((unit, index) => parseDocumentUnit(unit, index))
+    .sort(compareDocumentUnitReadingOrder);
   return {
     id: uuidValue(document.id, "document ID"),
     sourceRevisionId: uuidValue(
@@ -166,9 +169,27 @@ export function parseDocumentResponse(value: unknown): DocumentResponse {
     text: stringValue(document.text, "document text"),
     textSha256: sha256Value(document.textSha256, "document text hash"),
     createdAt: dateTimeValue(document.createdAt, "document creation time"),
-    units: rawUnits.map((unit, index) => parseDocumentUnit(unit, index)),
+    units,
     provenance: parseProvenance(document.provenance),
   };
+}
+
+function compareDocumentUnitReadingOrder(
+  left: DocumentUnitResponse,
+  right: DocumentUnitResponse,
+): number {
+  if (left.startOffset !== right.startOffset) {
+    return left.startOffset - right.startOffset;
+  }
+  if (left.endOffset !== right.endOffset) {
+    return right.endOffset - left.endOffset;
+  }
+  if (left.ordinal !== right.ordinal) {
+    return left.ordinal - right.ordinal;
+  }
+  if (left.id < right.id) return -1;
+  if (left.id > right.id) return 1;
+  return 0;
 }
 
 export function parseErrorEnvelope(value: unknown): ErrorEnvelope {

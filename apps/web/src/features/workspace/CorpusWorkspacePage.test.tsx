@@ -38,6 +38,18 @@ describe("authoritative corpus workspace", () => {
     const sourceItem = await screen.findByRole("treeitem", {
       name: /Official English GDPR text/,
     });
+    await user.click(screen.getByRole("tab", { name: "Source" }));
+    expect(
+      screen.getByRole("heading", {
+        name: "Select a source from the library.",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Documents and official links open here while your conversation remains available.",
+      ),
+    ).toBeVisible();
+
     await user.click(sourceItem);
 
     expect(await screen.findByText("Persisted legal text.")).toBeVisible();
