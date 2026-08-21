@@ -81,4 +81,89 @@ describe("research chat", () => {
     expect(onReferenceSelect).toHaveBeenCalledWith(reference);
     await expectNoAccessibilityViolations(result.container);
   });
+
+  it("renders an abstention returned by grounded retrieval", async () => {
+    const provider: ChatProvider = {
+      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+        onEvent({
+          type: "abstained",
+          requestId: "request-1",
+          reason: "insufficient evidence",
+          telemetry: {
+            outcome: "abstained",
+            evidenceCount: 0,
+            durationMilliseconds: 1,
+          },
+        });
+        return Promise.resolve();
+      },
+    };
+    renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
+
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Research question" }),
+      {
+        target: { value: "What is not covered?" },
+      },
+    );
+    fireEvent.submit(
+      screen.getByRole("textbox", { name: "Research question" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "I could not find enough published evidence in this corpus to answer safely.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("shows stream errors and provider failures to the researcher", async () => {
+    const streamErrorProvider: ChatProvider = {
+      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+        onEvent({
+          type: "error",
+          requestId: "request-1",
+          code: "provider_error",
+          message: "The upstream provider failed.",
+          telemetry: {
+            outcome: "error",
+            evidenceCount: 0,
+            durationMilliseconds: 1,
+          },
+        });
+        return Promise.resolve();
+      },
+    };
+    const streamErrorResult = renderAtRoute(
+      <ResearchChat corpusId="corpus-1" provider={streamErrorProvider} />,
+    );
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Research question" }),
+      { target: { value: "Will this fail?" } },
+    );
+    fireEvent.submit(
+      screen.getByRole("textbox", { name: "Research question" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The upstream provider failed.",
+    );
+    streamErrorResult.unmount();
+
+    const rejectedProvider: ChatProvider = {
+      streamQuestion: () => Promise.reject(new Error("Network unavailable")),
+    };
+    renderAtRoute(
+      <ResearchChat corpusId="corpus-1" provider={rejectedProvider} />,
+    );
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Research question" }),
+      { target: { value: "Will the network fail?" } },
+    );
+    fireEvent.submit(
+      screen.getByRole("textbox", { name: "Research question" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Network unavailable",
+    );
+  });
 });

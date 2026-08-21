@@ -85,6 +85,57 @@ func TestHandlerMapsCancellationToCancelledTerminalEvent(t *testing.T) {
 	}
 }
 
+func TestHandlerRejectsInvalidPayloads(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "malformed JSON", body: "{", want: "invalid_question"},
+		{name: "unknown field", body: `{"question":"What applies?","unexpected":true}`, want: "invalid_question"},
+		{name: "invalid language", body: `{"question":"What applies?","interfaceLanguage":"fr"}`, want: "invalid_input"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/corpora/"+uuid.NewString()+"/chat/stream", strings.NewReader(test.body))
+			mux := http.NewServeMux()
+			NewHandler(fakeService{}).Register(mux)
+
+			mux.ServeHTTP(recorder, request)
+			if !strings.Contains(recorder.Body.String(), `"code":"`+test.want+`"`) {
+				t.Fatalf("body = %s, want code %q", recorder.Body.String(), test.want)
+			}
+		})
+	}
+}
+
+func TestHandlerMapsTerminalFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "grounding validation", err: chatdomain.ErrGroundingValidation, want: "abstained"},
+		{name: "retrieval", err: chatdomain.ErrRetrievalFailed, want: "retrieval_failed"},
+		{name: "invalid question", err: chatdomain.ErrInvalidQuestion, want: "invalid_question"},
+		{name: "generation", err: chatdomain.ErrGenerationFailed, want: "generation_failed"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/corpora/"+uuid.NewString()+"/chat/stream", strings.NewReader(`{"question":"What applies?"}`))
+			mux := http.NewServeMux()
+			NewHandler(fakeService{err: test.err}).Register(mux)
+
+			mux.ServeHTTP(recorder, request)
+			if !strings.Contains(recorder.Body.String(), `"type":"`+test.want+`"`) && !strings.Contains(recorder.Body.String(), `"code":"`+test.want+`"`) {
+				t.Fatalf("body = %s, want terminal %q", recorder.Body.String(), test.want)
+			}
+		})
+	}
+}
+
 type fakeService struct {
 	result chatdomain.Result
 	err    error
