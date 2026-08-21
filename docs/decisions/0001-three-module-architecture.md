@@ -1,4 +1,4 @@
-# ADR 0001: Three Application Modules
+# ADR 0001: Application Module Boundaries
 
 - Status: Accepted
 - Date: 2026-08-12
@@ -12,7 +12,7 @@ Norvii needs a portfolio-grade web interface, an online application backend, and
 ## Decision drivers
 
 - React ecosystem for a polished chat and document interface.
-- Go for online APIs, streaming, retrieval orchestration, MCP, and skills.
+- Go for the public online API and streaming facade.
 - Python ecosystem for document extraction, NLP, embeddings, and evaluation.
 - Explicit boundaries that demonstrate cross-language engineering without duplicating server responsibilities.
 - A small operational footprint appropriate for a POC.
@@ -33,11 +33,11 @@ This accelerates internal data applications but provides less control over the p
 
 ## Decision
 
-Use a React and TypeScript SPA built with Vite under `apps/web/`, a Go backend under `apps/api/`, and a Python ingestion service under `apps/ingestion/`.
+Use a React and TypeScript SPA built with Vite under `apps/web/`, a Go public API facade under `apps/api/`, a Python LangGraph agent under `apps/agent/`, and a Python ingestion service under `apps/ingestion/`.
 
-Group all three deployable modules under `apps/` to keep their repository paths symmetric. Keep executable product experiments under the separate `prototypes/` root.
+Group all four deployable modules under `apps/` to keep their repository paths symmetric. Keep executable product experiments under the separate `prototypes/` root.
 
-Use assistant-ui for chat presentation and AI SDK compatible message semantics at the client boundary. The Go API remains the only online application backend. Streamlit is not part of the primary interface.
+Use assistant-ui for chat presentation and AI SDK compatible message semantics at the client boundary. The Go API remains the only public online backend. The Python agent is an internal online runtime behind the Go facade. Streamlit is not part of the primary interface.
 
 ## Consequences
 
@@ -46,17 +46,17 @@ Use assistant-ui for chat presentation and AI SDK compatible message semantics a
 - Clear workload and language ownership.
 - Independent module tests and dependency graphs.
 - React control over chat, citation, and inspection presentation.
-- Python libraries remain outside online request latency.
+- Python ingestion libraries remain outside online request latency, while the dedicated Python agent provides an explicit LangGraph boundary for online AI orchestration.
 
 ### Negative
 
-- Public schemas and contract tests are required across three languages.
-- Local development requires three toolchains.
+- Public and internal schemas and contract tests are required across the runtimes.
+- Local development requires Node.js, Go, and Python toolchains.
 - Streaming compatibility cannot rely on a JavaScript server implementation.
 
 ## Verification
 
-Each cross-module feature plan must identify affected modules and contract tests. The first chat feature must prove that the Go stream produces structured message parts consumed by the React client.
+Each cross-module feature plan must identify affected modules and contract tests. The first chat feature must prove that the Python graph produces grounded internal events, the Go facade produces structured public message parts, and React consumes them. The Python agent was added by Feature 005 after confirming that LangGraph's supported ecosystems provide a safer orchestration boundary than hand-managed graph state in Go.
 
 ## References
 

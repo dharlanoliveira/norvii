@@ -9,7 +9,8 @@ GitHub Actions cannot run on a commit that exists only on a developer machine. A
 The [`CI` workflow](../../.github/workflows/ci.yml) executes these gates in order:
 
 1. Repository validation tests the CI support scripts, enforces English in project-owned source and documentation, and validates maintained shell scripts.
-2. Module builds invoke the `ci` target owned by every scaffolded application module.
+2. Module builds invoke the `ci` target owned by every scaffolded application module,
+   including the online Python agent.
 3. Persistence integration starts digest-pinned PostgreSQL and Neo4j, then proves
    initialization, runtime connectivity, restart retention, volume isolation, and
    clean reproduction in an isolated Compose project.
@@ -33,6 +34,7 @@ The workflow monitors these module roots:
 | `prototypes/web/` | `package.json` |
 | `apps/web/` | `package.json` |
 | `apps/api/` | `go.mod` |
+| `apps/agent/` | `pyproject.toml` |
 | `apps/ingestion/` | `pyproject.toml` |
 
 An unscaffolded module is reported and skipped. Once a scaffold marker exists, the module MUST provide a `Makefile` with a `ci` target. A missing target or non-zero target result fails the build.
@@ -52,6 +54,11 @@ The production modules are separate SonarQube Cloud projects bound to the same G
 | `apps/ingestion/` | `norvii-ingestion` | `SONAR_INGESTION_PROJECT_KEY` |
 
 The approved prototype is not an independently maintained production module and is therefore excluded from SonarQube Cloud analysis.
+
+The online agent currently has no SonarQube Cloud project because the personal
+organization was provisioned with the three original projects. Its own Ruff, mypy,
+pytest, and package-build gate still runs in GitHub Actions; add a fourth Sonar project
+only when the organization configuration is intentionally expanded.
 
 The web scanner generates LCOV coverage from the client unit tests. API and ingestion coverage comes from the service-backed persistence job, so PostgreSQL and Neo4j adapters remain part of the measured code rather than being excluded as external infrastructure. The workflow retains those temporary coverage artifacts for one day and downloads each report only into its owning module before analysis. Composition roots and deterministic localization or fixture data may be excluded from coverage or duplication metrics when the metric cannot provide meaningful engineering feedback; production behavior remains in scope.
 

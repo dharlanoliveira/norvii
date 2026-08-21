@@ -32,8 +32,9 @@ telemetry but is not a durable conversation record.
 | `embedding_model`, `embedding_version` | Required reproducibility metadata |
 | `created_at` | Publication timestamp |
 
-Chunks are immutable. A source reprocess creates a new document and chunk set; older chunks remain
-available for historical answer identity but are excluded from current retrieval.
+Chunks are immutable. A source reprocess creates a new document and chunk set; a changed pipeline
+version is also a deliberate reprocess identity and allows embedding backfill for a prior capture.
+Older chunks remain available for historical answer identity but are excluded from current retrieval.
 
 ## Retrieved evidence
 

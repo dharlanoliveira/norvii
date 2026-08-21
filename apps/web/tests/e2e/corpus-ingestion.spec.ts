@@ -5,7 +5,7 @@ const sourceId = "20000000-0000-4000-8000-000000000002";
 
 test.beforeEach(async ({ page }) => configureAuthoritativeAPI(page));
 
-test("browses a persisted document by keyboard without simulated chat", async ({
+test("browses a persisted document by keyboard and opens grounded chat", async ({
   page,
 }) => {
   await page.goto("/");
@@ -27,21 +27,23 @@ test("browses a persisted document by keyboard without simulated chat", async ({
   ).toHaveAttribute("data-selected", "true");
   await expect(location).toHaveValue("60000000-0000-4000-8000-000000000002");
   await expect(
-    page.getByRole("heading", { name: "Grounded chat is coming next." }),
+    page.getByRole("heading", { name: "Ask about this corpus." }),
   ).toBeHidden();
 
   await page.getByRole("tab", { name: "Chat" }).click();
   await expect(
-    page.getByRole("heading", { name: "Grounded chat is coming next." }),
+    page.getByRole("heading", { name: "Ask about this corpus." }),
   ).toBeVisible();
-  await expect(page.getByRole("textbox")).toHaveCount(0);
+  await expect(
+    page.getByRole("textbox", { name: "Research question" }),
+  ).toBeVisible();
 
   await page
     .getByRole("combobox", { name: "Interface language" })
     .selectOption("pt");
   await expect(
     page.getByRole("heading", {
-      name: "O chat fundamentado ser\u00e1 a pr\u00f3xima etapa.",
+      name: "Pergunte sobre este corpus.",
     }),
   ).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/corpora/${corpusId}$`));

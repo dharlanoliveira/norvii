@@ -35,7 +35,7 @@ choice. Do not use an ADR as a substitute for feature requirements or task track
 
 | ADR | Decision |
 | --- | --- |
-| [0001](0001-three-module-architecture.md) | Use React, Go, and Python production modules under `apps/` |
+| [0001](0001-three-module-architecture.md) | Define React, Go facade, Python agent, and Python ingestion boundaries |
 | [0002](0002-corpus-and-source-model.md) | Model isolated corpora with PDF or URL sources |
 | [0003](0003-spec-driven-delivery.md) | Deliver product capabilities through Spec Kit features |
 | [0004](0004-executable-react-prototype.md) | Approve an executable React prototype before production implementation |

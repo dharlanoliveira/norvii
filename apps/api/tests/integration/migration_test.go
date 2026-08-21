@@ -38,8 +38,8 @@ func TestCanonicalInitializationIsVectorCapableAndRepeatable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Apply() error = %v", err)
 	}
-	if firstStatus.CurrentVersion != 4 || secondStatus.CurrentVersion != 4 {
-		t.Fatalf("migration versions = %d and %d, want 4 and 4", firstStatus.CurrentVersion, secondStatus.CurrentVersion)
+	if firstStatus.CurrentVersion != 6 || secondStatus.CurrentVersion != 6 {
+		t.Fatalf("migration versions = %d and %d, want 6 and 6", firstStatus.CurrentVersion, secondStatus.CurrentVersion)
 	}
 
 	connectionConfig, err := pgx.ParseConfig("sslmode=disable")

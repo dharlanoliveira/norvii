@@ -203,6 +203,24 @@ a {
   text-transform: uppercase;
 }
 
+@media (min-width: 761px) {
+  .app-shell:has(.workspace-page) {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app-shell:has(.workspace-page) .page-main {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .app-shell:has(.workspace-page) .app-disclaimer {
+    padding-block: 14px 17px;
+  }
+}
+
 .kicker {
   display: inline-flex;
   gap: 10px;

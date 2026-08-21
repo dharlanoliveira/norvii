@@ -7,8 +7,17 @@ automated tests and optional configured providers for local demonstration.
 
 - Docker Compose v2 with the existing PostgreSQL/pgvector and Neo4j services
 - Go 1.26, Python 3.13 with uv 0.11, and Node.js 24 with npm
+- The online `apps/agent/` Python LangGraph service started by `make bootstrap`
 - Feature 004 initialized with at least one ready document
 - Optional OpenAI-compatible embedding and chat provider configuration in `infra/.env.example`
+
+`NORVII_AGENT_BASE_URL` points the Go facade to the internal agent (the local default is
+`http://127.0.0.1:8090`). `NORVII_CHAT_BASE_URL` must point to the provider's
+OpenAI-compatible chat-completions endpoint when model-backed answers are enabled.
+`NORVII_EMBEDDING_BASE_URL` must point to its embeddings endpoint. The default model is
+`text-embedding-3-small`, and the current PostgreSQL vector schema requires
+`NORVII_EMBEDDING_DIMENSIONS=1536`. An empty `NORVII_EMBEDDING_API_KEY` reuses the
+ignored `NORVII_CHAT_API_KEY` for a compatible provider.
 
 ## Start the environment
 
@@ -16,8 +25,23 @@ automated tests and optional configured providers for local demonstration.
 make bootstrap
 ```
 
-If no model credentials are configured, the catalog and document viewer remain usable and chat
-shows the localized unavailable-provider state. Automated tests never require live credentials.
+If no chat endpoint is configured, the catalog and document viewer remain usable and the agent
+emits a localized provider-unavailable failure through the Go facade. Automated tests never
+require live credentials.
+
+## Backfill sources published before embeddings
+
+1. Configure the embeddings endpoint and credentials in the ignored `infra/.env`.
+2. Start the managed environment with `make bootstrap`.
+3. In a ready corpus, choose **Reprocess source** for every source that predates
+   `corpus-ingestion-v3`.
+4. Wait until each source returns to the ready state. The worker publishes a new immutable
+   document version, its addressable units, and ready 1536-dimensional retrieval chunks in one
+   transaction.
+
+If embedding acquisition, response validation, or persistence fails, the processing attempt is
+marked as failed and the prior ready document remains the source's latest evidence. Retry only
+after correcting the provider configuration or transient provider condition.
 
 ## Validate the grounded answer journey
 
@@ -43,6 +67,7 @@ shows the localized unavailable-provider state. Automated tests never require li
 
 ```bash
 make -C apps/api ci
+make -C apps/agent ci
 make -C apps/ingestion ci
 make -C apps/web ci
 python .github/scripts/validate_contracts.py

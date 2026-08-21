@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Protocol
 
 from norvii_ingestion.acquisition.https import (
@@ -19,6 +19,8 @@ from norvii_ingestion.domain.models import (
     Sha256,
     SourceKind,
 )
+from norvii_ingestion.enrichment.chunking import LegalChunker
+from norvii_ingestion.enrichment.embedding import EmbeddingProviderError
 from norvii_ingestion.extraction.html import ExtractionError
 from norvii_ingestion.extraction.pdf import PdfExtractionError
 from norvii_ingestion.publication.postgres.repository import WorkRepositoryError
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
     from norvii_ingestion.acquisition.https import Acquisition
     from norvii_ingestion.domain.artifacts import DocumentArtifact
     from norvii_ingestion.domain.models import IngestionWork
+    from norvii_ingestion.enrichment.embedding import EmbeddingProvider
 
 _FAILURE_MAPPINGS: tuple[tuple[type[Exception], FailureCategory], ...] = (
     (UnsafeUrlError, FailureCategory.UNSAFE_URL),
@@ -39,6 +42,7 @@ _FAILURE_MAPPINGS: tuple[tuple[type[Exception], FailureCategory], ...] = (
     (AcquisitionError, FailureCategory.ACQUISITION_FAILED),
     (ExtractionError, FailureCategory.EXTRACTION_FAILED),
     (PdfExtractionError, FailureCategory.EXTRACTION_FAILED),
+    (EmbeddingProviderError, FailureCategory.PUBLICATION_FAILED),
     (WorkRepositoryError, FailureCategory.PUBLICATION_FAILED),
 )
 
@@ -101,7 +105,7 @@ class PublicationRepository(Protocol):
 class IngestionProcessor:
     """Process exactly one claim without automatic retries."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         repository: PublicationRepository,
@@ -109,18 +113,34 @@ class IngestionProcessor:
         extractors: ArtifactExtractors,
         pipeline_version: str,
         clock: Callable[[], datetime],
+        embedding_provider: EmbeddingProvider,
+        embedding_model: str,
     ) -> None:
         self._repository = repository
         self._acquirer = acquirer
         self._extractors = extractors
         self._pipeline_version = pipeline_version
         self._clock = clock
+        self._embedding_provider = embedding_provider
+        self._embedding_model = embedding_model
 
     def process(self, work: IngestionWork) -> None:
         """Acquire, extract, and publish, or persist one safe failure category."""
         try:
             content, media_type, final_url = self._origin(work)
             artifact = self._extract(work, content)
+            retrieval_chunks = LegalChunker().chunk(artifact)
+            embeddings = self._embedding_provider.embed(
+                tuple(chunk.text for chunk in retrieval_chunks)
+            )
+            if len(embeddings) != len(retrieval_chunks):
+                raise ValueError(  # noqa: TRY301
+                    "embedding provider returned an unexpected item count"
+                )
+            enriched_chunks = tuple(
+                replace(chunk, embedding=embedding, embedding_model=self._embedding_model)
+                for chunk, embedding in zip(retrieval_chunks, embeddings, strict=True)
+            )
             now = self._clock()
             capture = OriginCapture(
                 content_sha256=Sha256.from_bytes(content),
@@ -138,6 +158,7 @@ class IngestionProcessor:
                     pipeline_version=self._pipeline_version,
                     origin_sha256=capture.content_sha256,
                     artifact=artifact,
+                    retrieval_chunks=enriched_chunks,
                 ),
                 now,
             )

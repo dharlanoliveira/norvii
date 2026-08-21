@@ -15,6 +15,10 @@
 - **Decision**: Define a provider-neutral embedding port and an OpenAI-compatible HTTP adapter,
   with a configured 1536-dimensional model as the POC default. Tests use a deterministic fake
   embedding provider. The configured model and embedding version are persisted with each chunk.
+  Enrichment executes before the publication transaction; the transaction writes units and every
+  completed chunk/vector pair together. The `corpus-ingestion-v3` pipeline identity creates a
+  fresh document version for an unchanged earlier capture, providing an explicit, immutable
+  backfill path for sources published before embeddings existed.
 - **Rationale**: A multilingual hosted provider keeps the POC small and supports both corpus
   languages without adding a large local model runtime. The port keeps the product independent of
   one vendor and allows a local provider later. A fixed vector dimension permits a predictable
@@ -23,17 +27,20 @@
   adds a large model download and runtime cost. Provider-specific SDKs couple Python and Go to a
   vendor and complicate tests. Dimensionless vectors weaken index and configuration guarantees.
 
-## Chat model and streaming
+## Online orchestration and chat model
 
-- **Decision**: Define a Go chat-model port and use an OpenAI-compatible streaming chat adapter
-  selected by configuration. Expose a Norvii-owned SSE contract with JSON events rather than
+- **Decision**: Keep the Go API as the public HTTP/SSE facade and run retrieval, grounding,
+  citation validation, abstention, and an OpenAI-compatible chat adapter in a dedicated Python
+  LangGraph service. Expose a Norvii-owned public SSE contract with JSON events rather than
   leaking provider payloads.
-- **Rationale**: The API owns online orchestration and can enforce corpus boundaries, prompt
-  policy, cancellation, citation validation, and safe errors. A product-owned stream lets the
-  React client remain stable if the provider changes.
-- **Alternatives considered**: Calling the provider from React would expose credentials and move
-  policy outside the API. Returning provider-native events couples the public contract to a
-  vendor. Buffering the complete answer weakens perceived responsiveness and cancellation.
+- **Rationale**: LangGraph provides explicit, testable state transitions for retrieval, decision,
+  generation, and validation. This avoids hand-managed graph state in Go while preserving a
+  small Go boundary for public API validation, cancellation, and stream translation. The public
+  contract remains stable if the provider or orchestration framework changes.
+- **Alternatives considered**: Keeping the entire graph in Go would require maintaining state
+  transitions and provider streaming manually without a comparable LangGraph runtime. Calling
+  the provider from React would expose credentials and move policy outside the backend. Returning
+  provider-native events couples the public contract to a vendor.
 
 ## Grounding and abstention
 

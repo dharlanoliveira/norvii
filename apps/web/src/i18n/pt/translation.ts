@@ -143,8 +143,23 @@ export const portugueseTranslation = {
   chat: {
     regionLabel: "Conversa de pesquisa do corpus",
     kicker: "Assistente limitado ao corpus",
-    unavailable: "O chat fundamentado ainda não está disponível nesta feature.",
-    unavailableTitle: "O chat fundamentado será a próxima etapa.",
+    title: "Pergunte sobre este corpus.",
+    introduction:
+      "Faça uma pergunta objetiva e receba uma resposta fundamentada apenas nas fontes publicadas deste limite de evidências.",
+    placeholder: "Faça uma pergunta sobre as fontes publicadas...",
+    questionLabel: "Pergunta de pesquisa",
+    send: "Enviar pergunta",
+    stop: "Interromper resposta",
+    you: "Você",
+    assistant: "Assistente Norvii",
+    responding: "Analisando as evidências publicadas...",
+    groundedOnly: "As respostas são limitadas a este corpus",
+    language: "Interface: {{language}}",
+    references: "Referências da resposta",
+    abstained:
+      "Não encontrei evidências publicadas suficientes neste corpus para responder com segurança.",
+    errorTitle: "Não foi possível concluir a resposta fundamentada.",
+    failed: "Não foi possível concluir o fluxo do chat.",
   },
   sourceStatus: {
     pending: "Pendente",

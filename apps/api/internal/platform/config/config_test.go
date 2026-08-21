@@ -20,6 +20,9 @@ func TestLoadUsesSafeLocalDefaults(t *testing.T) {
 	if configuration.ShutdownTimeout != 10*time.Second {
 		t.Fatalf("ShutdownTimeout = %s, want 10s", configuration.ShutdownTimeout)
 	}
+	if configuration.Agent.BaseURL != "http://127.0.0.1:8090" || configuration.Agent.Timeout != 30*time.Second {
+		t.Fatalf("Agent defaults = %#v, want bounded agent defaults", configuration.Agent)
+	}
 }
 
 func TestLoadRejectsInvalidPort(t *testing.T) {

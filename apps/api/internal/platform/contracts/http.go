@@ -62,7 +62,8 @@ func DecodeError(payload []byte) (ErrorEnvelope, error) {
 		"invalid_input": true, "payload_too_large": true, "unsafe_url": true,
 		"unsupported_content": true, "duplicate_source": true, "stale_state": true,
 		"not_found": true, "unavailable": true, "acquisition_failed": true,
-		"extraction_failed": true, "publication_failed": true, "internal_error": true,
+		"extraction_failed": true, "publication_failed": true, "invalid_question": true,
+		"internal_error": true,
 	}
 	if !validCodes[envelope.Error.Code] {
 		return ErrorEnvelope{}, fmt.Errorf("unsupported public error code %q", envelope.Error.Code)

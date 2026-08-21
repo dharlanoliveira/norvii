@@ -106,6 +106,7 @@ export type PublicErrorCode =
   | "acquisition_failed"
   | "extraction_failed"
   | "publication_failed"
+  | "invalid_question"
   | "internal_error";
 
 export interface ErrorEnvelope {
@@ -129,6 +130,7 @@ const errorCodes = new Set<PublicErrorCode>([
   "acquisition_failed",
   "extraction_failed",
   "publication_failed",
+  "invalid_question",
   "internal_error",
 ]);
 

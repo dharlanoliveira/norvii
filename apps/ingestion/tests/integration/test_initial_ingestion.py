@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,7 @@ from norvii_ingestion.acquisition.https import HttpsAcquirer
 from norvii_ingestion.config import WorkerConfig
 from norvii_ingestion.domain.artifacts import PublicationCommand
 from norvii_ingestion.domain.models import OriginCapture, Sha256
+from norvii_ingestion.enrichment.chunking import LegalChunker
 from norvii_ingestion.extraction.html import HtmlExtractor
 from norvii_ingestion.publication.persistence.config import EnvironmentConfigurationLoader
 from norvii_ingestion.publication.postgres.repository import PostgresWorkRepository
@@ -60,6 +62,10 @@ def test_oldest_initial_work_is_leased_extracted_and_published_atomically() -> N
             pipeline_version="corpus-ingestion-v1",
             origin_sha256=capture.content_sha256,
             artifact=artifact,
+            retrieval_chunks=tuple(
+                replace(chunk, embedding=(0.0,) * 1536, embedding_model="test-embedding")
+                for chunk in LegalChunker().chunk(artifact)
+            ),
         )
 
         document_id = repository.publish(claimed, capture, command, now)
@@ -71,16 +77,29 @@ def test_oldest_initial_work_is_leased_extracted_and_published_atomically() -> N
                        w.status, a.status,
                        (SELECT count(*) FROM source_revisions WHERE source_id = s.id),
                        (SELECT count(*) FROM document_versions WHERE source_id = s.id),
-                       (SELECT count(*) FROM document_units WHERE document_id = %s)
+                       (SELECT count(*) FROM document_units WHERE document_id = %s),
+                       (SELECT count(*) FROM retrieval_chunks WHERE document_id = %s
+                          AND enrichment_status = 'ready'
+                          AND vector_dims(embedding) = 1536
+                          AND embedding_model = 'test-embedding')
                 FROM sources s
                 JOIN ingestion_work w ON w.source_id = s.id
                 JOIN processing_attempts a ON a.work_id = w.id
                 WHERE s.id = %s
                 """,
-                (document_id, claimed.claim.source_id),
+                (document_id, document_id, claimed.claim.source_id),
             )
             row = cursor.fetchone()
-        assert row == ("ready", document_id, "succeeded", "succeeded", 1, 1, len(artifact.units))
+        assert row == (
+            "ready",
+            document_id,
+            "succeeded",
+            "succeeded",
+            1,
+            1,
+            len(artifact.units),
+            len(LegalChunker().chunk(artifact)),
+        )
     finally:
         _restore_initial_state(repository.connection)
         repository.close()
@@ -90,6 +109,7 @@ def _restore_initial_state(connection: psycopg.Connection[tuple[object, ...]]) -
     connection.rollback()
     with connection.transaction(), connection.cursor() as cursor:
         cursor.execute("UPDATE sources SET latest_ready_document_id = NULL")
+        cursor.execute("DELETE FROM retrieval_chunks")
         cursor.execute("DELETE FROM document_units")
         cursor.execute("DELETE FROM document_versions")
         cursor.execute("DELETE FROM source_revisions")

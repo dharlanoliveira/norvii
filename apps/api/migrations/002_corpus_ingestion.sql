@@ -251,8 +251,8 @@ VALUES
     (
         '20000000-0000-4000-8000-000000000002',
         '10000000-0000-4000-8000-000000000002',
-        'https://eur-lex.europa.eu/eli/reg/2016/679/oj/eng/',
-        'https://eur-lex.europa.eu/eli/reg/2016/679/oj/eng/'
+        'https://publications.europa.eu/resource/cellar/3e485e15-11bd-11e6-ba9a-01aa75ed71a1.0006.03/DOC_1',
+        'https://publications.europa.eu/resource/cellar/3e485e15-11bd-11e6-ba9a-01aa75ed71a1.0006.03/DOC_1'
     )
 ON CONFLICT (source_id) DO NOTHING;
 

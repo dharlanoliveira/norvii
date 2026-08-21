@@ -4,11 +4,11 @@
 
 **Created**: 2026-08-20
 
-**Status**: Draft
+**Status**: In Progress
 
 **Input**: User description: "Implement grounded RAG chat over the active legal corpus with streamed answers, evidence-linked citations, explicit abstention, bilingual UI, and bounded retrieval observability. Use the existing corpus documents as the evidence boundary; defer Neo4j GraphRAG, MCP tools, skills, and evaluation dashboards to later features."
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Ask a Corpus-Grounded Question (Priority: P1)
 
@@ -20,10 +20,11 @@ A researcher opens a ready corpus, asks a question in the chat, and receives an 
 
 **Acceptance Scenarios**:
 
-1. **Given** a researcher is inside an enabled corpus with at least one ready document, **when** they submit a valid question, **then** the chat shows a pending state followed by progressively rendered answer content and a completed state.
+1. **Given** a researcher is inside an enabled corpus with at least one ready document, **when** they submit a valid question, **then** the chat shows a pending state followed by progressively rendered, semantic Markdown answer content and a completed state.
 2. **Given** the answer is supported by one or more published document passages, **when** generation completes, **then** the answer includes one or more stable evidence references that identify the source and document location used.
 3. **Given** the researcher changes the active corpus before submitting a question, **when** the request is processed, **then** retrieval and answer generation use only the newly active corpus.
 4. **Given** the researcher cancels an in-progress response or navigates away, **when** cancellation completes, **then** the client stops rendering that response and keeps the prior conversation state intact.
+5. **Given** a ready source was published before vector enrichment was enabled, **when** it is reprocessed with a new enrichment pipeline version, **then** the system publishes a new immutable document version with one ready, model-versioned embedding per retrieval chunk before that version is eligible for chat retrieval.
 
 ### User Story 2 - Inspect and Navigate Supporting Evidence (Priority: P2)
 
@@ -63,8 +64,9 @@ A researcher asks a question that is not sufficiently supported by the active co
 - A question asks for legal advice or a conclusion beyond the available text: the response states the research limitation and preserves the technical-demonstration disclaimer.
 - Multiple passages support the same statement: the answer may group their references without duplicating identical visible evidence.
 - A citation points to a nested item or paragraph: the surrounding article context remains visible when the evidence is opened.
+- A vector provider rejects a batch, times out, or returns a malformed or incorrectly sized vector: the attempt fails safely, the prior ready document remains available, and no partially embedded document becomes eligible for retrieval.
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -88,6 +90,8 @@ A researcher asks a question that is not sufficiently supported by the active co
 - **FR-018**: The system MUST enforce a bounded retrieval result count, context size, generation duration, and streamed response size suitable for a single-user POC.
 - **FR-019**: Conversation messages MAY remain ephemeral for this feature; persistent conversation history is not required.
 - **FR-020**: This feature MUST NOT publish Neo4j graph projections, perform GraphRAG traversal, expose MCP research tools, invoke reusable research skills, or provide an evaluation dashboard.
+- **FR-021**: Retrieval chunks MUST be enriched with a fixed-dimension, model-versioned embedding before publication. Reprocessing a source with a changed enrichment pipeline version MUST create a new immutable document version so sources published before vector enrichment can be backfilled without mutating historical evidence. Only ready chunks with a valid embedding from the latest ready document version are eligible for online retrieval.
+- **FR-022**: The client MUST use an approved chat-rendering library for the conversation runtime, thread viewport, message rendering, streaming lifecycle, and composer. Generated assistant Markdown MUST render into accessible semantic elements. Evidence references MUST remain derived from the typed stream contract and MUST NOT be reconstructed by parsing generated Markdown.
 
 ### Key Entities
 
@@ -97,7 +101,7 @@ A researcher asks a question that is not sufficiently supported by the active co
 - **Evidence reference**: A user-selectable citation target that resolves to a corpus-owned source and stable document location.
 - **Research request telemetry**: Bounded operational measurements and safe outcome categories for one question lifecycle.
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 
@@ -110,6 +114,7 @@ A researcher asks a question that is not sufficiently supported by the active co
 - **SC-007**: Invalid questions, unavailable evidence, upstream failures, cancellation, and safety-boundary violations produce the expected localized outcome in 100% of automated contract and component scenarios.
 - **SC-008**: Retrieval and generation telemetry is present for 100% of terminal request outcomes and contains no complete document text, credentials, full prompts, or private request data in automated log inspections.
 - **SC-009**: English and Portuguese interface resources provide parity for all grounded-chat states, and the default interface remains English.
+- **SC-010**: In deterministic enrichment scenarios, 100% of a successfully reprocessed source's retrieval chunks have the configured vector dimension and embedding model metadata; malformed or failed embeddings publish zero chunks for the new version and leave the preceding ready version unchanged.
 
 ## Assumptions
 
@@ -121,19 +126,19 @@ A researcher asks a question that is not sufficiently supported by the active co
 - Legal content remains in its source language and is not translated as part of retrieval. The answer may follow the question language, but evidence excerpts remain faithful to the preserved source text.
 - The technical-demonstration disclaimer remains visible wherever a grounded answer or abstention is shown; Norvii does not provide legal advice.
 
-## Norvii Feature Requirements *(mandatory)*
+## Norvii Feature Requirements _(mandatory)_
 
 ### Scope and Boundaries
 
-- **In scope**: One active-corpus question flow; bounded retrieval over published document content; streamed grounded answer or abstention; evidence references linked to stable document locations; bilingual chat states; safe failure and cancellation behavior; and content-safe request telemetry.
+- **In scope**: One active-corpus question flow; bounded retrieval over published document content; streamed grounded answer or abstention; evidence references linked to stable document locations; bilingual chat states; safe failure and cancellation behavior; content-safe request telemetry; vector enrichment during ingestion; versioned backfill of sources that predate embedding publication; and cosine-ranked retrieval of only ready embeddings from a source's latest ready document version.
 - **Out of scope**: GraphRAG, Neo4j graph publication or traversal, MCP research tools, reusable skills, persistent conversations, authentication, multi-user access, model fine-tuning, OCR, automatic translation of evidence, and evaluation dashboards.
 
-### Prototype Baseline *(mandatory for production UI features)*
+### Prototype Baseline _(mandatory for production UI features)_
 
 - **Approved baseline**: The production workspace and unavailable-chat surface delivered by [Feature 004](../004-corpus-catalog/spec.md), which itself follows the verified prototype baseline from [Feature 001](../001-product-experience-prototype/spec.md).
 - **Intentional differences**: The unavailable-chat state is replaced by a real question composer, streamed answer states, abstention states, and evidence navigation. Existing source tree, document viewer, corpus boundary, bilingual behavior, and technical disclaimer remain authoritative.
 
-### Evidence and Corpus Boundaries *(mandatory for retrieval, chat, or citations)*
+### Evidence and Corpus Boundaries _(mandatory for retrieval, chat, or citations)_
 
 - **Active corpus constraint**: Every question, retrieval operation, evidence reference, document location, telemetry record, and answer is scoped to one active corpus. A request MUST fail closed when that boundary cannot be established.
 - **Evidence behavior**: Answers are generated only from retrieved passages belonging to immutable published document versions. Each factual answer segment has inspectable supporting references, and insufficient support produces an explicit abstention.

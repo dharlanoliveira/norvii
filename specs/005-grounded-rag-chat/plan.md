@@ -7,19 +7,20 @@
 ## Summary
 
 Deliver the first real research conversation in Norvii. The React workspace sends a question
-scoped to the active corpus, the Go API retrieves bounded evidence from published document
-chunks, asks a configured model to synthesize only from that evidence, and returns a structured
-stream containing evidence, answer deltas, abstention, cancellation, or safe failure events.
-Python owns legal-aware chunking and embedding publication. PostgreSQL remains the canonical
-vector store. Neo4j, GraphRAG, MCP, reusable skills, and evaluation dashboards remain deferred.
+scoped to the active corpus, the Go API provides the public HTTP/SSE boundary, and a dedicated
+Python LangGraph service orchestrates retrieval, evidence sufficiency, model generation, citation
+validation, abstention, and stream events. Python ingestion remains responsible for acquisition,
+legal-aware chunking, and embedding publication. PostgreSQL remains the canonical vector store.
+Neo4j, GraphRAG expansion, MCP, reusable skills, and evaluation dashboards remain deferred.
 
 ## Technical Context
 
 **Language/Version**: Go 1.26; Python 3.13; TypeScript 6.0 and React 19 on Node.js 24
 
-**Primary Dependencies**: Existing Go `net/http` and pgx stack; existing Python ingestion and
-HTTP transport; existing React Router, i18next, and workspace components; provider-neutral
-embedding and chat-model ports with OpenAI-compatible HTTP adapters behind configuration
+**Primary Dependencies**: Existing Go `net/http` and pgx stack; LangGraph, psycopg, and the
+Python HTTP transport; existing Python ingestion; React Router, i18next, assistant-ui runtime,
+thread, message, composer, and Markdown primitives, and workspace components; provider-neutral embedding and chat-model ports with
+OpenAI-compatible HTTP adapters behind configuration
 
 **Storage**: PostgreSQL with pgvector remains canonical. A migration adds immutable retrieval
 chunks and embeddings linked to corpus, source revision, document version, and document unit.
@@ -33,8 +34,8 @@ validation; module quality gates and bounded fake-provider journeys
 **Target Platform**: Local Linux/WSL development and GitHub Actions with the existing local
 PostgreSQL, Neo4j, API, ingestion, and web composition
 
-**Project Type**: Monorepo vertical web application with an online Go API, offline Python
-enrichment pipeline, and React client
+**Project Type**: Monorepo vertical web application with an online Go API facade, online Python
+LangGraph orchestration service, offline Python ingestion pipeline, and React client
 
 **Performance Goals**: In deterministic local tests, first visible stream progress within 1
 second of the first accepted model event; 95% of bounded requests terminate within 10 seconds;
@@ -51,13 +52,13 @@ configuration at a time
 
 ## Constitution Check
 
-*GATE: Passed before Phase 0 research. Re-check after Phase 1 design.*
+_GATE: Passed before Phase 0 research. Re-check after Phase 1 design._
 
 - **I. Specification before implementation**: PASS. This feature has user journeys,
   acceptance scenarios, measurable outcomes, explicit assumptions, and bounded scope.
-- **II. Vertical features and module boundaries**: PASS. React owns presentation; Go owns
-  online retrieval, model orchestration, streaming, errors, and telemetry; Python owns chunk and
-  embedding publication; PostgreSQL remains the canonical store.
+- **II. Vertical features and module boundaries**: PASS. React owns presentation; Go owns the
+  public API boundary and SSE facade; Python LangGraph owns online AI orchestration; ingestion
+  Python owns chunk and embedding publication; PostgreSQL remains the canonical store.
 - **III. Evidence-grounded legal answers**: PASS. Answers are generated only from active-corpus
   evidence, citations resolve to immutable document locations, and insufficient support abstains.
 - **IV. Versioned cross-language contracts**: PASS. The chat HTTP request, structured stream,
@@ -79,9 +80,9 @@ See [research.md](research.md) for the resolved decisions:
 - Use immutable legal-aware chunks anchored to document units and offsets.
 - Use a configurable OpenAI-compatible embedding adapter with a fixed 1536-dimensional default
   for the POC and fake deterministic embeddings in automated tests.
-- Use a configurable OpenAI-compatible chat-completions adapter with server-side streaming;
-  provider details remain behind Go ports.
-- Use one provider-neutral NDJSON-over-SSE stream contract with evidence emitted before deltas.
+- Use a configurable OpenAI-compatible chat-completions adapter in the Python agent;
+  provider details remain behind agent-owned ports and never cross the Go facade.
+- Use one provider-neutral SSE stream contract with evidence emitted before deltas.
 - Enforce grounding with a retrieval score threshold, an evidence-only prompt, citation markers,
   and a completed-event validation step; failure or insufficient support abstains.
 
@@ -103,9 +104,8 @@ specs/005-grounded-rag-chat/
 `-- tasks.md
 
 apps/api/
-|-- internal/chat/{domain,application,http}/
-|-- internal/retrieval/{domain,application,postgres}/
-|-- internal/platform/{llm,streaming}/
+|-- internal/chat/http/
+|-- internal/chat/agent/
 |-- migrations/005_grounded_rag.sql
 `-- tests/{contract,integration}/
 
@@ -113,6 +113,10 @@ apps/ingestion/
 |-- src/norvii_ingestion/enrichment/{chunking,embedding}/
 |-- src/norvii_ingestion/publication/postgres/
 `-- tests/{unit,integration}/enrichment/
+
+apps/agent/
+|-- src/norvii_agent/{graph,retrieval,providers,transport}/
+`-- tests/{unit,integration}/
 
 apps/web/src/
 |-- api/{chat,contract}.ts
@@ -123,10 +127,11 @@ apps/web/src/
 contracts/corpus-ingestion/v1/  # promoted only after the feature contract stabilizes
 ```
 
-**Structure Decision**: Extend the existing production modules in their capability-owned
-packages. Chat and retrieval ports remain independent of HTTP, PostgreSQL, and model providers.
-The client consumes the feature stream through a narrow adapter and never calls a provider or
-database directly. The prototype is unchanged.
+**Structure Decision**: Keep Go as the public API and SSE facade, and add a dedicated Python
+LangGraph service for online AI orchestration. The graph owns state transitions and provider
+ports; the Go facade consumes its internal stream through a narrow contract. Ingestion remains a
+separate offline Python runtime. The client consumes the public stream and never calls a provider
+or database directly. The prototype is unchanged.
 
 ### Data and Persistence Design
 
@@ -145,14 +150,12 @@ the new immutable version.
 
 ### Retrieval and Answer Design
 
-The Go API validates the active corpus and question, creates a request identity, embeds the
-question through a provider port, retrieves at most eight chunks with corpus and latest-version
-filters, and applies the configured support threshold. If support is insufficient, it emits an
-abstention without invoking the answer model. Otherwise it builds a bounded evidence-only prompt
-with numbered references and calls the chat-model port. The stream emits request metadata,
-evidence references, answer deltas, and exactly one terminal event. The terminal answer is checked
-for citation markers and evidence IDs before it can be marked completed; failed validation emits
-abstention or safe failure.
+The Go facade validates the public request and forwards the active corpus and question to the
+LangGraph service. The graph retrieves at most eight chunks with corpus and latest-version
+filters, applies the configured support threshold, builds a bounded evidence-only prompt, calls
+the chat-model port, validates citation markers, and yields structured events. If support is
+insufficient, the graph abstains without invoking the answer model. The Go facade translates the
+internal stream into the public versioned SSE contract.
 
 The model prompt treats document content as quoted evidence, not instructions. Provider adapters
 redact credentials and provider payloads from logs. Disconnects and client cancellation cancel
@@ -175,14 +178,15 @@ decoupled; storing embeddings in the canonical PostgreSQL boundary avoids a new 
 
 ### Module Impact
 
-| Module | Change | Responsibility | Verification |
-| --- | --- | --- | --- |
-| `prototypes/web/` | No change | Preserve approved prototype baseline | Existing prototype CI |
-| `apps/web/` | Change | Question composer, streaming state machine, answer rendering, citation navigation, bilingual states | Vitest, accessibility, Playwright, build budget |
-| `apps/api/` | Change | Question validation, corpus boundary, retrieval, model orchestration, stream, abstention, telemetry | Go unit, handler, contract, integration, race |
-| `apps/ingestion/` | Change | Legal-aware chunking, embedding generation, immutable chunk publication | pytest unit, provider contract, PostgreSQL integration |
-| `contracts/` | No change initially | Promote only after feature contract stabilizes | Existing contract validator |
-| `infra/` | Change | Configure bounded provider settings and optional local enrichment verification | Bootstrap and service-backed verification |
+| Module            | Change              | Responsibility                                                                                                                  | Verification                                           |
+| ----------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `prototypes/web/` | No change           | Preserve approved prototype baseline                                                                                            | Existing prototype CI                                  |
+| `apps/web/`       | Change              | assistant-ui conversation runtime, question composer, stream adapter, Markdown rendering, citation navigation, bilingual states | Vitest, accessibility, Playwright, build budget        |
+| `apps/api/`       | Change              | Public question validation, corpus boundary, internal agent proxy, SSE facade, safe errors                                      | Go unit, handler, contract, integration, race          |
+| `apps/agent/`     | Change              | LangGraph state machine, retrieval, model providers, citation validation, abstention, internal stream                           | pytest unit, provider contract, integration            |
+| `apps/ingestion/` | Change              | Legal-aware chunking, embedding generation, immutable chunk publication                                                         | pytest unit, provider contract, PostgreSQL integration |
+| `contracts/`      | No change initially | Promote only after feature contract stabilizes                                                                                  | Existing contract validator                            |
+| `infra/`          | Change              | Configure bounded provider settings and optional local enrichment verification                                                  | Bootstrap and service-backed verification              |
 
 ### Boundaries and Constraints
 
@@ -199,6 +203,9 @@ decoupled; storing embeddings in the canonical PostgreSQL boundary avoids a new 
 - **Streaming**: Use SSE framing with JSON event payloads and explicit `started`, `evidence`,
   `delta`, `completed`, `abstained`, `cancelled`, and `error` terminal semantics. The client must
   never display a non-terminal response as completed.
+- **Chat rendering**: Use assistant-ui's runtime, thread, message, composer, and Markdown
+  primitives. Adapt the existing typed SSE contract at the client boundary; evidence references
+  remain typed stream data and are not inferred from Markdown citation markers.
 - **Corpus boundary and citations**: Every retrieval query, evidence row, stream event, and
   document navigation target carries corpus and immutable document identity.
 - **Security and privacy**: Validate question length, treat retrieved text as untrusted quoted
@@ -215,6 +222,7 @@ decoupled; storing embeddings in the canonical PostgreSQL boundary avoids a new 
 ```text
 apps/web/
 apps/api/
+apps/agent/
 apps/ingestion/
 contracts/
 infra/
@@ -223,7 +231,7 @@ specs/005-grounded-rag-chat/
 
 ## Constitution Re-check After Design
 
-PASS. The design preserves the three-module boundary, adds no graph or MCP behavior, keeps
+PASS. The design preserves explicit module boundaries, adds no graph or MCP behavior, keeps
 evidence immutable and corpus-scoped, defines versioned stream semantics before implementation,
 and bounds model/provider cost. All remaining provider choices are configuration or adapter
 details, not unresolved product behavior.

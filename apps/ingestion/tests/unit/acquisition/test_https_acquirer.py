@@ -78,6 +78,11 @@ def test_acquirer_pins_validated_address_and_ignores_proxy_environment() -> None
     assert connection.requests[0][2]["User-Agent"] == (
         "Mozilla/5.0 (compatible; Norvii/1.0; +https://github.com/dharlanoliveira/norvii)"
     )
+    assert connection.requests[0][2]["Accept"] == (
+        "application/xhtml+xml, text/html;q=0.9, text/plain;q=0.8"
+    )
+    assert connection.requests[0][2]["Accept-Language"] == "eng, en;q=0.9"
+    assert connection.requests[0][2]["Accept-Max-Cs-Size"] == "1024"
 
 
 @pytest.mark.parametrize(

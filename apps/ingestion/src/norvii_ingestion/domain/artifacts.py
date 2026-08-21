@@ -13,6 +13,10 @@ from norvii_ingestion.domain.models import Sha256
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from norvii_ingestion.enrichment.models import RetrievalChunk
+
+_EMBEDDING_DIMENSIONS = 1536
+
 
 class UnitKind(StrEnum):
     """Recognized legal hierarchy and deterministic fallback unit kinds."""
@@ -162,6 +166,7 @@ class PublicationCommand:
     pipeline_version: str
     origin_sha256: Sha256
     artifact: DocumentArtifact
+    retrieval_chunks: tuple[RetrievalChunk, ...] = ()
 
     def validate(self) -> None:
         """Validate publication identity, provenance, and the complete artifact."""
@@ -170,6 +175,13 @@ class PublicationCommand:
         if not self.pipeline_version.strip():
             raise ValueError("publication pipeline version is required")
         self.artifact.validate()
+        if not self.retrieval_chunks:
+            raise ValueError("publication must contain retrieval chunks")
+        for chunk in self.retrieval_chunks:
+            if chunk.embedding is None or not chunk.embedding_model:
+                raise ValueError("retrieval chunks must contain embeddings")
+            if len(chunk.embedding) != _EMBEDDING_DIMENSIONS:
+                raise ValueError("retrieval chunk embedding dimensions are invalid")
 
 
 def _hash_text(text: str) -> Sha256:
