@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from norvii_ingestion.acquisition.https import HttpsAcquirer
 from norvii_ingestion.config import WorkerConfig
+from norvii_ingestion.enrichment.embedding import OpenAICompatibleEmbeddingProvider
 from norvii_ingestion.extraction.html import HtmlExtractor
 from norvii_ingestion.extraction.pdf import PdfExtractor
 from norvii_ingestion.orchestration.composition import (
@@ -65,6 +66,15 @@ def main() -> int:
             extractors=ArtifactExtractors(html=HtmlExtractor(), pdf=PdfExtractor()),
             pipeline_version=worker_config.pipeline_version,
             clock=_utc_now,
+            embedding_provider=OpenAICompatibleEmbeddingProvider(
+                endpoint=worker_config.embedding_endpoint,
+                api_key=worker_config.embedding_api_key,
+                model=worker_config.embedding_model,
+                dimensions=worker_config.embedding_dimensions,
+                timeout_seconds=worker_config.embedding_timeout_seconds,
+                batch_size=worker_config.embedding_batch_size,
+            ),
+            embedding_model=worker_config.embedding_model,
         ),
         logger=StructuredEventLogger(_LOGGER),
     )

@@ -13,6 +13,8 @@ import (
 	catalogapplication "github.com/dharlanoliveira/norvii/apps/api/internal/catalog/application"
 	cataloghttp "github.com/dharlanoliveira/norvii/apps/api/internal/catalog/http"
 	catalogpostgres "github.com/dharlanoliveira/norvii/apps/api/internal/catalog/postgres"
+	chatagent "github.com/dharlanoliveira/norvii/apps/api/internal/chat/agent"
+	chathttp "github.com/dharlanoliveira/norvii/apps/api/internal/chat/http"
 	documenthttp "github.com/dharlanoliveira/norvii/apps/api/internal/document/http"
 	documentpostgres "github.com/dharlanoliveira/norvii/apps/api/internal/document/postgres"
 	"github.com/dharlanoliveira/norvii/apps/api/internal/platform/config"
@@ -54,6 +56,7 @@ func main() {
 	sourceService := sourceapplication.NewService(sourceRepository, uuid.New, time.Now)
 	sourcehttp.NewHandler(sourceRepository, sourceService).Register(application)
 	documenthttp.NewHandler(documentpostgres.NewRepository(pool)).Register(application)
+	chathttp.NewHandler(chatagent.NewClient(configuration.Agent)).Register(application)
 	server := httpserver.New(configuration, application, uuid.New)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

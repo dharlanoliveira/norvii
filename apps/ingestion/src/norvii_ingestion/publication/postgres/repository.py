@@ -47,7 +47,7 @@ class PostgresWorkRepository:
     def __init__(
         self,
         connection: psycopg.Connection[tuple[object, ...]],
-        pipeline_version: str = "corpus-ingestion-v2",
+        pipeline_version: str = "corpus-ingestion-v3",
     ) -> None:
         self.connection = connection
         self._pipeline_version = pipeline_version
@@ -279,6 +279,7 @@ class PostgresWorkRepository:
                 )
                 if created:
                     self._insert_units(cursor, document_id, command)
+                    self._insert_retrieval_chunks(cursor, work, document_id, command)
                 self._complete_attempt(
                     cursor,
                     work,
@@ -487,6 +488,43 @@ class PostgresWorkRepository:
         )
 
     @staticmethod
+    def _insert_retrieval_chunks(
+        cursor: psycopg.Cursor[tuple[object, ...]],
+        work: IngestionWork,
+        document_id: UUID,
+        command: PublicationCommand,
+    ) -> None:
+        """Persist enriched source spans and vectors in the publication transaction."""
+        chunks = command.retrieval_chunks
+        cursor.executemany(
+            """
+            INSERT INTO retrieval_chunks (
+                id, corpus_id, source_id, document_id, unit_id, ordinal,
+                start_offset, end_offset, content, content_sha256, context_locator,
+                embedding, embedding_model, enrichment_status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s, 'ready')
+            """,
+            [
+                (
+                    chunk.id,
+                    work.claim.corpus_id,
+                    work.claim.source_id,
+                    document_id,
+                    chunk.source_unit_id,
+                    ordinal,
+                    chunk.start_offset,
+                    chunk.end_offset,
+                    chunk.text,
+                    str(chunk.text_sha256),
+                    chunk.context_locator,
+                    _vector_literal(chunk.embedding),
+                    chunk.embedding_model,
+                )
+                for ordinal, chunk in enumerate(chunks)
+            ],
+        )
+
+    @staticmethod
     def _complete_attempt(
         cursor: psycopg.Cursor[tuple[object, ...]],
         work: IngestionWork,
@@ -537,3 +575,9 @@ class PostgresWorkRepository:
             """,
             (completion.now, work.claim.work_id, work.claim.lease_token),
         )
+
+
+def _vector_literal(vector: tuple[float, ...] | None) -> str:
+    if vector is None:
+        raise ValueError("retrieval chunk embedding is required")
+    return "[" + ",".join(format(value, ".17g") for value in vector) + "]"

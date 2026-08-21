@@ -135,8 +135,23 @@ export const englishTranslation = {
   chat: {
     regionLabel: "Corpus research conversation",
     kicker: "Corpus-scoped assistant",
-    unavailable: "Grounded chat is not available in this feature yet.",
-    unavailableTitle: "Grounded chat is coming next.",
+    title: "Ask about this corpus.",
+    introduction:
+      "Ask a focused question and receive an answer grounded only in the published sources on this evidence boundary.",
+    placeholder: "Ask a question about the published sources...",
+    questionLabel: "Research question",
+    send: "Send question",
+    stop: "Stop response",
+    you: "You",
+    assistant: "Norvii assistant",
+    responding: "Reviewing the published evidence...",
+    groundedOnly: "Answers are limited to this corpus",
+    language: "Interface: {{language}}",
+    references: "Answer references",
+    abstained:
+      "I could not find enough published evidence in this corpus to answer safely.",
+    errorTitle: "The grounded response could not be completed.",
+    failed: "The chat stream could not be completed.",
   },
   sourceStatus: {
     pending: "Pending",

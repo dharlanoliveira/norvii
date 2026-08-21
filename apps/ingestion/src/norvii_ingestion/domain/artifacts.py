@@ -13,6 +13,10 @@ from norvii_ingestion.domain.models import Sha256
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from norvii_ingestion.enrichment.models import RetrievalChunk
+
+_EMBEDDING_DIMENSIONS = 1536
+
 
 class UnitKind(StrEnum):
     """Recognized legal hierarchy and deterministic fallback unit kinds."""
@@ -56,7 +60,7 @@ class DocumentArtifact:
     units: tuple[DocumentUnit, ...]
 
     def validate(self) -> None:
-        """Validate content hashes, identity, bounds, hierarchy, and peer order."""
+        """Validate hashes, identity, bounds, hierarchy, and source reading order."""
         self._validate_document_identity()
         units_by_id = self._index_units()
         self._validate_root()
@@ -67,6 +71,7 @@ class DocumentArtifact:
             if unit.parent_id is not None:
                 children_by_parent.setdefault(unit.parent_id, []).append(unit)
 
+        self._validate_reading_order()
         self._validate_sibling_order(children_by_parent)
         self._reject_cycles(units_by_id)
 
@@ -98,6 +103,13 @@ class DocumentArtifact:
             or root.end_offset != len(self.text)
         ):
             raise ValueError("document root must cover the complete normalized text")
+
+    def _validate_reading_order(self) -> None:
+        for previous, current in pairwise(self.units):
+            previous_position = (previous.start_offset, -previous.end_offset)
+            current_position = (current.start_offset, -current.end_offset)
+            if current_position < previous_position:
+                raise ValueError("document units must follow normalized text reading order")
 
     @staticmethod
     def _validate_sibling_order(
@@ -154,6 +166,7 @@ class PublicationCommand:
     pipeline_version: str
     origin_sha256: Sha256
     artifact: DocumentArtifact
+    retrieval_chunks: tuple[RetrievalChunk, ...] = ()
 
     def validate(self) -> None:
         """Validate publication identity, provenance, and the complete artifact."""
@@ -162,6 +175,13 @@ class PublicationCommand:
         if not self.pipeline_version.strip():
             raise ValueError("publication pipeline version is required")
         self.artifact.validate()
+        if not self.retrieval_chunks:
+            raise ValueError("publication must contain retrieval chunks")
+        for chunk in self.retrieval_chunks:
+            if chunk.embedding is None or not chunk.embedding_model:
+                raise ValueError("retrieval chunks must contain embeddings")
+            if len(chunk.embedding) != _EMBEDDING_DIMENSIONS:
+                raise ValueError("retrieval chunk embedding dimensions are invalid")
 
 
 def _hash_text(text: str) -> Sha256:

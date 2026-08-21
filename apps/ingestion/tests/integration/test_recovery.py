@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
@@ -15,6 +16,7 @@ from norvii_ingestion.domain.models import (
     SafeFailure,
     Sha256,
 )
+from norvii_ingestion.enrichment.chunking import LegalChunker
 from norvii_ingestion.extraction.html import HtmlExtractor
 from norvii_ingestion.publication.persistence.config import EnvironmentConfigurationLoader
 from norvii_ingestion.publication.postgres.repository import PostgresWorkRepository
@@ -217,6 +219,10 @@ def _publish(
             pipeline_version="corpus-ingestion-v1",
             origin_sha256=capture.content_sha256,
             artifact=artifact,
+            retrieval_chunks=tuple(
+                replace(chunk, embedding=(0.0,) * 1536, embedding_model="test-embedding")
+                for chunk in LegalChunker().chunk(artifact)
+            ),
         ),
         now,
     )
@@ -233,6 +239,7 @@ def _html(version: str) -> bytes:
 def _cleanup(connection: psycopg.Connection[tuple[object, ...]], corpus_id: UUID) -> None:
     connection.rollback()
     with connection.transaction(), connection.cursor() as cursor:
+        cursor.execute("DELETE FROM retrieval_chunks WHERE corpus_id = %s", (corpus_id,))
         cursor.execute(
             """
             DELETE FROM document_units

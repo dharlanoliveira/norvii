@@ -76,6 +76,11 @@ class RepositoryLayout:
         return self.root / "apps" / "ingestion"
 
     @property
+    def agent_directory(self) -> Path:
+        """Return the Python LangGraph agent module directory."""
+        return self.root / "apps" / "agent"
+
+    @property
     def environment_runner(self) -> Path:
         """Return the non-evaluating environment wrapper."""
         return self.root / "infra" / "scripts" / "run-with-environment.py"
@@ -155,7 +160,7 @@ class RepositoryLayout:
 class ComponentLogger:
     """Append lifecycle output to component-owned files."""
 
-    COMPONENTS = ("bootstrap", "api", "ingestion", "web", "postgres", "neo4j")
+    COMPONENTS = ("bootstrap", "api", "agent", "ingestion", "web", "postgres", "neo4j")
 
     def __init__(self, layout: RepositoryLayout) -> None:
         self._layout = layout
@@ -362,6 +367,10 @@ class LocalEnvironmentManager:
             raise LocalEnvironmentError("NORVII_API_PORT must be a valid TCP port.")
         self._api_health_url = f"http://127.0.0.1:{api_port}/healthz"
         self._api_base_url = f"http://127.0.0.1:{api_port}/api/v1"
+        agent_port = environment.get("NORVII_AGENT_PORT", "8090")
+        if not agent_port.isdigit() or not 1 <= int(agent_port) <= MAX_TCP_PORT:
+            raise LocalEnvironmentError("NORVII_AGENT_PORT must be a valid TCP port.")
+        self._agent_health_url = f"http://127.0.0.1:{agent_port}/healthz"
         initial_timeout = os.environ.get(
             "NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS",
             environment.get("NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS", "90"),
@@ -418,6 +427,22 @@ class LocalEnvironmentManager:
                 layout,
                 self._logger,
             ),
+            "agent": ManagedProcess(
+                "agent",
+                [
+                    sys.executable,
+                    str(layout.environment_runner),
+                    str(layout.environment_file),
+                    "uv",
+                    "run",
+                    "--directory",
+                    str(layout.agent_directory),
+                    "norvii-agent",
+                ],
+                ("uv", "norvii-agent"),
+                layout,
+                self._logger,
+            ),
             "ingestion": ManagedProcess(
                 "ingestion",
                 [
@@ -468,9 +493,10 @@ class LocalEnvironmentManager:
                 self._runner.run("web", ["npm", "--prefix", str(self._layout.web_directory), "ci"])
             started_components.extend(
                 component
-                for component in ("postgres", "neo4j", "api", "ingestion", "web")
+                for component in ("postgres", "neo4j", "agent", "api", "ingestion", "web")
                 if self._processes[component].start()
             )
+            self._wait_for_agent()
             self._wait_for_api()
             self._wait_for_web()
             initial_states = self._wait_for_initial_sources()
@@ -491,19 +517,19 @@ class LocalEnvironmentManager:
         health = self._runner.capture("bootstrap", self._make("persistence-health"))
         print(health, end="")
         print("Web is running." if self._processes["web"].is_running() else "Web is stopped.")
-        for component in ("api", "ingestion"):
+        for component in ("api", "agent", "ingestion"):
             state = "running" if self._processes[component].is_running() else "stopped"
-            label = "API" if component == "api" else "Ingestion"
+            label = {"api": "API", "agent": "Agent", "ingestion": "Ingestion"}[component]
             print(f"{label} is {state}.")
 
     def stop(self) -> None:
         """Stop managed processes and persistence without deleting stored data."""
         self._layout.validate_root()
         self._logger.initialize()
-        self._stop_managed_processes(("web", "ingestion", "api", "neo4j", "postgres"))
+        self._stop_managed_processes(("web", "ingestion", "api", "agent", "neo4j", "postgres"))
         if self._layout.environment_file.exists():
             self._runner.run("bootstrap", self._make("persistence-stop"))
-        for component in ("api", "ingestion"):
+        for component in ("api", "agent", "ingestion"):
             self._layout.ready_marker(component).unlink(missing_ok=True)
         print("Norvii is stopped.")
 
@@ -553,6 +579,25 @@ class LocalEnvironmentManager:
             except (OSError, urllib.error.URLError):
                 time.sleep(0.2)
         raise ComponentCommandError("API", self._layout.log("api"), self._layout.root)
+
+    def _wait_for_agent(self) -> None:
+        """Wait for the internal LangGraph agent health contract."""
+        timeout = int(os.environ.get("NORVII_AGENT_START_TIMEOUT_SECONDS", "30"))
+        if timeout <= 0:
+            raise LocalEnvironmentError(
+                "NORVII_AGENT_START_TIMEOUT_SECONDS must be a positive integer."
+            )
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self._processes["agent"].is_running():
+                raise ComponentCommandError("Agent", self._layout.log("agent"), self._layout.root)
+            try:
+                with urllib.request.urlopen(self._agent_health_url, timeout=1) as response:  # noqa: S310
+                    if response.status == HTTP_OK:
+                        return
+            except (OSError, urllib.error.URLError):
+                time.sleep(0.2)
+        raise ComponentCommandError("Agent", self._layout.log("agent"), self._layout.root)
 
     def _wait_for_initial_sources(self) -> dict[str, str]:
         """Wait until each stable seed source reaches a bounded terminal state."""

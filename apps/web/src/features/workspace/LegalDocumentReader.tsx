@@ -1,5 +1,5 @@
 import { BookOpenText } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -25,13 +25,7 @@ export function LegalDocumentReader({
   const selectedId = visibleUnits.some((unit) => unit.id === selectedUnitId)
     ? selectedUnitId
     : visibleUnits[0]?.id;
-  const previousSelection = useRef(selectedId);
-
-  useEffect(() => {
-    if (previousSelection.current === selectedId) {
-      return;
-    }
-    previousSelection.current = selectedId;
+  useLayoutEffect(() => {
     selectedRef.current?.scrollIntoView({ block: "start" });
   }, [selectedId]);
 

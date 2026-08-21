@@ -50,6 +50,26 @@ def test_document_artifact_rejects_overlapping_peer_units() -> None:
         artifact.validate()
 
 
+def test_document_artifact_rejects_units_outside_source_reading_order() -> None:
+    text = "Article 1\nFirst rule.\nArticle 2\nSecond rule."
+    root_id = uuid4()
+    artifact = DocumentArtifact(
+        text=text,
+        text_sha256=_hash(text),
+        units=(
+            _unit(text, UnitSpec(root_id, None, UnitKind.DOCUMENT, 0, 0, len(text), "document")),
+            _unit(
+                text,
+                UnitSpec(uuid4(), root_id, UnitKind.ARTICLE, 1, 22, len(text), "article-2"),
+            ),
+            _unit(text, UnitSpec(uuid4(), root_id, UnitKind.ARTICLE, 0, 0, 22, "article-1")),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="reading order"):
+        artifact.validate()
+
+
 def test_publication_command_rejects_incorrect_text_hash() -> None:
     artifact = DocumentArtifact(
         text="legal text",

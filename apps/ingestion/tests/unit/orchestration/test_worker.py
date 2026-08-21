@@ -100,7 +100,7 @@ def test_worker_processes_claim_without_logging_sensitive_exception_text() -> No
     started = next(fields for event, fields in logger.events if event == "ingestion_claim_started")
     failed = next(fields for event, fields in logger.events if event == "ingestion_claim_failed")
     assert started["corpus_id"] == str(work.claim.corpus_id)
-    assert started["pipeline_version"] == "corpus-ingestion-v2"
+    assert started["pipeline_version"] == "corpus-ingestion-v3"
     assert failed["state"] == "failed"
     assert isinstance(failed["duration_ms"], int)
 

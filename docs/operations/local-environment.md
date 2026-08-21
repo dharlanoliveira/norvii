@@ -36,7 +36,7 @@ The reference container platforms are Linux amd64 and arm64.
 
 After configuring `infra/.env`, start persistence, apply migrations, verify the Go
 and Python production drivers, install locked module dependencies, and start the Go
-API, Python worker, and React application with:
+API facade, Python LangGraph agent, Python worker, and React application with:
 
 ```bash
 make bootstrap
@@ -50,12 +50,13 @@ repository-root `.log/` directory:
 | `bootstrap.log` | Bootstrap orchestration and persistence startup |
 | `web.log` | Web dependency installation and React/Vite development server |
 | `api.log` | Go migrations, verification, and HTTP API process |
+| `agent.log` | Python LangGraph agent and provider process |
 | `ingestion.log` | Python verification and ingestion worker process |
 | `postgres.log` | PostgreSQL container |
 | `neo4j.log` | Neo4j container |
 
-The command waits for authenticated database health, the API `/healthz` response,
-the web server, and both stable initial sources to reach `ready` or safe `failed`
+The command waits for authenticated database health, the agent and API `/healthz`
+responses, the web server, and both stable initial sources to reach `ready` or safe `failed`
 before reporting readiness. The initial-ingestion wait is bounded by
 `NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS`. Repeating bootstrap reapplies idempotent
 migrations and reuses verified process identities instead of creating duplicates.

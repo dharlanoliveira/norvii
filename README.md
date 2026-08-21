@@ -18,12 +18,14 @@ The project is a technical demonstration and does not provide legal advice.
 
 ## Project status
 
-Feature 004 provides the first authoritative end-to-end product slice. The React
-client reads and manages corpora through the Go API, accepts public HTTPS pages and
-PDF uploads, follows ingestion status, and browses persisted documents and legal
-units. The Python worker safely acquires and extracts source content and atomically
-publishes immutable document revisions to PostgreSQL. Chat is intentionally
-unavailable until the grounded RAG feature is implemented.
+Feature 004 provides the authoritative corpus and document slice. Feature 005 now
+adds the grounded-chat boundary: legal-aware retrieval chunks, a corpus-scoped Go
+SSE facade, a Python LangGraph agent, an OpenAI-compatible model adapter, and a
+bilingual React composer with citation references. Configure `NORVII_CHAT_BASE_URL`
+to enable model answers; without it the agent fails closed and the catalog/document
+viewer remain usable.
+Embedding enrichment and citation navigation continue in the remaining Feature 005
+tasks.
 
 PostgreSQL with pgvector is the canonical store. Standalone Neo4j Community remains
 a rebuildable graph projection for later GraphRAG features and is not written by
@@ -40,7 +42,7 @@ make bootstrap
 
 Codex users can invoke `$bootstrap-norvii` for the same managed workflow. Runtime
 output is retained by component under `.log/`: `bootstrap.log`, `web.log`,
-`api.log`, `ingestion.log`, `postgres.log`, and `neo4j.log`. Repeated execution
+`api.log`, `agent.log`, `ingestion.log`, `postgres.log`, and `neo4j.log`. Repeated execution
 reuses healthy processes rather than starting duplicates. Readiness is reported only
 after both stable initial sources reach `ready` or an explicit retryable `failed`
 state within the configured bound.
@@ -65,8 +67,8 @@ npm --prefix apps/web exec playwright install chromium
 make -C apps/web ci
 ```
 
-See the [web](apps/web/README.md), [API](apps/api/README.md), and
-[ingestion](apps/ingestion/README.md) module guides for focused development.
+See the [web](apps/web/README.md), [API](apps/api/README.md), [agent](apps/agent/README.md),
+and [ingestion](apps/ingestion/README.md) module guides for focused development.
 
 ## Run the persistence foundation
 
@@ -84,7 +86,7 @@ commands.
 
 ## Code quality analysis
 
-GitHub Actions analyzes the production web, API, and ingestion modules as separate SonarQube Cloud projects within the Norvii monorepo. Each same-repository pull request and push to `main` waits for all three quality gates, then applies the stricter Norvii policy that fails the build when any analyzed module has an unresolved Sonar issue.
+GitHub Actions analyzes the production web, API, and ingestion modules as separate SonarQube Cloud projects within the Norvii monorepo. The Python agent has its own module CI gate and is not yet a Sonar project. Each same-repository pull request and push to `main` waits for all three Sonar quality gates, then applies the stricter Norvii policy that fails the build when any analyzed module has an unresolved Sonar issue.
 
 | Module | Quality gate | Coverage |
 | --- | --- | --- |
@@ -111,7 +113,7 @@ View the SonarQube Cloud dashboards for [norvii-web](https://sonarcloud.io/proje
 - [Production web client](apps/web/README.md): local startup, validation commands, and current client boundaries.
 - [Repository structure](docs/architecture/repository-structure.md): target monorepo
   boundaries.
-- [Module models](docs/modules/README.md): client, Go API, and Python ingestion
+- [Module models](docs/modules/README.md): client, Go facade, Python agent, and ingestion
   responsibilities.
 - [Constitution](.specify/memory/constitution.md): non-negotiable engineering and
   product rules.

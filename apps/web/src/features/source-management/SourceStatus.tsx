@@ -24,6 +24,8 @@ interface SourceStatusProps {
   ) => Promise<void>;
 }
 
+const ATTEMPT_HISTORY_LIMIT = 3;
+
 export function SourceStatus({
   source,
   onRetry,
@@ -33,6 +35,7 @@ export function SourceStatus({
   const [outcome, setOutcome] = useState<
     "idle" | "saving" | "failed" | "stale"
   >("idle");
+  const visibleAttempts = source.attempts.slice(0, ATTEMPT_HISTORY_LIMIT);
 
   const run = (action: typeof onRetry): void => {
     const controller = new AbortController();
@@ -107,7 +110,7 @@ export function SourceStatus({
                   </div>
                 ) : null}
               </dl>
-              {source.attempts.length > 0 ? (
+              {visibleAttempts.length > 0 ? (
                 <section
                   className="source-status__history"
                   aria-label={t("sourceManagement.lifecycle.attemptHistory")}
@@ -117,7 +120,7 @@ export function SourceStatus({
                     {t("sourceManagement.lifecycle.attemptHistory")}
                   </h3>
                   <div className="source-status__attempt-list">
-                    {source.attempts.map((attempt) => (
+                    {visibleAttempts.map((attempt) => (
                       <article
                         className="source-status__attempt"
                         key={`${attempt.startedAt}-${String(attempt.number)}`}

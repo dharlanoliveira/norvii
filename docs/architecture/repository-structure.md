@@ -1,6 +1,6 @@
 # Repository Structure
 
-Norvii is a monorepo with three independently testable application modules and an
+Norvii is a monorepo with four independently testable application modules and an
 explicit contract boundary between them. Directories are created by the feature that
 first needs them; this tree is the target, not a request to scaffold empty code.
 
@@ -11,6 +11,7 @@ norvii/
 |-- apps/
 |   |-- web/                 # Production React, TypeScript, Vite SPA
 |   |-- api/                 # Production Go online backend
+|   |-- agent/               # Production Python LangGraph online agent
 |   `-- ingestion/           # Production Python offline pipeline
 |-- prototypes/
 |   `-- web/                 # Executable React product prototype
@@ -29,9 +30,15 @@ norvii/
 ```text
 apps/web ------ public HTTP and streaming contracts ------> apps/api
                                                              |
-                                                             | artifact and job contracts
+                                                             | internal agent SSE contract
                                                              v
-                                                     apps/ingestion
+                                                         apps/agent
+                                                             |
+                                                             | canonical artifact reads
+                                                             v
+                                                     PostgreSQL/pgvector
+
+apps/ingestion -- artifact publication contract --> PostgreSQL/pgvector
 
 prototypes/web ------ deterministic fixtures only ------> no production runtime
 
@@ -40,8 +47,9 @@ all runtimes ------ local dependencies ----> infra/compose.yaml
 ```
 
 - The web client depends on public API behavior, never Go packages.
-- The Go API consumes published ingestion artifacts, never Python modules.
-- The Python service reads source work and publishes artifacts through explicit
+- The Go API validates public requests and proxies the internal agent contract; it does not own retrieval or model orchestration.
+- The Python agent consumes published artifacts and owns online LangGraph orchestration.
+- The Python ingestion service reads source work and publishes artifacts through explicit
   persistence or job contracts, never Go internals.
 - Production applications do not import code, fixtures, or styles from prototypes.
 - A database schema is owned by the module that writes it. Shared records require a
@@ -57,6 +65,7 @@ needs it and must remain narrowly scoped.
 | --- | --- |
 | `apps/web/` | Routes, screens, components, chat rendering, client adapters |
 | `apps/api/` | Domain behavior, use cases, HTTP or streaming adapters |
+| `apps/agent/` | Online LangGraph orchestration, retrieval, model adapters, grounding validation |
 | `apps/ingestion/` | Acquisition, extraction, transformation, publication |
 | `prototypes/web/` | Product journeys, UI states, fixtures, stories, and visual baselines |
 | `contracts/` | Stable schemas shared by two or more modules or features |

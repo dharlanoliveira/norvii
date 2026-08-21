@@ -15,12 +15,14 @@ import type {
   DocumentResponse,
   SourceResponse,
 } from "../../api/contract";
+import type { ChatProvider, ChatReference } from "../../api/chat";
 import type { ResearchProvider } from "../../research/domain/authoritative";
 import { UrlSourceForm } from "../source-management/UrlSourceForm";
 import { PdfSourceForm } from "../source-management/PdfSourceForm";
 import { SourceStatus } from "../source-management/SourceStatus";
 import { LegalDocumentReader } from "./LegalDocumentReader";
 import { ResearchChat } from "./ResearchChat";
+import { SourceSelectionPrompt } from "./SourceSelectionPrompt";
 import {
   WorkspaceModeSelector,
   type WorkspaceMode,
@@ -29,6 +31,7 @@ import "./workspace.css";
 
 interface CorpusWorkspacePageProps {
   readonly provider: ResearchProvider;
+  readonly chatProvider?: ChatProvider | undefined;
 }
 
 type WorkspaceState =
@@ -46,12 +49,16 @@ type DocumentState =
   | { readonly status: "ready"; readonly document: DocumentResponse }
   | { readonly status: "failed" };
 
-export function CorpusWorkspacePage({ provider }: CorpusWorkspacePageProps) {
+export function CorpusWorkspacePage({
+  provider,
+  chatProvider,
+}: CorpusWorkspacePageProps) {
   const { corpusId = "" } = useParams();
   return (
     <LoadedCorpusWorkspace
       key={corpusId}
       provider={provider}
+      chatProvider={chatProvider}
       corpusId={corpusId}
     />
   );
@@ -64,6 +71,7 @@ interface LoadedCorpusWorkspaceProps extends CorpusWorkspacePageProps {
 function LoadedCorpusWorkspace({
   provider,
   corpusId,
+  chatProvider,
 }: LoadedCorpusWorkspaceProps) {
   const { t } = useTranslation();
   const [state, setState] = useState<WorkspaceState>({ status: "loading" });
@@ -123,7 +131,7 @@ function LoadedCorpusWorkspace({
     };
   }, [corpusId, pollSources, provider]);
 
-  const selectSource = (source: SourceResponse): void => {
+  const selectSource = (source: SourceResponse, unitLocator?: string): void => {
     setSelectedSourceId(source.id);
     setMode("source");
     if (source.processingStatus !== "ready") {
@@ -137,7 +145,8 @@ function LoadedCorpusWorkspace({
       .then((document) => {
         setDocumentState({ status: "ready", document });
         setSelectedUnitId(
-          document.units.find((unit) => unit.kind !== "document")?.id ??
+          document.units.find((unit) => unit.locator === unitLocator)?.id ??
+            document.units.find((unit) => unit.kind !== "document")?.id ??
             document.units[0]?.id,
         );
       })
@@ -154,6 +163,13 @@ function LoadedCorpusWorkspace({
   const selectedSource = state.sources.find(
     (source) => source.id === selectedSourceId,
   );
+  const selectReference = (reference: ChatReference): void => {
+    const source = state.sources.find(
+      (source) => source.id === reference.sourceId,
+    );
+    if (source === undefined) return;
+    selectSource(source, reference.unitLocator);
+  };
   return (
     <section className="workspace-page" aria-labelledby="workspace-title">
       <header className="workspace-heading">
@@ -278,10 +294,19 @@ function LoadedCorpusWorkspace({
             <WorkspaceModeSelector mode={mode} onChange={setMode} />
           </header>
           <div id="chat-panel" role="tabpanel" hidden={mode !== "chat"}>
-            <ResearchChat />
+            <ResearchChat
+              corpusId={corpusId}
+              provider={chatProvider}
+              onReferenceSelect={selectReference}
+            />
           </div>
-          <div id="source-panel" role="tabpanel" hidden={mode !== "source"}>
-            {!selectedSource ? <p>{t("viewer.noSourceTitle")}</p> : null}
+          <div
+            id="source-panel"
+            role="tabpanel"
+            hidden={mode !== "source"}
+            className={!selectedSource ? "source-panel--empty" : undefined}
+          >
+            {!selectedSource ? <SourceSelectionPrompt /> : null}
             {selectedSource ? (
               <SourceStatus
                 source={selectedSource}

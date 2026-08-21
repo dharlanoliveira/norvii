@@ -2,9 +2,12 @@
 package postgres
 
 import (
+	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -115,7 +118,7 @@ func (repository *Repository) GetLatest(
 		       locator, content_sha256
 		FROM document_units
 		WHERE document_id = $1
-		ORDER BY parent_id NULLS FIRST, ordinal, id`, document.ID)
+		ORDER BY start_offset, end_offset DESC, ordinal, id`, document.ID)
 	if err != nil {
 		return Document{}, fmt.Errorf("list document units: %w", err)
 	}
@@ -124,7 +127,21 @@ func (repository *Repository) GetLatest(
 	if err != nil {
 		return Document{}, fmt.Errorf("scan document units: %w", err)
 	}
+	slices.SortFunc(document.Units, compareUnitReadingOrder)
 	return document, nil
+}
+
+func compareUnitReadingOrder(left, right Unit) int {
+	if order := cmp.Compare(left.StartOffset, right.StartOffset); order != 0 {
+		return order
+	}
+	if order := cmp.Compare(right.EndOffset, left.EndOffset); order != 0 {
+		return order
+	}
+	if order := cmp.Compare(left.Ordinal, right.Ordinal); order != 0 {
+		return order
+	}
+	return bytes.Compare(left.ID[:], right.ID[:])
 }
 
 func scanUnit(row pgx.CollectableRow) (Unit, error) {

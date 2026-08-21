@@ -158,7 +158,7 @@ A researcher navigates a corpus-rooted source tree, selects a ready source, read
 - **FR-021**: Processing attempts MUST be bounded, MUST NOT retry forever automatically, and MUST retain safe attempt status, timestamps, pipeline version, and failure category without logging credentials, complete document content, or private request data.
 - **FR-022**: Each successful acquisition MUST create an immutable source revision tied to origin metadata and hashes.
 - **FR-023**: Each successfully extracted source revision MUST produce one immutable document version containing the complete normalized document and a cryptographic content hash.
-- **FR-024**: Each document version MUST own an ordered hierarchy of addressable document units linked to the complete document by stable locator, parent, order, visible marker, text offsets, content hash, and page range when applicable.
+- **FR-024**: Each document version MUST own an ordered hierarchy of addressable document units linked to the complete document by stable locator, parent, canonical source reading order, visible marker, text offsets, content hash, and page range when applicable.
 - **FR-025**: Recognizable titles, chapters, sections, articles, paragraphs, items, recitals, and pages MUST be represented as linked units when reliably detected; otherwise, deterministic page or ordered-block units MUST preserve complete coverage.
 - **FR-026**: Document publication MUST validate that units are ordered, non-overlapping where they represent peer spans, within document bounds, and traceable to exactly one source revision before atomically making a version ready.
 - **FR-027**: A failed or interrupted attempt MUST NOT expose a partial document as ready and MUST NOT replace the last ready document version.

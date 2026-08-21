@@ -25,6 +25,7 @@ from norvii_ingestion.domain.models import (
     WorkClaim,
     WorkReason,
 )
+from norvii_ingestion.enrichment.embedding import EmbeddingProviderError
 from norvii_ingestion.orchestration.processor import ArtifactExtractors, IngestionProcessor
 
 
@@ -65,6 +66,16 @@ class FakeExtractor:
         )
 
 
+class FakeEmbeddingProvider:
+    def embed(self, texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
+        return tuple((0.0,) * 1536 for _ in texts)
+
+
+class FailingEmbeddingProvider:
+    def embed(self, _texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
+        raise EmbeddingProviderError("provider detail must not be exposed")
+
+
 class RecordingRepository:
     def __init__(self) -> None:
         self.publications: list[tuple[IngestionWork, OriginCapture]] = []
@@ -102,6 +113,8 @@ def test_processor_acquires_extracts_and_publishes_url_work() -> None:
         extractors=ArtifactExtractors(html=FakeExtractor(), pdf=FakeExtractor()),
         pipeline_version="corpus-ingestion-v1",
         clock=_now,
+        embedding_provider=FakeEmbeddingProvider(),
+        embedding_model="test-embedding",
     )
 
     processor.process(_work())
@@ -118,6 +131,8 @@ def test_processor_categorizes_unsafe_url_without_exposing_its_detail() -> None:
         extractors=ArtifactExtractors(html=FakeExtractor(), pdf=FakeExtractor()),
         pipeline_version="corpus-ingestion-v1",
         clock=_now,
+        embedding_provider=FakeEmbeddingProvider(),
+        embedding_model="test-embedding",
     )
 
     processor.process(_work())
@@ -139,6 +154,8 @@ def test_processor_retains_only_allowlisted_acquisition_diagnostics() -> None:
         extractors=ArtifactExtractors(html=FakeExtractor(), pdf=FakeExtractor()),
         pipeline_version="corpus-ingestion-v1",
         clock=_now,
+        embedding_provider=FakeEmbeddingProvider(),
+        embedding_model="test-embedding",
     )
 
     processor.process(_work())
@@ -156,6 +173,8 @@ def test_processor_extracts_preserved_pdf_without_network_acquisition() -> None:
         extractors=ArtifactExtractors(html=FakeExtractor(), pdf=FakeExtractor()),
         pipeline_version="corpus-ingestion-v1",
         clock=_now,
+        embedding_provider=FakeEmbeddingProvider(),
+        embedding_model="test-embedding",
     )
 
     processor.process(_pdf_work())
@@ -163,6 +182,24 @@ def test_processor_extracts_preserved_pdf_without_network_acquisition() -> None:
     assert len(repository.publications) == 1
     assert repository.publications[0][1].media_type == "application/pdf"
     assert repository.publications[0][1].final_url is None
+
+
+def test_processor_preserves_the_ready_version_when_embedding_fails() -> None:
+    repository = RecordingRepository()
+    processor = IngestionProcessor(
+        repository=repository,
+        acquirer=FakeAcquirer(),
+        extractors=ArtifactExtractors(html=FakeExtractor(), pdf=FakeExtractor()),
+        pipeline_version="corpus-ingestion-v3",
+        clock=_now,
+        embedding_provider=FailingEmbeddingProvider(),
+        embedding_model="test-embedding",
+    )
+
+    processor.process(_work())
+
+    assert repository.publications == []
+    assert repository.failures == [SafeFailure(FailureCategory.PUBLICATION_FAILED)]
 
 
 def _work() -> IngestionWork:

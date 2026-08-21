@@ -14,7 +14,9 @@ def test_worker_config_uses_bounded_defaults() -> None:
     assert config.lease_duration == timedelta(seconds=120)
     assert config.max_source_bytes == 10 * 1024 * 1024
     assert config.max_redirects == 5
-    assert config.pipeline_version == "corpus-ingestion-v2"
+    assert config.pipeline_version == "corpus-ingestion-v3"
+    assert config.embedding_model == "text-embedding-3-small"
+    assert config.embedding_dimensions == 1536
 
 
 def test_worker_config_rejects_lease_shorter_than_poll_interval() -> None:
@@ -25,3 +27,14 @@ def test_worker_config_rejects_lease_shorter_than_poll_interval() -> None:
 
     with pytest.raises(ConfigurationError, match="lease"):
         WorkerConfig.from_environment(environment)
+
+
+def test_worker_config_reuses_chat_key_when_embedding_key_is_not_set() -> None:
+    config = WorkerConfig.from_environment({"NORVII_CHAT_API_KEY": "local-key"})
+
+    assert config.embedding_api_key == "local-key"
+
+
+def test_worker_config_rejects_a_dimension_that_does_not_match_the_vector_schema() -> None:
+    with pytest.raises(ConfigurationError, match="NORVII_EMBEDDING_DIMENSIONS must be 1536"):
+        WorkerConfig.from_environment({"NORVII_EMBEDDING_DIMENSIONS": "1024"})

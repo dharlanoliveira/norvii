@@ -106,6 +106,56 @@ describe("corpus ingestion HTTP contract", () => {
     expect(document.units[0]?.startPage).toBe(1);
   });
 
+  it("normalizes document units into source reading order", () => {
+    const document = parseDocumentResponse({
+      id: "50000000-0000-4000-8000-000000000001",
+      sourceRevisionId: "40000000-0000-4000-8000-000000000001",
+      pipelineVersion: "corpus-ingestion-v1",
+      text: "A complete legal document",
+      textSha256: "a".repeat(64),
+      createdAt: "2026-08-17T12:01:00Z",
+      units: [
+        documentUnit(
+          "60000000-0000-4000-8000-000000000004",
+          "article-2",
+          50,
+          100,
+          1,
+        ),
+        documentUnit("60000000-0000-4000-8000-000000000002", "title", 0, 20, 0),
+        documentUnit(
+          "60000000-0000-4000-8000-000000000003",
+          "article-1",
+          20,
+          50,
+          0,
+        ),
+        documentUnit(
+          "60000000-0000-4000-8000-000000000001",
+          "document",
+          0,
+          100,
+          0,
+        ),
+      ],
+      provenance: {
+        contentSha256: "b".repeat(64),
+        capturedAt: "2026-08-17T12:00:30Z",
+        mediaType: "text/html",
+        byteSize: 2048,
+        finalUrl: "https://example.org/law",
+        extractedContentSha256: "a".repeat(64),
+      },
+    });
+
+    expect(document.units.map((unit) => unit.locator)).toEqual([
+      "document",
+      "title",
+      "article-1",
+      "article-2",
+    ]);
+  });
+
   it("uses type errors for malformed response shapes", () => {
     expect(() => parseCorpusList({})).toThrow(TypeError);
     expect(() => parseSourceList({})).toThrow(TypeError);
@@ -144,5 +194,28 @@ function processingAttempt() {
     normalizedCharacterCount: 1024,
     unitCount: 1,
     durationMilliseconds: 1000,
+  };
+}
+
+function documentUnit(
+  id: string,
+  locator: string,
+  startOffset: number,
+  endOffset: number,
+  ordinal: number,
+) {
+  return {
+    id,
+    parentId: null,
+    kind: locator,
+    ordinal,
+    marker: null,
+    label: null,
+    startOffset,
+    endOffset,
+    startPage: null,
+    endPage: null,
+    locator,
+    contentSha256: "c".repeat(64),
   };
 }

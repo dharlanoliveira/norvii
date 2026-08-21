@@ -2,19 +2,16 @@
 
 ## Mission
 
-`apps/api/` is the online backend. It serves product APIs and streaming chat while
-orchestrating retrieval, LLM calls, MCP tools, skills, citation verification, and
-online observability.
+`apps/api/` is the public online backend facade. It serves product APIs, validates
+corpus ownership, and exposes the public SSE contract while delegating online AI
+orchestration to `apps/agent/`.
 
 ## Owns
 
 - corpus and source application use cases;
 - HTTP and streaming request validation;
-- active-corpus enforcement for every retrieval operation;
-- RAG, GraphRAG, and hybrid orchestration;
-- LLM provider and retrieval port definitions;
-- MCP tool execution and skill orchestration;
-- citation verification and abstention policy;
+- public request validation and active-corpus boundary checks;
+- internal agent request forwarding and public SSE translation;
 - online state transitions, errors, metrics, and audit-safe traces.
 
 ## Does not own
@@ -29,8 +26,9 @@ online observability.
 
 Public handlers validate and map transport data into application commands or
 queries. Application behavior depends on small interfaces defined by the consumer.
-Adapters implement databases, queues, model providers, vector search, graph search,
-and streaming protocols.
+Adapters implement databases, internal agent HTTP, and streaming protocols. Retrieval,
+model providers, citation verification, abstention, MCP, and skills belong to the
+Python agent or later dedicated modules, not to this facade.
 
 The API MUST not expose database rows or provider payloads directly. Errors crossing
 HTTP, stream, MCP, and ingestion boundaries use stable codes and safe messages with
@@ -42,10 +40,9 @@ internal causes preserved for diagnostics.
 apps/api/
 |-- cmd/                     # Executable composition roots
 |-- internal/
-|   |-- corpus/              # Domain and use cases by capability
+|   |-- catalog/             # Corpus catalog domain and use cases
 |   |-- source/
 |   |-- chat/
-|   |-- retrieval/
 |   `-- platform/            # Concrete external adapters
 |-- migrations/             # Go-owned persistence migrations
 `-- tests/                   # Cross-package integration and contract tests
@@ -74,8 +71,8 @@ Feature 003 initializes the module with Go 1.26 and keeps vendor behavior under
 - narrow pgx and Neo4j adapters that execute bounded read-only verification queries;
 - separate `migrate`, `migration-status`, and `verify-persistence` composition roots.
 
-No HTTP endpoint or product repository exists yet. Run module quality and local
-connectivity independently:
+The public corpus/source endpoints and chat SSE facade are now available. Run module
+quality and local connectivity independently:
 
 ```bash
 make -C apps/api ci

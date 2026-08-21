@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Route, Routes } from "react-router-dom";
 
 import { createHttpResearchProvider } from "../../api/researchProvider";
+import type { ChatProvider } from "../../api/chat";
 import { renderAtRoute } from "../../test/render";
 import { CorpusWorkspacePage } from "./CorpusWorkspacePage";
 
@@ -23,13 +24,46 @@ describe("authoritative corpus workspace", () => {
       return Promise.resolve(jsonResponse(corpus()));
     });
     const provider = createHttpResearchProvider({ fetch: fetchResponse });
+    const chatProvider: ChatProvider = {
+      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+        onEvent({
+          type: "completed",
+          requestId: "request-1",
+          answer: "The answer is grounded. [1]",
+          references: [
+            {
+              id: "reference-1",
+              corpusId: "10000000-0000-4000-8000-000000000002",
+              sourceId: "20000000-0000-4000-8000-000000000002",
+              documentId: "50000000-0000-4000-8000-000000000001",
+              unitLocator: "article-1",
+              startOffset: 0,
+              endOffset: 21,
+              excerpt: "Persisted legal text.",
+              rank: 1,
+            },
+          ],
+          telemetry: {
+            outcome: "completed",
+            evidenceCount: 1,
+            durationMilliseconds: 1,
+          },
+        });
+        return Promise.resolve();
+      },
+    };
     const user = userEvent.setup();
 
     renderAtRoute(
       <Routes>
         <Route
           path="corpora/:corpusId"
-          element={<CorpusWorkspacePage provider={provider} />}
+          element={
+            <CorpusWorkspacePage
+              provider={provider}
+              chatProvider={chatProvider}
+            />
+          }
         />
       </Routes>,
       "/corpora/10000000-0000-4000-8000-000000000002",
@@ -38,6 +72,28 @@ describe("authoritative corpus workspace", () => {
     const sourceItem = await screen.findByRole("treeitem", {
       name: /Official English GDPR text/,
     });
+    await user.click(screen.getByRole("tab", { name: "Source" }));
+    expect(
+      screen.getByRole("heading", {
+        name: "Select a source from the library.",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Documents and official links open here while your conversation remains available.",
+      ),
+    ).toBeVisible();
+    await user.click(screen.getByRole("tab", { name: "Chat" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Research question" }),
+      "Which article applies?",
+    );
+    await user.click(screen.getByRole("button", { name: "Send question" }));
+    await user.click(
+      await screen.findByRole("button", { name: "[1] article-1" }),
+    );
+    await user.click(screen.getByRole("tab", { name: "Source" }));
+
     await user.click(sourceItem);
 
     expect(await screen.findByText("Persisted legal text.")).toBeVisible();

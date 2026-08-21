@@ -7,6 +7,20 @@ import { renderAtRoute } from "../../test/render";
 import { LegalDocumentReader } from "./LegalDocumentReader";
 
 describe("legal document reader", () => {
+  it("reveals the initial citation-selected location after the reader mounts", () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
+
+    renderAtRoute(
+      <LegalDocumentReader
+        document={document()}
+        selectedUnitId="unit-article"
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+  });
+
   it("renders structured locations as readable sections and navigates with one control", async () => {
     const onSelect = vi.fn();
     const user = userEvent.setup();

@@ -45,13 +45,18 @@ This option keeps graph and relational data in one server. It increases dependen
 
 Use PostgreSQL with the pgvector extension as Norvii's canonical persistence service. Use one standalone Neo4j Community instance as a derived GraphRAG projection. The default local Docker Compose environment will start both services; clustering, replication, and Neo4j Enterprise features are outside the POC scope.
 
-The React client accesses neither database directly. The Go API owns online application and retrieval access. Python ingestion reads source work, publishes versioned canonical artifacts to PostgreSQL through explicit contracts, and updates or triggers the Neo4j projection through an idempotent publication boundary.
+The React client accesses neither database directly. The Go API owns the public online
+application boundary, while the Python LangGraph agent owns online retrieval access.
+Python ingestion reads source work, publishes versioned canonical artifacts to PostgreSQL
+through explicit contracts, and updates or triggers the Neo4j projection through an
+idempotent publication boundary.
 
 ```mermaid
 flowchart LR
-    W[React client] --> A[Go API]
-    A --> P[(PostgreSQL and pgvector)]
-    A --> N[(Neo4j Community)]
+    W[React client] --> A[Go API facade]
+    A --> G[Python LangGraph agent]
+    G --> P[(PostgreSQL and pgvector)]
+    G --> N[(Neo4j Community later)]
     I[Python ingestion] --> P
     I --> X[Graph projection]
     X --> N

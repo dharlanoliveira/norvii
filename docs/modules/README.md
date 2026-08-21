@@ -1,12 +1,13 @@
 # Module Models
 
-These documents define stable ownership for the three application modules. They are
+These documents define stable ownership for the four application modules. They are
 not implementation plans and do not select packages that remain undecided.
 
 All production modules live under `apps/`. Executable product exploration lives under `prototypes/` and is governed by the [prototyping workflow](../development/prototyping.md), not by the production module models.
 
 - [Web client](web-client.md)
 - [Go API](go-api.md)
+- [Python LangGraph agent](python-agent.md)
 - [Python ingestion](python-ingestion.md)
 
 ## Shared rules

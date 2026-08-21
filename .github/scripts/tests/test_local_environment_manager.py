@@ -44,6 +44,7 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
                 self.assertIn("PostgreSQL is healthy", status_result.stdout)
                 self.assertIn("Web is running", status_result.stdout)
                 self.assertIn("API is running", status_result.stdout)
+                self.assertIn("Agent is running", status_result.stdout)
                 self.assertIn("Ingestion is running", status_result.stdout)
 
                 pid_files = sorted((root / ".log").glob("*.pid"))
@@ -144,11 +145,14 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
         (root / "infra" / "scripts").mkdir(parents=True)
         (root / "apps" / "web").mkdir(parents=True)
         api_port = self.available_port()
+        agent_port = self.available_port()
         (root / "infra" / ".env").write_text(
-            f"TEST_ENVIRONMENT=true\nNORVII_API_PORT={api_port}\n", encoding="utf-8"
+            f"TEST_ENVIRONMENT=true\nNORVII_API_PORT={api_port}\nNORVII_AGENT_PORT={agent_port}\n",
+            encoding="utf-8",
         )
         (root / "infra" / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
         (root / "Makefile").write_text("fixture:\n\t@true\n", encoding="utf-8")
+        (root / "healthz").write_text("ok\n", encoding="utf-8")
         (root / "apps" / "web" / "package.json").write_text("{}\n", encoding="utf-8")
         shutil.copyfile(
             REPOSITORY_ROOT / "infra" / "scripts" / "run-with-environment.py",
@@ -220,6 +224,9 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
         self.write_executable(
             binary_directory / "uv",
             """
+            if [[ "$*" == *"norvii-agent"* ]]; then
+              exec python3 -m http.server "$NORVII_AGENT_PORT" --bind 127.0.0.1
+            fi
             while true; do sleep 1; done
             """,
         )

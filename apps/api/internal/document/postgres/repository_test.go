@@ -16,12 +16,15 @@ func TestGetLatestReturnsPublishedDocumentWithOrderedUnits(t *testing.T) {
 	mock := newPoolMock(t)
 	documentID := uuid.New()
 	revisionID := uuid.New()
-	parentID := uuid.New()
+	rootID := uuid.New()
+	titleID := uuid.New()
+	articleOneID := uuid.New()
+	articleTwoID := uuid.New()
 	now := time.Date(2026, time.August, 18, 12, 0, 0, 0, time.UTC)
 	finalURL := "https://example.org/law"
 	extractedHash := "aabb"
-	marker := "Article 1"
-	label := "Purpose"
+	articleOneMarker := "Article 1"
+	articleTwoMarker := "Article 2"
 	mock.ExpectQuery("FROM sources s").WithArgs(pgxmock.AnyArg(), pgxmock.AnyArg()).WillReturnRows(
 		mock.NewRows(documentColumns()).AddRow(
 			documentID, revisionID, "corpus-ingestion-v1", "Article 1", "text-hash", now,
@@ -30,8 +33,10 @@ func TestGetLatestReturnsPublishedDocumentWithOrderedUnits(t *testing.T) {
 	)
 	mock.ExpectQuery("FROM document_units").WithArgs(documentID).WillReturnRows(
 		mock.NewRows(unitColumns()).
-			AddRow(parentID, nil, "document", 0, nil, nil, 0, 9, nil, nil, "document", "root-hash").
-			AddRow(uuid.New(), pgtype.UUID{Bytes: parentID, Valid: true}, "article", 1, &marker, &label, 0, 9, nil, nil, "article-1", "unit-hash"),
+			AddRow(articleTwoID, pgtype.UUID{Bytes: rootID, Valid: true}, "article", 1, &articleTwoMarker, nil, 50, 100, nil, nil, "article-2", "article-2-hash").
+			AddRow(rootID, nil, "document", 0, nil, nil, 0, 100, nil, nil, "document", "root-hash").
+			AddRow(articleOneID, pgtype.UUID{Bytes: rootID, Valid: true}, "article", 0, &articleOneMarker, nil, 20, 50, nil, nil, "article-1", "article-1-hash").
+			AddRow(titleID, pgtype.UUID{Bytes: rootID, Valid: true}, "title", 0, nil, nil, 0, 20, nil, nil, "title", "title-hash"),
 	)
 	repository := NewRepository(mock)
 
@@ -40,11 +45,17 @@ func TestGetLatestReturnsPublishedDocumentWithOrderedUnits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetLatest() error = %v", err)
 	}
-	if document.ID != documentID || len(document.Units) != 2 {
-		t.Fatalf("GetLatest() = %+v, want document with two units", document)
+	if document.ID != documentID || len(document.Units) != 4 {
+		t.Fatalf("GetLatest() = %+v, want document with four units", document)
 	}
-	if document.Units[1].ParentID == nil || *document.Units[1].ParentID != parentID {
-		t.Fatalf("article parent = %v, want %s", document.Units[1].ParentID, parentID)
+	wantLocators := []string{"document", "title", "article-1", "article-2"}
+	for index, wantLocator := range wantLocators {
+		if document.Units[index].Locator != wantLocator {
+			t.Fatalf("unit %d locator = %q, want %q", index, document.Units[index].Locator, wantLocator)
+		}
+	}
+	if document.Units[2].ParentID == nil || *document.Units[2].ParentID != rootID {
+		t.Fatalf("article parent = %v, want %s", document.Units[2].ParentID, rootID)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("database expectations = %v", err)

@@ -9,14 +9,15 @@ import (
 )
 
 const (
-	defaultHost                    = "127.0.0.1"
-	defaultPort                    = 8080
-	defaultMaxRequestBytes   int64 = 11 * 1024 * 1024
-	defaultShutdownSeconds         = 10
-	defaultReadHeaderSeconds       = 5
-	defaultReadSeconds             = 15
-	defaultWriteSeconds            = 30
-	defaultIdleSeconds             = 60
+	defaultHost                      = "127.0.0.1"
+	defaultPort                      = 8080
+	defaultMaxRequestBytes     int64 = 11 * 1024 * 1024
+	defaultShutdownSeconds           = 10
+	defaultReadHeaderSeconds         = 5
+	defaultReadSeconds               = 15
+	defaultWriteSeconds              = 30
+	defaultIdleSeconds               = 60
+	defaultAgentTimeoutSeconds       = 30
 )
 
 // LookupEnv resolves one environment variable without coupling configuration to process state.
@@ -31,6 +32,13 @@ type Config struct {
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
+	Agent             AgentConfig
+}
+
+// AgentConfig contains the internal Python orchestration endpoint settings.
+type AgentConfig struct {
+	BaseURL string
+	Timeout time.Duration
 }
 
 // Load reads API configuration, applies local defaults, and rejects unsafe values.
@@ -80,6 +88,12 @@ func Load(lookup LookupEnv) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	agentTimeout, err := durationSeconds(
+		lookup, "NORVII_AGENT_TIMEOUT_SECONDS", defaultAgentTimeoutSeconds,
+	)
+	if err != nil {
+		return Config{}, err
+	}
 	return Config{
 		Address:           net.JoinHostPort(host, strconv.Itoa(port)),
 		MaxRequestBytes:   maxRequestBytes,
@@ -88,6 +102,10 @@ func Load(lookup LookupEnv) (Config, error) {
 		ReadTimeout:       readSeconds,
 		WriteTimeout:      writeSeconds,
 		IdleTimeout:       idleSeconds,
+		Agent: AgentConfig{
+			BaseURL: stringValue(lookup, "NORVII_AGENT_BASE_URL", "http://127.0.0.1:8090"),
+			Timeout: agentTimeout,
+		},
 	}, nil
 }
 

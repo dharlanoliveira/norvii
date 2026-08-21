@@ -23,6 +23,7 @@ belong in the numbered Spec Kit directory that introduced them.
 | Cross-feature risks | [Architecture risks](architecture/risks.md) | Risk or mitigation direction changes |
 | Client model | [Web client](modules/web-client.md) | Client responsibility changes |
 | Online backend model | [Go API](modules/go-api.md) | API responsibility changes |
+| Online AI orchestration model | [Python LangGraph agent](modules/python-agent.md) | Agent responsibility or graph boundary changes |
 | Offline processing model | [Python ingestion](modules/python-ingestion.md) | Pipeline responsibility changes |
 | Public data exchange | [`contracts/`](../contracts/README.md) | Cross-language contract changes |
 | Local backing services | [Local environment](operations/local-environment.md) | Runtime dependency changes |

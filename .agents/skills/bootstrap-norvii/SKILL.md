@@ -1,6 +1,6 @@
 ---
 name: bootstrap-norvii
-description: Start and verify the complete Norvii local development environment with persistent component logs. Use when the user asks to bootstrap, start, run, or diagnose the full Norvii application locally, including React, PostgreSQL, Neo4j, migrations, and production-driver verification.
+description: Start and verify the complete Norvii local development environment with persistent component logs. Use when the user asks to bootstrap, start, run, or diagnose the full Norvii application locally, including React, Go, Python LangGraph, ingestion, PostgreSQL, Neo4j, migrations, and production-driver verification.
 ---
 
 # Bootstrap Norvii
@@ -22,11 +22,13 @@ Start Norvii through its repository-owned orchestration and report a concise rea
    Do not start Vite or Compose directly because that bypasses managed logging and
    process identity checks.
 4. On success, report the web URL and the absolute `.log/` path. Confirm that the
-   Go API, Python ingestion worker, React client, PostgreSQL, and Neo4j are running.
+   Go API facade, Python LangGraph agent, Python ingestion worker, React client,
+   PostgreSQL, and Neo4j are running.
 5. On failure, inspect only the relevant bounded tails from:
    - `.log/bootstrap.log` for persistence orchestration and startup failures;
    - `.log/web.log` for dependency installation, React, and Vite;
    - `.log/api.log` for migrations and Go persistence verification;
+   - `.log/agent.log` for LangGraph startup, retrieval, and provider failures;
    - `.log/ingestion.log` for Python persistence verification;
    - `.log/postgres.log` for PostgreSQL;
    - `.log/neo4j.log` for Neo4j.

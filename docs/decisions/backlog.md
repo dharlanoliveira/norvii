@@ -12,7 +12,7 @@ These choices remain open. A feature plan may research one when implementation r
 | Source limits | Maximum PDF size, URL response size, capture duration, and redirects |
 | URL policy | Allowed protocols, domains, redirects, DNS results, and resolved IP ranges |
 | Artifact contract | Versioned schema connecting Python ingestion and the Go API |
-| Chat streaming | Go implementation of message semantics consumed by the AI SDK client |
+| Chat streaming | Cross-language agent-to-Go-to-React message semantics |
 | Deployment | Hosting model for the application and indexes |
 | Local models | Whether offline operation is part of the demonstration |
 | Cross-jurisdiction comparison | Initial POC capability or later extension |
