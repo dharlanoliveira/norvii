@@ -14,17 +14,17 @@ import (
 	"github.com/google/uuid"
 )
 
-type service interface {
+type asker interface {
 	Ask(context.Context, chatdomain.Request, func(string)) (chatdomain.Result, error)
 }
 
 // Handler maps grounded chat requests to the versioned SSE stream.
 type Handler struct {
-	service service
+	service asker
 }
 
 // NewHandler constructs a grounded chat handler around an application service.
-func NewHandler(service service) *Handler { return &Handler{service: service} }
+func NewHandler(service asker) *Handler { return &Handler{service: service} }
 
 // Register adds the active-corpus stream route to a shared mux.
 func (handler *Handler) Register(mux *http.ServeMux) {

@@ -6,11 +6,13 @@ import json
 import urllib.request
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
-from urllib.error import HTTPError, URLError
+from urllib.error import URLError
 from urllib.request import Request
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+_MALFORMED_RESPONSE = "embedding provider response is malformed"
 
 
 class EmbeddingProviderError(RuntimeError):
@@ -66,34 +68,37 @@ class OpenAICompatibleEmbeddingProvider:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310
                 decoded = json.loads(response.read())
-        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
+        except (URLError, TimeoutError, json.JSONDecodeError) as error:
             raise EmbeddingProviderError("embedding provider request failed") from error
         return self._parse_vectors(decoded, len(texts))
 
     def _parse_vectors(self, payload: object, expected_count: int) -> tuple[tuple[float, ...], ...]:
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
-            raise EmbeddingProviderError("embedding provider response is malformed")
+            raise EmbeddingProviderError(_MALFORMED_RESPONSE)
         entries = payload["data"]
         if len(entries) != expected_count:
             raise EmbeddingProviderError("embedding provider returned an unexpected item count")
-        vectors: list[tuple[float, ...] | None] = [None] * expected_count
-        for entry in entries:
-            if not isinstance(entry, dict):
-                raise EmbeddingProviderError("embedding provider response is malformed")
-            index = entry.get("index")
-            values = entry.get("embedding")
-            if not isinstance(index, int) or not 0 <= index < expected_count:
-                raise EmbeddingProviderError("embedding provider returned an invalid index")
-            if vectors[index] is not None or not isinstance(values, list):
-                raise EmbeddingProviderError("embedding provider response is malformed")
-            if len(values) != self.dimensions or not all(
-                isinstance(value, (int, float)) for value in values
-            ):
-                raise EmbeddingProviderError("embedding vector dimensions are invalid")
-            vectors[index] = tuple(float(value) for value in values)
-        if any(vector is None for vector in vectors):
-            raise EmbeddingProviderError("embedding provider response has missing items")
-        return tuple(vector for vector in vectors if vector is not None)
+        vectors = [self._parse_entry(entry, expected_count) for entry in entries]
+        indexed_vectors = dict(vectors)
+        if set(indexed_vectors) != set(range(expected_count)):
+            raise EmbeddingProviderError(_MALFORMED_RESPONSE)
+        ordered = [indexed_vectors[index] for index in range(expected_count)]
+        return tuple(ordered)
+
+    def _parse_entry(self, entry: object, expected_count: int) -> tuple[int, tuple[float, ...]]:
+        if not isinstance(entry, dict):
+            raise EmbeddingProviderError(_MALFORMED_RESPONSE)
+        index = entry.get("index")
+        values = entry.get("embedding")
+        if not isinstance(index, int) or not 0 <= index < expected_count:
+            raise EmbeddingProviderError("embedding provider returned an invalid index")
+        if not isinstance(values, list):
+            raise EmbeddingProviderError(_MALFORMED_RESPONSE)
+        if len(values) != self.dimensions or not all(
+            isinstance(value, (int, float)) for value in values
+        ):
+            raise EmbeddingProviderError("embedding vector dimensions are invalid")
+        return index, tuple(float(value) for value in values)
 
 
 __all__ = ["EmbeddingProvider", "EmbeddingProviderError", "OpenAICompatibleEmbeddingProvider"]

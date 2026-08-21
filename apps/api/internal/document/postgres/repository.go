@@ -131,7 +131,7 @@ func (repository *Repository) GetLatest(
 	return document, nil
 }
 
-func compareUnitReadingOrder(left Unit, right Unit) int {
+func compareUnitReadingOrder(left, right Unit) int {
 	if order := cmp.Compare(left.StartOffset, right.StartOffset); order != 0 {
 		return order
 	}
