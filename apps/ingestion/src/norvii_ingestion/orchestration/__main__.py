@@ -28,6 +28,7 @@ from norvii_ingestion.publication.postgres.repository import (
     PostgresWorkRepository,
     WorkRepositoryError,
 )
+from norvii_ingestion.semantic import OpenAICompatibleSemanticExtractor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,6 +76,14 @@ def main() -> int:
                 batch_size=worker_config.embedding_batch_size,
             ),
             embedding_model=worker_config.embedding_model,
+            semantic_extractor=OpenAICompatibleSemanticExtractor(
+                endpoint=worker_config.semantic_endpoint,
+                api_key=worker_config.semantic_api_key,
+                model=worker_config.semantic_model,
+                timeout_seconds=worker_config.semantic_timeout_seconds,
+                reasoning_effort=worker_config.semantic_reasoning_effort,
+                extraction_version=worker_config.semantic_extraction_version,
+            ),
         ),
         logger=StructuredEventLogger(_LOGGER),
     )

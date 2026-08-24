@@ -192,25 +192,42 @@ func (handler *Handler) get(writer http.ResponseWriter, request *http.Request) {
 }
 
 type corpusResponse struct {
-	ID           uuid.UUID `json:"id"`
-	Name         string    `json:"name"`
-	Description  string    `json:"description"`
-	Language     string    `json:"language"`
-	Jurisdiction string    `json:"jurisdiction"`
-	Status       string    `json:"status"`
-	SourceCount  int       `json:"sourceCount"`
-	Version      int       `json:"version"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	ID             uuid.UUID               `json:"id"`
+	Name           string                  `json:"name"`
+	Description    string                  `json:"description"`
+	Language       string                  `json:"language"`
+	Jurisdiction   string                  `json:"jurisdiction"`
+	Status         string                  `json:"status"`
+	SourceCount    int                     `json:"sourceCount"`
+	Version        int                     `json:"version"`
+	CreatedAt      time.Time               `json:"createdAt"`
+	UpdatedAt      time.Time               `json:"updatedAt"`
+	ActiveSnapshot *activeSnapshotResponse `json:"activeSnapshot"`
+}
+
+type activeSnapshotResponse struct {
+	ID             uuid.UUID `json:"id"`
+	ManifestSHA256 string    `json:"manifestSha256"`
+	CreatedAt      time.Time `json:"createdAt"`
+	ActivatedAt    time.Time `json:"activatedAt"`
+	ReleaseVersion int       `json:"releaseVersion"`
 }
 
 func newCorpusResponse(corpus catalogpostgres.Summary) corpusResponse {
-	return corpusResponse{
+	response := corpusResponse{
 		ID: corpus.ID, Name: corpus.Name, Description: corpus.Description,
 		Language: string(corpus.Language), Jurisdiction: corpus.Jurisdiction,
 		Status: string(corpus.Status), SourceCount: corpus.SourceCount, Version: corpus.Version,
 		CreatedAt: corpus.CreatedAt, UpdatedAt: corpus.UpdatedAt,
 	}
+	if corpus.ActiveSnapshot != nil {
+		response.ActiveSnapshot = &activeSnapshotResponse{
+			ID: corpus.ActiveSnapshot.ID, ManifestSHA256: corpus.ActiveSnapshot.ManifestSHA256,
+			CreatedAt: corpus.ActiveSnapshot.CreatedAt, ActivatedAt: corpus.ActiveSnapshot.ActivatedAt,
+			ReleaseVersion: corpus.ActiveSnapshot.ReleaseVersion,
+		}
+	}
+	return response
 }
 
 func writeInvalidID(writer http.ResponseWriter, request *http.Request) {

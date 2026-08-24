@@ -85,15 +85,16 @@ def test_expired_lease_recovers_and_reprocessing_is_idempotent() -> None:
                 SELECT processing_status, latest_ready_document_id,
                        (SELECT count(*) FROM source_revisions WHERE source_id = %s),
                        (SELECT count(*) FROM document_versions WHERE source_id = %s),
+                       (SELECT count(*) FROM corpus_snapshot_releases WHERE corpus_id = %s),
                        (SELECT count(*) FROM processing_attempts WHERE source_id = %s),
                        (SELECT bool_and(duration_milliseconds > 0)
                         FROM processing_attempts WHERE source_id = %s)
                 FROM sources WHERE id = %s
                 """,
-                (source_id, source_id, source_id, source_id, source_id),
+                (source_id, source_id, corpus_id, source_id, source_id, source_id),
             )
             row = cursor.fetchone()
-        assert row == ("failed", changed_document, 2, 2, 5, True)
+        assert row == ("failed", changed_document, 2, 2, 0, 5, True)
     finally:
         _cleanup(repository.connection, corpus_id)
         repository.close()

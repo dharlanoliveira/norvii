@@ -39,7 +39,13 @@ def test_chat_stream_reads_only_the_declared_request_body_length() -> None:
     connection = HTTPConnection("127.0.0.1", int(server.server_address[1]), timeout=1)
 
     try:
-        request_body = json.dumps({"question": "What applies?", "interfaceLanguage": "en"})
+        request_body = json.dumps(
+            {
+                "question": "What applies?",
+                "interfaceLanguage": "en",
+                "snapshotId": "50000000-0000-4000-8000-000000000001",
+            }
+        )
         connection.request(
             "POST",
             "/v1/corpora/10000000-0000-4000-8000-000000000001/chat/stream",

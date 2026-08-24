@@ -3,6 +3,7 @@ import type { CorpusLanguage } from "./contract";
 export interface ChatReference {
   readonly id: string;
   readonly corpusId: string;
+  readonly snapshotId?: string | undefined;
   readonly sourceId: string;
   readonly documentId: string;
   readonly unitLocator: string;
@@ -21,7 +22,7 @@ export interface ChatInspection {
   readonly outcome: "completed" | "abstained" | "cancelled" | "failed";
   readonly retrieval?:
     | {
-        readonly strategy: "vector";
+        readonly strategy: RetrievalStrategy;
         readonly topK: number;
         readonly returnedCount: number;
         readonly embeddingModel: string | null;
@@ -35,6 +36,17 @@ export interface ChatInspection {
     readonly outputTokens: number | null;
   };
   readonly evidence?: readonly ChatReference[] | undefined;
+  readonly graphPath?: readonly GraphPathStep[] | undefined;
+}
+
+export type RetrievalStrategy = "vector" | "graph" | "hybrid";
+
+export interface GraphPathStep {
+  readonly relationshipType: string;
+  readonly subjectLabel: string;
+  readonly objectLabel: string;
+  readonly evidenceId: string;
+  readonly evidenceLocator: string;
 }
 
 export type ChatStreamEvent =
@@ -94,6 +106,7 @@ export interface ChatProvider {
     corpusId: string,
     question: string,
     interfaceLanguage: CorpusLanguage,
+    strategy: RetrievalStrategy,
     signal: AbortSignal,
     onEvent: (event: ChatStreamEvent) => void,
   ): Promise<void>;
@@ -127,6 +140,7 @@ class HttpChatProvider implements ChatProvider {
     corpusId: string,
     question: string,
     interfaceLanguage: CorpusLanguage,
+    strategy: RetrievalStrategy,
     signal: AbortSignal,
     onEvent: (event: ChatStreamEvent) => void,
   ): Promise<void> {
@@ -136,7 +150,7 @@ class HttpChatProvider implements ChatProvider {
         method: "POST",
         signal,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, interfaceLanguage }),
+        body: JSON.stringify({ question, interfaceLanguage, strategy }),
       },
     );
     if (!response.ok) {
@@ -263,6 +277,7 @@ function referencesValue(value: unknown): readonly ChatReference[] {
     return {
       id: stringValue(item.id, "reference ID"),
       corpusId: stringValue(item.corpusId, "reference corpus ID"),
+      snapshotId: optionalStringValue(item.snapshotId, "reference snapshot ID"),
       sourceId: stringValue(item.sourceId, "reference source ID"),
       documentId: stringValue(item.documentId, "reference document ID"),
       unitLocator: stringValue(item.unitLocator, "reference locator"),
@@ -307,6 +322,10 @@ function inspectionValue(value: unknown): ChatInspection | undefined {
       value.evidence === undefined
         ? undefined
         : referencesValue(value.evidence),
+    graphPath:
+      value.graphPath === undefined
+        ? undefined
+        : graphPathValue(value.graphPath),
   };
 }
 
@@ -314,11 +333,11 @@ function retrievalValue(value: unknown): ChatInspection["retrieval"] {
   if (value === undefined) return undefined;
   if (!isRecord(value))
     throw new TypeError("Chat retrieval inspection must be an object.");
-  if (value.strategy !== "vector") {
+  if (!isRetrievalStrategy(value.strategy)) {
     throw new TypeError("Chat retrieval strategy is invalid.");
   }
   return {
-    strategy: "vector",
+    strategy: value.strategy,
     topK: nonNegativeNumberValue(value.topK, "retrieval top K"),
     returnedCount: nonNegativeNumberValue(
       value.returnedCount,
@@ -329,6 +348,35 @@ function retrievalValue(value: unknown): ChatInspection["retrieval"] {
       "embedding model",
     ),
   };
+}
+
+function graphPathValue(value: unknown): readonly GraphPathStep[] {
+  if (!Array.isArray(value))
+    throw new TypeError("Chat graph path must be an array.");
+  return value.map((item) => {
+    if (!isRecord(item))
+      throw new TypeError("Chat graph path entry must be an object.");
+    return {
+      relationshipType: stringValue(
+        item.relationshipType,
+        "graph relationship type",
+      ),
+      subjectLabel: stringValue(
+        item.subjectLabel,
+        "graph relationship subject",
+      ),
+      objectLabel: stringValue(item.objectLabel, "graph relationship object"),
+      evidenceId: stringValue(item.evidenceId, "graph evidence ID"),
+      evidenceLocator: stringValue(
+        item.evidenceLocator,
+        "graph evidence locator",
+      ),
+    };
+  });
+}
+
+function isRetrievalStrategy(value: unknown): value is RetrievalStrategy {
+  return value === "vector" || value === "graph" || value === "hybrid";
 }
 
 function measurementsValue(value: unknown): ChatInspection["measurements"] {

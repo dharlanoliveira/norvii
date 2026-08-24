@@ -25,7 +25,14 @@ describe("authoritative corpus workspace", () => {
     });
     const provider = createHttpResearchProvider({ fetch: fetchResponse });
     const chatProvider: ChatProvider = {
-      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         onEvent({
           type: "completed",
           requestId: "request-1",

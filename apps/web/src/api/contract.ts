@@ -12,6 +12,55 @@ export interface CorpusResponse {
   readonly version: number;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly activeSnapshot?: ActiveSnapshotResponse | null | undefined;
+}
+
+export interface ActiveSnapshotResponse {
+  readonly id: string;
+  readonly manifestSha256: string;
+  readonly createdAt: string;
+  readonly activatedAt: string;
+  readonly releaseVersion: number;
+}
+
+export interface SnapshotMemberResponse {
+  readonly sourceId: string;
+  readonly sourceRevisionId: string;
+  readonly documentId: string;
+  readonly officialOrigin: string;
+  readonly capturedAt: string;
+  readonly contentSha256: string;
+}
+
+export interface SnapshotResponse {
+  readonly id: string;
+  readonly corpusId: string;
+  readonly manifestSha256: string;
+  readonly createdBy: string;
+  readonly createdAt: string;
+  readonly members: readonly SnapshotMemberResponse[];
+}
+
+export interface SnapshotPublicationResponse {
+  readonly snapshot: SnapshotResponse;
+  readonly release: ActiveSnapshotResponse;
+  readonly published: boolean;
+}
+
+export type GraphReleaseStatus = "building" | "ready" | "failed";
+
+export interface GraphReleaseResponse {
+  readonly id: string;
+  readonly corpusId: string;
+  readonly snapshotId: string;
+  readonly manifestSha256: string;
+  readonly buildVersion: string;
+  readonly status: GraphReleaseStatus;
+  readonly failureCategory: string | null;
+  readonly entityCount: number;
+  readonly relationshipCount: number;
+  readonly createdAt: string;
+  readonly completedAt: string | null;
 }
 
 export type SourceKind = "url" | "pdf";
@@ -25,6 +74,7 @@ export interface SourceResponse {
   readonly processingStatus: ProcessingStatus;
   readonly failureCategory: string | null;
   readonly latestReadyDocumentId: string | null;
+  readonly activeSnapshotDocumentId?: string | null | undefined;
   readonly version: number;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -107,6 +157,7 @@ export type PublicErrorCode =
   | "extraction_failed"
   | "publication_failed"
   | "invalid_question"
+  | "snapshot_unavailable"
   | "internal_error";
 
 export interface ErrorEnvelope {
@@ -131,6 +182,7 @@ const errorCodes = new Set<PublicErrorCode>([
   "extraction_failed",
   "publication_failed",
   "invalid_question",
+  "snapshot_unavailable",
   "internal_error",
 ]);
 
@@ -143,6 +195,63 @@ export function parseCorpusList(value: unknown): readonly CorpusResponse[] {
 
 export function parseCorpusResponse(value: unknown): CorpusResponse {
   return parseCorpus(value, 0);
+}
+
+export function parseSnapshotPublicationResponse(
+  value: unknown,
+): SnapshotPublicationResponse {
+  const object = record(value, "snapshot publication");
+  const release = parseActiveSnapshot(object.release);
+  if (release === null) {
+    throw new Error("Snapshot publication must contain an active release.");
+  }
+  return {
+    snapshot: parseSnapshotResponse(object.snapshot),
+    release,
+    published: booleanValue(object.published, "snapshot publication state"),
+  };
+}
+
+export function parseSnapshotList(value: unknown): readonly SnapshotResponse[] {
+  if (!Array.isArray(value)) {
+    throw new TypeError("Snapshot list response must be an array.");
+  }
+  return value.map((snapshot) => parseSnapshotResponse(snapshot));
+}
+
+export function parseGraphReleaseResponse(
+  value: unknown,
+): GraphReleaseResponse {
+  const release = record(value, "graph release");
+  const status = stringValue(release.status, "graph release status");
+  if (status !== "building" && status !== "ready" && status !== "failed") {
+    throw new TypeError("Graph release status is invalid.");
+  }
+  return {
+    id: uuidValue(release.id, "graph release ID"),
+    corpusId: uuidValue(release.corpusId, "graph release corpus ID"),
+    snapshotId: uuidValue(release.snapshotId, "graph release snapshot ID"),
+    manifestSha256: sha256Value(
+      release.manifestSha256,
+      "graph release manifest",
+    ),
+    buildVersion: stringValue(release.buildVersion, "graph build version"),
+    status,
+    failureCategory: nullableString(
+      release.failureCategory,
+      "graph failure category",
+    ),
+    entityCount: nonnegativeInteger(release.entityCount, "graph entity count"),
+    relationshipCount: nonnegativeInteger(
+      release.relationshipCount,
+      "graph relationship count",
+    ),
+    createdAt: dateTimeValue(release.createdAt, "graph release creation time"),
+    completedAt: nullableDateTime(
+      release.completedAt,
+      "graph release completion time",
+    ),
+  };
 }
 
 export function parseSourceList(value: unknown): readonly SourceResponse[] {
@@ -233,6 +342,80 @@ function parseCorpus(value: unknown, index: number): CorpusResponse {
     version: positiveInteger(item.version, "corpus version"),
     createdAt: dateTimeValue(item.createdAt, "corpus creation time"),
     updatedAt: dateTimeValue(item.updatedAt, "corpus update time"),
+    activeSnapshot: parseActiveSnapshot(item.activeSnapshot),
+  };
+}
+
+function parseActiveSnapshot(value: unknown): ActiveSnapshotResponse | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const snapshot = record(value, "active corpus snapshot");
+  return {
+    id: uuidValue(snapshot.id, "active snapshot ID"),
+    manifestSha256: sha256Value(
+      snapshot.manifestSha256,
+      "active snapshot manifest hash",
+    ),
+    createdAt: dateTimeValue(
+      snapshot.createdAt,
+      "active snapshot creation time",
+    ),
+    activatedAt: dateTimeValue(
+      snapshot.activatedAt,
+      "active snapshot activation time",
+    ),
+    releaseVersion: positiveInteger(
+      snapshot.releaseVersion,
+      "active snapshot release version",
+    ),
+  };
+}
+
+function parseSnapshotResponse(value: unknown): SnapshotResponse {
+  const snapshot = record(value, "corpus snapshot");
+  if (!Array.isArray(snapshot.members)) {
+    throw new Error("Corpus snapshot members must be an array.");
+  }
+  return {
+    id: uuidValue(snapshot.id, "snapshot ID"),
+    corpusId: uuidValue(snapshot.corpusId, "snapshot corpus ID"),
+    manifestSha256: sha256Value(
+      snapshot.manifestSha256,
+      "snapshot manifest hash",
+    ),
+    createdBy: stringValue(snapshot.createdBy, "snapshot creator"),
+    createdAt: dateTimeValue(snapshot.createdAt, "snapshot creation time"),
+    members: snapshot.members.map((member, index) =>
+      parseSnapshotMember(member, index),
+    ),
+  };
+}
+
+function parseSnapshotMember(
+  value: unknown,
+  index: number,
+): SnapshotMemberResponse {
+  const member = record(value, `Snapshot member at index ${String(index)}`);
+  return {
+    sourceId: uuidValue(member.sourceId, "snapshot member source ID"),
+    sourceRevisionId: uuidValue(
+      member.sourceRevisionId,
+      "snapshot member source revision ID",
+    ),
+    documentId: uuidValue(member.documentId, "snapshot member document ID"),
+    officialOrigin: stringValue(
+      member.officialOrigin,
+      "snapshot member official origin",
+    ),
+    capturedAt: dateTimeValue(
+      member.capturedAt,
+      "snapshot member capture time",
+    ),
+    contentSha256: sha256Value(
+      member.contentSha256,
+      "snapshot member content hash",
+    ),
   };
 }
 
@@ -264,6 +447,10 @@ function parseSource(value: unknown, index: number): SourceResponse {
     latestReadyDocumentId: nullableUUID(
       source.latestReadyDocumentId,
       "latest document ID",
+    ),
+    activeSnapshotDocumentId: nullableUUID(
+      source.activeSnapshotDocumentId,
+      "active snapshot document ID",
     ),
     version: positiveInteger(source.version, "source version"),
     createdAt: dateTimeValue(source.createdAt, "source creation time"),
@@ -411,6 +598,13 @@ function record(value: unknown, label: string): Record<string, unknown> {
 function stringValue(value: unknown, label: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`${label} must be a non-empty string.`);
+  }
+  return value;
+}
+
+function booleanValue(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`${label} must be a boolean.`);
   }
   return value;
 }

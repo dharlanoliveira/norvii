@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -39,7 +39,14 @@ describe("research chat", () => {
   it("submits with Enter and preserves a newline with Shift+Enter", async () => {
     const questions: string[] = [];
     const provider: ChatProvider = {
-      streamQuestion: (_corpus, question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         questions.push(question);
         onEvent({
           type: "completed",
@@ -72,7 +79,14 @@ describe("research chat", () => {
   it("submits a starter question through the normal chat runtime", async () => {
     const questions: string[] = [];
     const provider: ChatProvider = {
-      streamQuestion: (_corpus, question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         questions.push(question);
         onEvent({
           type: "completed",
@@ -116,7 +130,14 @@ describe("research chat", () => {
       rank: 1,
     };
     const provider: ChatProvider = {
-      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         onEvent({
           type: "started",
           requestId: "request-1",
@@ -192,7 +213,14 @@ describe("research chat", () => {
       createReference(6, "Article 65"),
     ];
     const provider: ChatProvider = {
-      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         onEvent({
           type: "completed",
           requestId: "request-1",
@@ -253,7 +281,14 @@ describe("research chat", () => {
 
   it("renders an abstention returned by grounded retrieval", async () => {
     const provider: ChatProvider = {
-      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         onEvent({
           type: "abstained",
           requestId: "request-1",
@@ -304,7 +339,14 @@ describe("research chat", () => {
       rank: 1,
     };
     const provider: ChatProvider = {
-      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         onEvent({
           type: "completed",
           requestId: "request-1",
@@ -368,7 +410,14 @@ describe("research chat", () => {
 
   it("shows stream errors and provider failures to the researcher", async () => {
     const streamErrorProvider: ChatProvider = {
-      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         onEvent({
           type: "error",
           requestId: "request-1",
@@ -414,6 +463,131 @@ describe("research chat", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Network unavailable",
     );
+  });
+
+  it("compares independent retrieval strategies without masking an unavailable graph", async () => {
+    const strategies: string[] = [];
+    const provider: ChatProvider = {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        strategy,
+        _signal,
+        onEvent,
+      ) => {
+        strategies.push(strategy);
+        if (strategy === "graph") {
+          onEvent({
+            type: "error",
+            requestId: `request-${strategy}`,
+            code: "graph_unavailable",
+            message: "The graph release is unavailable.",
+            telemetry: {
+              outcome: "failed",
+              evidenceCount: 0,
+              durationMilliseconds: 1,
+            },
+          });
+          return Promise.resolve();
+        }
+        onEvent({
+          type: "completed",
+          requestId: `request-${strategy}`,
+          answer: `${strategy} answer`,
+          references: [],
+          telemetry: {
+            outcome: "completed",
+            evidenceCount: 0,
+            durationMilliseconds: 1,
+          },
+          inspection: {
+            outcome: "completed",
+            retrieval: {
+              strategy,
+              topK: 8,
+              returnedCount: 0,
+              embeddingModel: null,
+            },
+            measurements: {
+              retrievalMilliseconds: 1,
+              generationMilliseconds: 1,
+              totalMilliseconds: 2,
+              inputTokens: 1,
+              outputTokens: 1,
+            },
+          },
+        });
+        return Promise.resolve();
+      },
+    };
+    const user = userEvent.setup();
+    renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Research question" }),
+      "What applies?",
+    );
+    await user.click(screen.getByRole("button", { name: "Send question" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Compare strategies" }),
+    );
+
+    expect(await screen.findAllByText("vector answer")).toHaveLength(2);
+    expect(screen.getByText("hybrid answer")).toBeVisible();
+    expect(screen.getByText("Unavailable")).toBeVisible();
+    expect(strategies).toEqual(["vector", "vector", "graph", "hybrid"]);
+  });
+
+  it("cancels all comparison requests when its chat view unmounts", async () => {
+    const comparisonSignals: AbortSignal[] = [];
+    let requestCount = 0;
+    const provider: ChatProvider = {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        signal,
+        onEvent,
+      ) => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          onEvent({
+            type: "completed",
+            requestId: "normal-request",
+            answer: "Normal answer.",
+            references: [],
+            telemetry: {
+              outcome: "completed",
+              evidenceCount: 0,
+              durationMilliseconds: 1,
+            },
+          });
+          return Promise.resolve();
+        }
+        comparisonSignals.push(signal);
+        return new Promise<void>(() => undefined);
+      },
+    };
+    const user = userEvent.setup();
+    const result = renderAtRoute(
+      <ResearchChat corpusId="corpus-1" provider={provider} />,
+    );
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Research question" }),
+      "What applies?",
+    );
+    await user.click(screen.getByRole("button", { name: "Send question" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Compare strategies" }),
+    );
+    await waitFor(() => expect(comparisonSignals).toHaveLength(3));
+
+    result.unmount();
+
+    expect(comparisonSignals.every((signal) => signal.aborted)).toBe(true);
   });
 });
 

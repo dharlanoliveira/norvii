@@ -10,9 +10,13 @@ class FakeRetriever:
     def __init__(self, evidence: tuple[Evidence, ...]) -> None:
         self.evidence = evidence
 
-    def search(self, corpus_id: UUID, question: str) -> tuple[Evidence, ...]:
+    def search(
+        self, corpus_id: UUID, snapshot_id: UUID, question: str, strategy: str = "vector"
+    ) -> tuple[Evidence, ...]:
         assert corpus_id
+        assert snapshot_id
         assert question
+        assert strategy == "vector"
         return self.evidence
 
 
@@ -56,7 +60,11 @@ def test_graph_completes_grounded_answer_and_hides_its_mode_marker() -> None:
     )
 
     result = graph.run(
-        GroundedChatRequest(UUID("10000000-0000-4000-8000-000000000001"), "What applies?"),
+        GroundedChatRequest(
+            UUID("10000000-0000-4000-8000-000000000001"),
+            "What applies?",
+            snapshot_id=UUID("50000000-0000-4000-8000-000000000001"),
+        ),
         deltas.append,
     )
 
@@ -76,7 +84,11 @@ def test_graph_generates_scope_limited_response_when_retrieval_is_empty() -> Non
     graph = GroundedChatGraph(FakeRetriever(()), model)
 
     result = graph.run(
-        GroundedChatRequest(UUID("10000000-0000-4000-8000-000000000001"), "Unknown?"),
+        GroundedChatRequest(
+            UUID("10000000-0000-4000-8000-000000000001"),
+            "Unknown?",
+            snapshot_id=UUID("50000000-0000-4000-8000-000000000001"),
+        ),
         lambda _: None,
     )
 

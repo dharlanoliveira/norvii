@@ -28,6 +28,7 @@ describe("HTTP grounded chat provider", () => {
       "00000000-0000-0000-0000-000000000002",
       "What applies?",
       "pt",
+      "vector",
       new AbortController().signal,
       (event) => events.push(event.type),
     );
@@ -40,6 +41,7 @@ describe("HTTP grounded chat provider", () => {
     expect(JSON.parse(requestBody as string)).toEqual({
       question: "What applies?",
       interfaceLanguage: "pt",
+      strategy: "vector",
     });
   });
 
@@ -138,6 +140,7 @@ describe("HTTP grounded chat provider", () => {
         "corpus-1",
         "question",
         "en",
+        "vector",
         new AbortController().signal,
         () => undefined,
       ),
@@ -151,6 +154,7 @@ describe("HTTP grounded chat provider", () => {
         "corpus-1",
         "question",
         "en",
+        "vector",
         new AbortController().signal,
         () => undefined,
       ),

@@ -123,6 +123,8 @@ func TestHandlerMapsTerminalFailures(t *testing.T) {
 		{name: "grounding validation", err: chatdomain.ErrGroundingValidation, want: "abstained"},
 		{name: "retrieval", err: chatdomain.ErrRetrievalFailed, want: "retrieval_failed"},
 		{name: "invalid question", err: chatdomain.ErrInvalidQuestion, want: "invalid_question"},
+		{name: "missing active snapshot", err: chatdomain.ErrSnapshotUnavailable, want: "snapshot_unavailable"},
+		{name: "missing graph release", err: chatdomain.ErrGraphUnavailable, want: "graph_unavailable"},
 		{name: "generation", err: chatdomain.ErrGenerationFailed, want: "generation_failed"},
 	}
 	for _, test := range tests {

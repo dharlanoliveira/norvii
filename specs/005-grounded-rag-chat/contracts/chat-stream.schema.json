@@ -26,10 +26,11 @@
     },
     "reference": {
       "type": "object",
-      "required": ["id", "corpusId", "sourceId", "documentId", "unitLocator", "startOffset", "endOffset", "excerpt", "rank"],
+      "required": ["id", "corpusId", "snapshotId", "sourceId", "documentId", "unitLocator", "startOffset", "endOffset", "excerpt", "rank"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "corpusId": { "$ref": "#/$defs/uuid" },
+        "snapshotId": { "$ref": "#/$defs/uuid" },
         "sourceId": { "$ref": "#/$defs/uuid" },
         "documentId": { "$ref": "#/$defs/uuid" },
         "documentVersionId": { "$ref": "#/$defs/uuid" },
@@ -41,7 +42,8 @@
         "endOffset": { "type": "integer", "minimum": 0 },
         "excerpt": { "type": "string", "minLength": 1, "maxLength": 2000 },
         "rank": { "type": "integer", "minimum": 1 },
-        "cosineDistance": { "type": ["number", "null"], "minimum": 0 }
+        "cosineDistance": { "type": ["number", "null"], "minimum": 0 },
+        "contribution": { "type": "string", "enum": ["vector", "graph", "both"] }
       },
       "additionalProperties": false
     },
@@ -84,7 +86,7 @@
       "allOf": [{ "$ref": "#/$defs/base" }],
       "properties": {
         "type": { "const": "abstained" },
-        "reason": { "type": "string", "enum": ["insufficient_evidence", "evidence_unavailable", "grounding_validation_failed"] },
+        "reason": { "type": "string", "enum": ["insufficient_evidence", "evidence_unavailable", "grounding_validation_failed", "graph_unavailable", "hybrid_unavailable"] },
         "telemetry": { "$ref": "#/$defs/telemetry" },
         "inspection": { "$ref": "#/$defs/inspection" }
       },
@@ -103,7 +105,7 @@
       "allOf": [{ "$ref": "#/$defs/base" }],
       "properties": {
         "type": { "const": "error" },
-        "code": { "type": "string", "enum": ["invalid_question", "corpus_unavailable", "insufficient_evidence", "retrieval_failed", "generation_failed", "request_cancelled", "evidence_unavailable", "internal_error"] },
+        "code": { "type": "string", "enum": ["invalid_question", "corpus_unavailable", "snapshot_unavailable", "graph_unavailable", "insufficient_evidence", "retrieval_failed", "generation_failed", "request_cancelled", "evidence_unavailable", "internal_error"] },
         "message": { "type": "string", "minLength": 1 },
         "telemetry": { "$ref": "#/$defs/telemetry" },
         "inspection": { "$ref": "#/$defs/inspection" }
@@ -133,7 +135,7 @@
           "type": "object",
           "required": ["strategy", "topK", "returnedCount", "embeddingModel"],
           "properties": {
-            "strategy": { "const": "vector" },
+            "strategy": { "type": "string", "enum": ["vector", "graph", "hybrid"] },
             "topK": { "type": "integer", "minimum": 0 },
             "returnedCount": { "type": "integer", "minimum": 0, "maximum": 8 },
             "embeddingModel": { "type": ["string", "null"] }
@@ -152,7 +154,23 @@
           },
           "additionalProperties": false
         },
-        "evidence": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/reference" } }
+        "evidence": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/reference" } },
+        "graphPath": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "required": ["relationshipType", "subjectLabel", "objectLabel", "evidenceId", "evidenceLocator"],
+            "properties": {
+              "relationshipType": { "type": "string", "minLength": 1 },
+              "subjectLabel": { "type": "string", "minLength": 1 },
+              "objectLabel": { "type": "string", "minLength": 1 },
+              "evidenceId": { "type": "string", "minLength": 1 },
+              "evidenceLocator": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": false
     }

@@ -21,15 +21,19 @@ _SOURCE_TITLE_INDEX = 11
 
 
 class PostgresRetriever:
-    """Retrieve only latest published chunks for an enabled corpus."""
+    """Retrieve ready chunks from one immutable active snapshot."""
 
     def __init__(self, configuration: AgentConfig, embeddings: EmbeddingProvider) -> None:
         self._configuration = configuration
         self._embeddings = embeddings
         self.last_retrieval: RetrievalInspection | None = None
 
-    def search(self, corpus_id: UUID, question: str) -> tuple[Evidence, ...]:
-        """Return the nearest ready vectors within the active corpus boundary."""
+    def search(
+        self, corpus_id: UUID, snapshot_id: UUID, question: str, strategy: str = "vector"
+    ) -> tuple[Evidence, ...]:
+        """Return nearest ready vectors from the declared corpus snapshot."""
+        if strategy != "vector":
+            raise ValueError("PostgresRetriever only supports vector retrieval")
         vectors = self._embeddings.embed((question,))
         if len(vectors) != 1:
             raise ValueError("embedding provider must return one question vector")
@@ -52,12 +56,16 @@ class PostgresRetriever:
                            c.context_locator, c.start_offset, c.end_offset, c.content,
                            c.embedding <=> %s::vector AS cosine_distance,
                            d.source_revision_id, d.pipeline_version, s.title, c.ordinal
-                    FROM retrieval_chunks c
+                    FROM corpus_snapshot_documents sd
+                    JOIN corpus_snapshots snapshot
+                      ON snapshot.id = sd.snapshot_id AND snapshot.corpus_id = sd.corpus_id
+                    JOIN retrieval_chunks c
+                      ON c.corpus_id = sd.corpus_id AND c.source_id = sd.source_id
+                     AND c.document_id = sd.document_id
                     JOIN document_versions d ON d.id = c.document_id
                     JOIN corpora co ON co.id = c.corpus_id AND co.status = 'enabled'
-                    JOIN sources s ON s.corpus_id = c.corpus_id
-                     AND s.id = c.source_id AND s.latest_ready_document_id = c.document_id
-                    WHERE c.corpus_id = %s
+                    JOIN sources s ON s.corpus_id = c.corpus_id AND s.id = c.source_id
+                    WHERE c.corpus_id = %s AND sd.snapshot_id = %s
                       AND d.publication_status = 'published'
                       AND c.enrichment_status = 'ready'
                       AND c.embedding IS NOT NULL
@@ -69,7 +77,7 @@ class PostgresRetriever:
                 ORDER BY cosine_distance, ordinal, id
                 LIMIT 8
                 """,
-                (vector_literal, corpus_id),
+                (vector_literal, corpus_id, snapshot_id),
             )
             rows = cursor.fetchall()
         self.last_retrieval = RetrievalInspection(
@@ -100,6 +108,7 @@ class PostgresRetriever:
                     row[_PIPELINE_VERSION_INDEX] if len(row) > _PIPELINE_VERSION_INDEX else None
                 ),
                 source_title=(row[_SOURCE_TITLE_INDEX] if len(row) > _SOURCE_TITLE_INDEX else None),
+                snapshot_id=snapshot_id,
             )
             for index, row in enumerate(rows)
         )

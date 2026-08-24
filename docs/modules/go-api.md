@@ -13,6 +13,8 @@ orchestration to `apps/agent/`.
 - public request validation and active-corpus boundary checks;
 - internal agent request forwarding and public SSE translation;
 - online state transitions, errors, metrics, and audit-safe traces.
+- immutable corpus snapshot publication and active-release resolution.
+- graph-release status inspection for a named corpus snapshot.
 
 ## Does not own
 
@@ -33,6 +35,21 @@ Python agent or later dedicated modules, not to this facade.
 The API MUST not expose database rows or provider payloads directly. Errors crossing
 HTTP, stream, MCP, and ingestion boundaries use stable codes and safe messages with
 internal causes preserved for diagnostics.
+
+The facade resolves the corpus's active immutable snapshot before every chat request
+and forwards that identity to the Python agent. A chat request never falls back to a
+source's newest candidate document. The snapshot endpoints provide explicit
+publication and immutable manifest inspection; an optimistic release version prevents
+two maintainers from silently replacing each other's release.
+
+For `graph` and `hybrid` chat strategies, the facade also resolves a ready graph release for
+that same corpus and active snapshot. If no ready release exists, the request returns the safe
+`graph_unavailable` outcome; it never silently falls back to vector retrieval. The release record
+is inspectable at:
+
+```text
+GET /api/v1/corpora/{corpusId}/snapshots/{snapshotId}/graph-release
+```
 
 ## Target organization
 

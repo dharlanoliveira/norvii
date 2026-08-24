@@ -30,7 +30,17 @@ type rowScanner interface {
 // Summary combines a corpus aggregate with its authoritative source count.
 type Summary struct {
 	domain.Corpus
-	SourceCount int
+	SourceCount    int
+	ActiveSnapshot *ActiveSnapshot
+}
+
+// ActiveSnapshot is the compact immutable release projection shown to researchers.
+type ActiveSnapshot struct {
+	ID             uuid.UUID
+	ManifestSHA256 string
+	CreatedAt      time.Time
+	ActivatedAt    time.Time
+	ReleaseVersion int
 }
 
 // Repository reads corpora through explicit projections and deterministic ordering.
@@ -45,11 +55,16 @@ func NewRepository(database queryer) *Repository { return &Repository{database: 
 func (repository *Repository) List(ctx context.Context, includeDisabled bool) ([]Summary, error) {
 	rows, err := repository.database.Query(ctx, `
 		SELECT c.id, c.name, c.description, c.language, c.jurisdiction,
-		       c.status, c.version, c.created_at, c.updated_at, count(s.id)
+		       c.status, c.version, c.created_at, c.updated_at, count(s.id),
+		       release.snapshot_id, snapshot.manifest_sha256, snapshot.created_at,
+		       release.activated_at, release.version
 		FROM corpora c
 		LEFT JOIN sources s ON s.corpus_id = c.id
+		LEFT JOIN corpus_snapshot_releases release ON release.corpus_id = c.id
+		LEFT JOIN corpus_snapshots snapshot ON snapshot.id = release.snapshot_id
 		WHERE $1 OR c.status = 'enabled'
-		GROUP BY c.id
+		GROUP BY c.id, release.snapshot_id, snapshot.manifest_sha256, snapshot.created_at,
+		         release.activated_at, release.version
 		ORDER BY c.language, c.name, c.id`, includeDisabled)
 	if err != nil {
 		return nil, fmt.Errorf("list corpora: %w", err)
@@ -72,11 +87,16 @@ func (repository *Repository) Get(
 ) (Summary, error) {
 	row := repository.database.QueryRow(ctx, `
 		SELECT c.id, c.name, c.description, c.language, c.jurisdiction,
-		       c.status, c.version, c.created_at, c.updated_at, count(s.id)
+		       c.status, c.version, c.created_at, c.updated_at, count(s.id),
+		       release.snapshot_id, snapshot.manifest_sha256, snapshot.created_at,
+		       release.activated_at, release.version
 		FROM corpora c
 		LEFT JOIN sources s ON s.corpus_id = c.id
+		LEFT JOIN corpus_snapshot_releases release ON release.corpus_id = c.id
+		LEFT JOIN corpus_snapshots snapshot ON snapshot.id = release.snapshot_id
 		WHERE c.id = $1 AND ($2 OR c.status = 'enabled')
-		GROUP BY c.id`, id, includeDisabled)
+		GROUP BY c.id, release.snapshot_id, snapshot.manifest_sha256, snapshot.created_at,
+		         release.activated_at, release.version`, id, includeDisabled)
 	corpus, err := scanSummary(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Summary{}, ErrNotFound
@@ -101,7 +121,8 @@ func (repository *Repository) Create(
 			RETURNING *
 		)
 		SELECT id, name, description, language, jurisdiction,
-		       status, version, created_at, updated_at, 0
+		       status, version, created_at, updated_at, 0,
+		       NULL::uuid, NULL::text, NULL::timestamptz, NULL::timestamptz, NULL::integer
 		FROM inserted`,
 		corpus.ID, corpus.Name, corpus.Description, corpus.Language,
 		corpus.Jurisdiction, corpus.Status, corpus.Version,
@@ -131,11 +152,16 @@ func (repository *Repository) Update(
 			RETURNING *
 		)
 		SELECT u.id, u.name, u.description, u.language, u.jurisdiction,
-		       u.status, u.version, u.created_at, u.updated_at, count(s.id)
+		       u.status, u.version, u.created_at, u.updated_at, count(s.id),
+		       release.snapshot_id, snapshot.manifest_sha256, snapshot.created_at,
+		       release.activated_at, release.version
 		FROM updated u
 		LEFT JOIN sources s ON s.corpus_id = u.id
+		LEFT JOIN corpus_snapshot_releases release ON release.corpus_id = u.id
+		LEFT JOIN corpus_snapshots snapshot ON snapshot.id = release.snapshot_id
 		GROUP BY u.id, u.name, u.description, u.language, u.jurisdiction,
-		         u.status, u.version, u.created_at, u.updated_at`,
+		         u.status, u.version, u.created_at, u.updated_at, release.snapshot_id,
+		         snapshot.manifest_sha256, snapshot.created_at, release.activated_at, release.version`,
 		id, draft.Name, draft.Description, draft.Language, draft.Jurisdiction,
 		now.UTC(), expectedVersion,
 	)
@@ -165,11 +191,16 @@ func (repository *Repository) SetStatus(
 			RETURNING *
 		)
 		SELECT u.id, u.name, u.description, u.language, u.jurisdiction,
-		       u.status, u.version, u.created_at, u.updated_at, count(s.id)
+		       u.status, u.version, u.created_at, u.updated_at, count(s.id),
+		       release.snapshot_id, snapshot.manifest_sha256, snapshot.created_at,
+		       release.activated_at, release.version
 		FROM updated u
 		LEFT JOIN sources s ON s.corpus_id = u.id
+		LEFT JOIN corpus_snapshot_releases release ON release.corpus_id = u.id
+		LEFT JOIN corpus_snapshots snapshot ON snapshot.id = release.snapshot_id
 		GROUP BY u.id, u.name, u.description, u.language, u.jurisdiction,
-		         u.status, u.version, u.created_at, u.updated_at`,
+		         u.status, u.version, u.created_at, u.updated_at, release.snapshot_id,
+		         snapshot.manifest_sha256, snapshot.created_at, release.activated_at, release.version`,
 		id, status, now.UTC(), expectedVersion,
 	)
 	updated, err := scanSummary(row)
@@ -197,6 +228,11 @@ func (repository *Repository) mutationMiss(ctx context.Context, id uuid.UUID) er
 
 func scanSummary(row rowScanner) (Summary, error) {
 	var summary Summary
+	var snapshotID *uuid.UUID
+	var manifestSHA256 *string
+	var createdAt *time.Time
+	var activatedAt *time.Time
+	var releaseVersion *int
 	err := row.Scan(
 		&summary.ID,
 		&summary.Name,
@@ -208,6 +244,20 @@ func scanSummary(row rowScanner) (Summary, error) {
 		&summary.CreatedAt,
 		&summary.UpdatedAt,
 		&summary.SourceCount,
+		&snapshotID,
+		&manifestSHA256,
+		&createdAt,
+		&activatedAt,
+		&releaseVersion,
 	)
-	return summary, err
+	if err != nil {
+		return Summary{}, err
+	}
+	if snapshotID != nil && manifestSHA256 != nil && createdAt != nil && activatedAt != nil && releaseVersion != nil {
+		summary.ActiveSnapshot = &ActiveSnapshot{
+			ID: *snapshotID, ManifestSHA256: *manifestSHA256, CreatedAt: *createdAt,
+			ActivatedAt: *activatedAt, ReleaseVersion: *releaseVersion,
+		}
+	}
+	return summary, nil
 }

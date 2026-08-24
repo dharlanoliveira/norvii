@@ -35,6 +35,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 type requestPayload struct {
 	Question          string `json:"question"`
 	InterfaceLanguage string `json:"interfaceLanguage"`
+	Strategy          string `json:"strategy"`
 }
 
 func (handler *Handler) stream(writer http.ResponseWriter, request *http.Request) {
@@ -63,6 +64,15 @@ func (handler *Handler) stream(writer http.ResponseWriter, request *http.Request
 		})
 		return
 	}
+	if payload.Strategy == "" {
+		payload.Strategy = "vector"
+	}
+	if payload.Strategy != "vector" && payload.Strategy != "graph" && payload.Strategy != "hybrid" {
+		httpserver.WriteError(writer, request, httpserver.Problem{
+			Status: http.StatusBadRequest, Code: "invalid_input", Message: "The retrieval strategy is invalid.",
+		})
+		return
+	}
 
 	requestID := uuid.New()
 	startedAt := time.Now()
@@ -80,7 +90,7 @@ func (handler *Handler) stream(writer http.ResponseWriter, request *http.Request
 	}
 	var deltas []string
 	result, err := handler.service.Ask(request.Context(), chatdomain.Request{
-		CorpusID: corpusID, Question: payload.Question, InterfaceLanguage: payload.InterfaceLanguage,
+		CorpusID: corpusID, Question: payload.Question, InterfaceLanguage: payload.InterfaceLanguage, Strategy: payload.Strategy,
 	}, func(delta string) { deltas = append(deltas, delta) })
 	if err != nil {
 		handler.writeTerminalError(writer, requestID, err, elapsedMilliseconds(startedAt))
@@ -133,6 +143,12 @@ func (handler *Handler) writeTerminalError(writer http.ResponseWriter, requestID
 	if errors.Is(err, chatdomain.ErrInvalidQuestion) {
 		code = "invalid_question"
 	}
+	if errors.Is(err, chatdomain.ErrSnapshotUnavailable) {
+		code = "snapshot_unavailable"
+	}
+	if errors.Is(err, chatdomain.ErrGraphUnavailable) {
+		code = "graph_unavailable"
+	}
 	_ = writeEvent(writer, "error", map[string]any{
 		"type": "error", "requestId": requestID, "code": code,
 		"message":    "The grounded chat request could not be completed.",
@@ -144,6 +160,7 @@ func (handler *Handler) writeTerminalError(writer http.ResponseWriter, requestID
 type evidenceResponse struct {
 	ID                string    `json:"id"`
 	CorpusID          uuid.UUID `json:"corpusId"`
+	SnapshotID        uuid.UUID `json:"snapshotId"`
 	SourceID          uuid.UUID `json:"sourceId"`
 	DocumentID        uuid.UUID `json:"documentId"`
 	DocumentVersionID uuid.UUID `json:"documentVersionId,omitempty"`
@@ -162,7 +179,7 @@ func evidenceResponses(evidence []chatdomain.Evidence) []evidenceResponse {
 	responses := make([]evidenceResponse, 0, len(evidence))
 	for _, item := range evidence {
 		responses = append(responses, evidenceResponse{
-			ID: item.ID, CorpusID: item.CorpusID, SourceID: item.SourceID,
+			ID: item.ID, CorpusID: item.CorpusID, SnapshotID: item.SnapshotID, SourceID: item.SourceID,
 			DocumentID: item.DocumentID, DocumentVersionID: item.DocumentVersionID,
 			SourceRevisionID: item.SourceRevisionID, PipelineVersion: item.PipelineVersion,
 			SourceTitle: item.SourceTitle, UnitLocator: item.UnitLocator,

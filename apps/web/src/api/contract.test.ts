@@ -5,6 +5,8 @@ import {
   parseCorpusResponse,
   parseDocumentResponse,
   parseErrorEnvelope,
+  parseGraphReleaseResponse,
+  parseSnapshotPublicationResponse,
   parseSourceList,
 } from "./contract";
 
@@ -38,6 +40,57 @@ describe("corpus ingestion HTTP contract", () => {
         },
       }),
     ).toThrow("error code");
+  });
+
+  it("validates an immutable snapshot publication response", () => {
+    const publication = parseSnapshotPublicationResponse({
+      snapshot: {
+        id: "70000000-0000-4000-8000-000000000001",
+        corpusId: "10000000-0000-4000-8000-000000000002",
+        manifestSha256: "a".repeat(64),
+        createdBy: "local-maintainer",
+        createdAt: "2026-08-24T12:00:00Z",
+        members: [
+          {
+            sourceId: "20000000-0000-4000-8000-000000000002",
+            sourceRevisionId: "40000000-0000-4000-8000-000000000001",
+            documentId: "50000000-0000-4000-8000-000000000001",
+            officialOrigin: "https://example.org/law",
+            capturedAt: "2026-08-24T11:00:00Z",
+            contentSha256: "b".repeat(64),
+          },
+        ],
+      },
+      release: {
+        id: "70000000-0000-4000-8000-000000000001",
+        manifestSha256: "a".repeat(64),
+        createdAt: "2026-08-24T12:00:00Z",
+        activatedAt: "2026-08-24T12:00:00Z",
+        releaseVersion: 2,
+      },
+      published: true,
+    });
+
+    expect(publication.snapshot.members).toHaveLength(1);
+    expect(publication.release.releaseVersion).toBe(2);
+  });
+
+  it("validates a snapshot-scoped graph release response", () => {
+    const release = parseGraphReleaseResponse({
+      id: "80000000-0000-4000-8000-000000000001",
+      corpusId: "10000000-0000-4000-8000-000000000002",
+      snapshotId: "70000000-0000-4000-8000-000000000001",
+      manifestSha256: "a".repeat(64),
+      buildVersion: "legal-graph-v1",
+      status: "ready",
+      entityCount: 8,
+      relationshipCount: 4,
+      createdAt: "2026-08-24T12:00:00Z",
+      completedAt: "2026-08-24T12:01:00Z",
+    });
+
+    expect(release.status).toBe("ready");
+    expect(release.snapshotId).toBe("70000000-0000-4000-8000-000000000001");
   });
 
   it("validates populated source, attempt, document, and provenance values", () => {

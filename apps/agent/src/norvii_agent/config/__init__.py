@@ -30,6 +30,10 @@ class AgentConfig:
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = _EMBEDDING_DIMENSIONS
     embedding_timeout_seconds: float = 30.0
+    neo4j_uri: str = ""
+    neo4j_user: str = ""
+    neo4j_password: str = ""
+    neo4j_database: str = "neo4j"
 
     @classmethod
     def from_environment(cls) -> AgentConfig:
@@ -57,6 +61,10 @@ class AgentConfig:
             ).strip(),
             embedding_dimensions=_embedding_dimensions(),
             embedding_timeout_seconds=_positive_float("NORVII_EMBEDDING_TIMEOUT_SECONDS", 30.0),
+            neo4j_uri=os.environ.get("NORVII_NEO4J_URI", "").strip(),
+            neo4j_user=os.environ.get("NORVII_NEO4J_USER", "").strip(),
+            neo4j_password=os.environ.get("NORVII_NEO4J_PASSWORD", ""),
+            neo4j_database=os.environ.get("NORVII_NEO4J_DATABASE", "neo4j").strip(),
         )
 
 

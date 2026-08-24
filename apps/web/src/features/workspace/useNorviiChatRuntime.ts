@@ -10,6 +10,7 @@ import type {
   ChatProvider,
   ChatReference,
   ChatStreamEvent,
+  RetrievalStrategy,
 } from "../../api/chat";
 import type { CorpusLanguage } from "../../api/contract";
 
@@ -19,6 +20,7 @@ interface UseNorviiChatRuntimeOptions {
   readonly interfaceLanguage: CorpusLanguage;
   readonly abstainedAnswer: string;
   readonly fallbackError: string;
+  readonly strategy: RetrievalStrategy;
 }
 
 interface NorviiChatRuntime {
@@ -26,6 +28,7 @@ interface NorviiChatRuntime {
   readonly error: string | undefined;
   readonly referencesByMessageId: ReadonlyMap<string, readonly ChatReference[]>;
   readonly inspectionsByMessageId: ReadonlyMap<string, ChatInspection>;
+  readonly lastSubmittedQuestion: string | undefined;
 }
 
 export function useNorviiChatRuntime({
@@ -34,6 +37,7 @@ export function useNorviiChatRuntime({
   interfaceLanguage,
   abstainedAnswer,
   fallbackError,
+  strategy,
 }: UseNorviiChatRuntimeOptions): NorviiChatRuntime {
   const [error, setError] = useState<string>();
   const [referencesByMessageId, setReferencesByMessageId] = useState<
@@ -42,6 +46,7 @@ export function useNorviiChatRuntime({
   const [inspectionsByMessageId, setInspectionsByMessageId] = useState<
     ReadonlyMap<string, ChatInspection>
   >(() => new Map());
+  const [lastSubmittedQuestion, setLastSubmittedQuestion] = useState<string>();
 
   const storeReferences = useCallback(
     (messageId: string | undefined, references: readonly ChatReference[]) => {
@@ -77,6 +82,7 @@ export function useNorviiChatRuntime({
           setError(fallbackError);
           return;
         }
+        setLastSubmittedQuestion(question);
 
         const assistantMessageId = options.unstable_assistantMessageId;
         const stream = new ChatStreamQueue();
@@ -85,6 +91,7 @@ export function useNorviiChatRuntime({
             corpusId,
             question,
             interfaceLanguage,
+            strategy,
             options.abortSignal,
             (event) => stream.push(event),
           )
@@ -143,11 +150,18 @@ export function useNorviiChatRuntime({
       provider,
       storeReferences,
       storeInspection,
+      strategy,
     ],
   );
   const runtime = useLocalRuntime(adapter);
 
-  return { runtime, error, referencesByMessageId, inspectionsByMessageId };
+  return {
+    runtime,
+    error,
+    referencesByMessageId,
+    inspectionsByMessageId,
+    lastSubmittedQuestion,
+  };
 }
 
 function latestQuestion(

@@ -5,12 +5,14 @@ from .grounded_chat import (
     ChatModelPort,
     Evidence,
     ExecutionMeasurements,
+    GraphPathStep,
     GroundedChatGraph,
     GroundedChatRequest,
     GroundedChatResult,
     ModelUsage,
     RetrievalInspection,
     RetrievalPort,
+    StrategyUnavailableError,
 )
 
 __all__ = [
@@ -18,10 +20,12 @@ __all__ = [
     "ChatModelPort",
     "Evidence",
     "ExecutionMeasurements",
+    "GraphPathStep",
     "GroundedChatGraph",
     "GroundedChatRequest",
     "GroundedChatResult",
     "ModelUsage",
     "RetrievalInspection",
     "RetrievalPort",
+    "StrategyUnavailableError",
 ]

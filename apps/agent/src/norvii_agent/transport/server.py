@@ -62,9 +62,14 @@ class AgentRequestHandler(BaseHTTPRequestHandler):
             corpus_id = UUID(match.group("corpus"))
             payload = self._read_json_payload()
             question = str(payload["question"]).strip()
+            snapshot_id = UUID(str(payload["snapshotId"]))
             interface_language = str(payload.get("interfaceLanguage", "en")).strip().lower()
+            strategy = str(payload.get("strategy", "vector")).strip().lower()
             if interface_language not in {"en", "pt"}:
                 self.send_error(400, "invalid interface language")
+                return
+            if strategy not in {"vector", "graph", "hybrid"}:
+                self.send_error(400, "invalid retrieval strategy")
                 return
             if not question:
                 self._invalid_question()
@@ -75,9 +80,16 @@ class AgentRequestHandler(BaseHTTPRequestHandler):
             self.send_error(400, "invalid question")
             return
 
-        self._stream_graph(corpus_id, question, interface_language)
+        self._stream_graph(corpus_id, snapshot_id, question, interface_language, strategy)
 
-    def _stream_graph(self, corpus_id: UUID, question: str, interface_language: str) -> None:
+    def _stream_graph(
+        self,
+        corpus_id: UUID,
+        snapshot_id: UUID,
+        question: str,
+        interface_language: str,
+        strategy: str,
+    ) -> None:
         request_id = uuid4()
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -92,7 +104,8 @@ class AgentRequestHandler(BaseHTTPRequestHandler):
             )
             deltas: list[str] = []
             result = self.server.graph_factory().run(
-                GroundedChatRequest(corpus_id, question, interface_language), deltas.append
+                GroundedChatRequest(corpus_id, question, interface_language, snapshot_id, strategy),
+                deltas.append,
             )
             self._event(
                 "evidence",
@@ -183,6 +196,7 @@ def _reference(evidence: Evidence) -> dict[str, object]:
     return {
         "id": evidence.id,
         "corpusId": str(evidence.corpus_id),
+        "snapshotId": _uuid_or_none(evidence.snapshot_id),
         "sourceId": str(evidence.source_id),
         "documentId": str(evidence.document_id),
         "documentVersionId": str(evidence.document_version_id or evidence.document_id),
@@ -217,6 +231,7 @@ def _inspection(inspection: AnswerInspection | None) -> dict[str, object]:
                 "outputTokens": None,
             },
             "evidence": [],
+            "graphPath": [],
         }
     measurements = inspection.measurements
     return {
@@ -235,6 +250,16 @@ def _inspection(inspection: AnswerInspection | None) -> dict[str, object]:
             "outputTokens": measurements.output_tokens,
         },
         "evidence": [_reference(item) for item in inspection.evidence],
+        "graphPath": [
+            {
+                "relationshipType": step.relationship_type,
+                "subjectLabel": step.subject_label,
+                "objectLabel": step.object_label,
+                "evidenceId": step.evidence_id,
+                "evidenceLocator": step.evidence_locator,
+            }
+            for step in inspection.graph_path
+        ],
     }
 
 

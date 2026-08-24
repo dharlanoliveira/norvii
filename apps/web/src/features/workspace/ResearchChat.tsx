@@ -17,8 +17,10 @@ import {
   type ChatProvider,
   type ChatInspection,
   type ChatReference,
+  type RetrievalStrategy,
 } from "../../api/chat";
 import { AssistantMarkdown } from "./AssistantMarkdown";
+import { StrategyComparison } from "./StrategyComparison";
 import { useNorviiChatRuntime } from "./useNorviiChatRuntime";
 
 const defaultChatProvider = createHttpChatProvider();
@@ -39,18 +41,39 @@ export function ResearchChat({
   const interfaceLanguage: "en" | "pt" = i18n.resolvedLanguage?.startsWith("pt")
     ? "pt"
     : "en";
-  const { runtime, error, referencesByMessageId, inspectionsByMessageId } =
-    useNorviiChatRuntime({
-      corpusId,
-      provider,
-      interfaceLanguage,
-      abstainedAnswer: t("chat.abstained"),
-      fallbackError: t("chat.failed"),
-    });
+  const [strategy, setStrategy] = useState<RetrievalStrategy>("vector");
+  const {
+    runtime,
+    error,
+    referencesByMessageId,
+    inspectionsByMessageId,
+    lastSubmittedQuestion,
+  } = useNorviiChatRuntime({
+    corpusId,
+    provider,
+    interfaceLanguage,
+    abstainedAnswer: t("chat.abstained"),
+    fallbackError: t("chat.failed"),
+    strategy,
+  });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <section className="research-chat" aria-label={t("chat.regionLabel")}>
+        <label className="chat-strategy">
+          <span>{t("chat.strategy.label")}</span>
+          <select
+            aria-label={t("chat.strategy.label")}
+            value={strategy}
+            onChange={(event) =>
+              setStrategy(event.target.value as RetrievalStrategy)
+            }
+          >
+            <option value="vector">{t("chat.strategy.vector")}</option>
+            <option value="graph">{t("chat.strategy.graph")}</option>
+            <option value="hybrid">{t("chat.strategy.hybrid")}</option>
+          </select>
+        </label>
         <ThreadPrimitive.Root className="chat-thread">
           <ThreadPrimitive.Viewport className="chat-viewport" turnAnchor="top">
             <AuiIf condition={(state) => state.thread.isEmpty}>
@@ -70,7 +93,13 @@ export function ResearchChat({
               }
             </ThreadPrimitive.Messages>
             {error ? <ChatError message={error} /> : null}
-            <ChatViewportFooter interfaceLanguage={interfaceLanguage} />
+            <ChatViewportFooter
+              corpusId={corpusId}
+              interfaceLanguage={interfaceLanguage}
+              lastSubmittedQuestion={lastSubmittedQuestion}
+              onReferenceSelect={onReferenceSelect}
+              provider={provider}
+            />
           </ThreadPrimitive.Viewport>
         </ThreadPrimitive.Root>
       </section>
@@ -89,15 +118,32 @@ function ChatEmptyState() {
 }
 
 function ChatViewportFooter({
+  corpusId,
   interfaceLanguage,
+  lastSubmittedQuestion,
+  onReferenceSelect,
+  provider,
 }: {
+  readonly corpusId: string;
   readonly interfaceLanguage: "en" | "pt";
+  readonly lastSubmittedQuestion: string | undefined;
+  readonly onReferenceSelect?: ((reference: ChatReference) => void) | undefined;
+  readonly provider: ChatProvider;
 }) {
   const isEmpty = useAuiState((state) => state.thread.isEmpty);
   return (
     <ThreadPrimitive.ViewportFooter
       className={`chat-viewport__footer${isEmpty ? " chat-viewport__footer--empty" : ""}`}
     >
+      {!isEmpty ? (
+        <StrategyComparison
+          corpusId={corpusId}
+          interfaceLanguage={interfaceLanguage}
+          onReferenceSelect={onReferenceSelect}
+          provider={provider}
+          question={lastSubmittedQuestion}
+        />
+      ) : null}
       <ChatComposer interfaceLanguage={interfaceLanguage} />
       {isEmpty ? <ChatStarterQuestions /> : null}
     </ThreadPrimitive.ViewportFooter>
@@ -378,6 +424,9 @@ function AnswerInspection({
 }) {
   const { t } = useTranslation();
   const evidence = inspection.evidence ?? [];
+  const snapshotId = evidence.find(
+    (reference) => reference.snapshotId !== undefined,
+  )?.snapshotId;
   return (
     <details className="answer-inspection">
       <summary>
@@ -397,6 +446,12 @@ function AnswerInspection({
             label={t("chat.outcome")}
             value={t(`chat.outcomes.${inspection.outcome}`)}
           />
+          {snapshotId === undefined ? null : (
+            <InspectionMetric
+              label={t("chat.snapshotIdentity")}
+              value={snapshotId}
+            />
+          )}
           <InspectionMetric
             label={t("chat.retrieval")}
             value={inspection.retrieval?.strategy ?? t("chat.unavailable")}
@@ -455,6 +510,36 @@ function AnswerInspection({
             </li>
           ))}
         </ol>
+        {inspection.graphPath?.length ? (
+          <ol
+            className="answer-inspection__path"
+            aria-label={t("chat.graphPath")}
+          >
+            {inspection.graphPath.map((step) => {
+              const reference = evidence.find(
+                (candidate) => candidate.id === step.evidenceId,
+              );
+              return (
+                <li key={`${step.evidenceId}:${step.relationshipType}`}>
+                  <button
+                    type="button"
+                    disabled={reference?.documentVersionId === undefined}
+                    onClick={() => {
+                      if (reference) onReferenceSelect?.(reference);
+                    }}
+                  >
+                    <strong>{step.subjectLabel}</strong>
+                    <span>
+                      {t(`chat.relationships.${step.relationshipType}`)}
+                    </span>
+                    <strong>{step.objectLabel}</strong>
+                  </button>
+                  <small>{step.evidenceLocator}</small>
+                </li>
+              );
+            })}
+          </ol>
+        ) : null}
       </div>
     </details>
   );

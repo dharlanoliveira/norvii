@@ -34,6 +34,12 @@ class WorkerConfig:
     embedding_dimensions: int = _EMBEDDING_DIMENSIONS
     embedding_timeout_seconds: int = 30
     embedding_batch_size: int = 32
+    semantic_endpoint: str = "https://api.openai.com/v1/chat/completions"
+    semantic_api_key: str = ""
+    semantic_model: str = "gpt-5.6-luna"
+    semantic_timeout_seconds: int = 30
+    semantic_reasoning_effort: str = "medium"
+    semantic_extraction_version: str = "legal-semantic-v1"
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> WorkerConfig:
@@ -84,6 +90,25 @@ class WorkerConfig:
             embedding_batch_size=cls._positive_integer(
                 environment, "NORVII_EMBEDDING_BATCH_SIZE", 32
             ),
+            semantic_endpoint=environment.get(
+                "NORVII_SEMANTIC_BASE_URL", "https://api.openai.com/v1/chat/completions"
+            ).strip(),
+            semantic_api_key=(
+                environment.get("NORVII_SEMANTIC_API_KEY", "").strip()
+                or environment.get("NORVII_CHAT_API_KEY", "").strip()
+            ),
+            semantic_model=environment.get(
+                "NORVII_SEMANTIC_MODEL", environment.get("NORVII_CHAT_MODEL", "gpt-5.6-luna")
+            ).strip(),
+            semantic_timeout_seconds=cls._positive_integer(
+                environment, "NORVII_SEMANTIC_TIMEOUT_SECONDS", 30
+            ),
+            semantic_reasoning_effort=environment.get(
+                "NORVII_SEMANTIC_REASONING_EFFORT", "medium"
+            ).strip(),
+            semantic_extraction_version=environment.get(
+                "NORVII_SEMANTIC_EXTRACTION_VERSION", "legal-semantic-v1"
+            ).strip(),
         )
 
     @staticmethod

@@ -351,19 +351,20 @@ func (handler *Handler) get(writer http.ResponseWriter, request *http.Request) {
 }
 
 type sourceResponse struct {
-	ID                    uuid.UUID         `json:"id"`
-	CorpusID              uuid.UUID         `json:"corpusId"`
-	Title                 string            `json:"title"`
-	Kind                  string            `json:"kind"`
-	ProcessingStatus      string            `json:"processingStatus"`
-	FailureCategory       *string           `json:"failureCategory"`
-	LatestReadyDocumentID *uuid.UUID        `json:"latestReadyDocumentId"`
-	Version               int               `json:"version"`
-	CreatedAt             time.Time         `json:"createdAt"`
-	UpdatedAt             time.Time         `json:"updatedAt"`
-	Origin                originResponse    `json:"origin"`
-	LatestAttempt         *attemptResponse  `json:"latestAttempt"`
-	Attempts              []attemptResponse `json:"attempts"`
+	ID                       uuid.UUID         `json:"id"`
+	CorpusID                 uuid.UUID         `json:"corpusId"`
+	Title                    string            `json:"title"`
+	Kind                     string            `json:"kind"`
+	ProcessingStatus         string            `json:"processingStatus"`
+	FailureCategory          *string           `json:"failureCategory"`
+	LatestReadyDocumentID    *uuid.UUID        `json:"latestReadyDocumentId"`
+	ActiveSnapshotDocumentID *uuid.UUID        `json:"activeSnapshotDocumentId"`
+	Version                  int               `json:"version"`
+	CreatedAt                time.Time         `json:"createdAt"`
+	UpdatedAt                time.Time         `json:"updatedAt"`
+	Origin                   originResponse    `json:"origin"`
+	LatestAttempt            *attemptResponse  `json:"latestAttempt"`
+	Attempts                 []attemptResponse `json:"attempts"`
 }
 
 type originResponse struct {
@@ -396,9 +397,10 @@ func newSourceResponse(record sourcepostgres.Record) sourceResponse {
 	response := sourceResponse{
 		ID: record.ID, CorpusID: record.CorpusID, Title: record.Title,
 		Kind: string(record.Kind), ProcessingStatus: string(record.ProcessingStatus),
-		FailureCategory:       record.FailureCategory,
-		LatestReadyDocumentID: record.LatestReadyDocumentID,
-		Version:               record.Version, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
+		FailureCategory:          record.FailureCategory,
+		LatestReadyDocumentID:    record.LatestReadyDocumentID,
+		ActiveSnapshotDocumentID: record.ActiveSnapshotDocumentID,
+		Version:                  record.Version, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
 		Origin: newOriginResponse(record), Attempts: make([]attemptResponse, 0, len(record.Attempts)),
 	}
 	for _, attempt := range record.Attempts {

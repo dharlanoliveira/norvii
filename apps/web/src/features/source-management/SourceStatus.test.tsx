@@ -2,7 +2,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { SourceResponse } from "../../api/contract";
+import type { SnapshotResponse, SourceResponse } from "../../api/contract";
 import { renderAtRoute } from "../../test/render";
 import { SourceStatus } from "./SourceStatus";
 
@@ -13,6 +13,9 @@ describe("source lifecycle status", () => {
     renderAtRoute(
       <SourceStatus
         source={source("failed")}
+        onLoadGraphRelease={vi.fn().mockRejectedValue(new Error("not used"))}
+        onLoadSnapshotHistory={vi.fn().mockResolvedValue([])}
+        onPublish={vi.fn()}
         onRetry={retry}
         onReprocess={vi.fn()}
       />,
@@ -45,6 +48,9 @@ describe("source lifecycle status", () => {
     renderAtRoute(
       <SourceStatus
         source={source("ready")}
+        onLoadGraphRelease={vi.fn().mockRejectedValue(new Error("not used"))}
+        onLoadSnapshotHistory={vi.fn().mockResolvedValue([])}
+        onPublish={vi.fn()}
         onRetry={vi.fn()}
         onReprocess={reprocess}
       />,
@@ -76,6 +82,35 @@ describe("source lifecycle status", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("publishes a ready document through the explicit snapshot action", async () => {
+    const user = userEvent.setup();
+    const publish = vi.fn().mockResolvedValue(undefined);
+    renderAtRoute(
+      <SourceStatus
+        source={source("ready")}
+        activeSnapshot={{
+          id: "70000000-0000-4000-8000-000000000001",
+          manifestSha256: "a".repeat(64),
+          createdAt: "2026-08-24T12:00:00Z",
+          activatedAt: "2026-08-24T12:00:00Z",
+          releaseVersion: 1,
+        }}
+        onLoadGraphRelease={vi.fn().mockRejectedValue(new Error("not used"))}
+        onLoadSnapshotHistory={vi.fn().mockResolvedValue([])}
+        onPublish={publish}
+        onRetry={vi.fn()}
+        onReprocess={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Publish snapshot" }));
+
+    expect(publish).toHaveBeenCalledWith(
+      source("ready"),
+      expect.any(AbortSignal),
+    );
+  });
+
   it("does not reprocess when confirmation is declined", async () => {
     const user = userEvent.setup();
     const reprocess = vi.fn().mockResolvedValue(undefined);
@@ -83,6 +118,9 @@ describe("source lifecycle status", () => {
     renderAtRoute(
       <SourceStatus
         source={source("ready")}
+        onLoadGraphRelease={vi.fn().mockRejectedValue(new Error("not used"))}
+        onLoadSnapshotHistory={vi.fn().mockResolvedValue([])}
+        onPublish={vi.fn()}
         onRetry={vi.fn()}
         onReprocess={reprocess}
       />,
@@ -91,6 +129,71 @@ describe("source lifecycle status", () => {
     await user.click(screen.getByRole("button", { name: "Reprocess source" }));
 
     expect(reprocess).not.toHaveBeenCalled();
+  });
+
+  it("loads immutable release manifests only when requested", async () => {
+    const user = userEvent.setup();
+    const snapshots: readonly SnapshotResponse[] = [
+      {
+        id: "70000000-0000-4000-8000-000000000001",
+        corpusId: "10000000-0000-4000-8000-000000000009",
+        manifestSha256: "a".repeat(64),
+        createdBy: "local-maintainer",
+        createdAt: "2026-08-24T12:00:00Z",
+        members: [
+          {
+            sourceId: "20000000-0000-4000-8000-000000000009",
+            sourceRevisionId: "30000000-0000-4000-8000-000000000009",
+            documentId: "50000000-0000-4000-8000-000000000009",
+            officialOrigin: "https://example.org/law",
+            capturedAt: "2026-08-24T11:00:00Z",
+            contentSha256: "b".repeat(64),
+          },
+        ],
+      },
+    ];
+    const loadSnapshots = vi.fn(
+      (signal: AbortSignal): Promise<readonly SnapshotResponse[]> => {
+        void signal;
+        return Promise.resolve(snapshots);
+      },
+    );
+    renderAtRoute(
+      <SourceStatus
+        source={source("ready")}
+        activeSnapshot={{
+          id: "70000000-0000-4000-8000-000000000001",
+          manifestSha256: "a".repeat(64),
+          createdAt: "2026-08-24T12:00:00Z",
+          activatedAt: "2026-08-24T12:00:00Z",
+          releaseVersion: 1,
+        }}
+        onLoadGraphRelease={vi.fn().mockResolvedValue({
+          id: "80000000-0000-4000-8000-000000000001",
+          corpusId: "10000000-0000-4000-8000-000000000009",
+          snapshotId: "70000000-0000-4000-8000-000000000001",
+          manifestSha256: "c".repeat(64),
+          buildVersion: "legal-graph-v1",
+          status: "ready",
+          failureCategory: null,
+          entityCount: 4,
+          relationshipCount: 2,
+          createdAt: "2026-08-24T12:00:00Z",
+          completedAt: "2026-08-24T12:01:00Z",
+        })}
+        onLoadSnapshotHistory={loadSnapshots}
+        onPublish={vi.fn()}
+        onRetry={vi.fn()}
+        onReprocess={vi.fn()}
+      />,
+    );
+
+    expect(loadSnapshots).not.toHaveBeenCalled();
+    await user.click(screen.getByText("Snapshot history"));
+    expect(await screen.findByText("Snapshot release")).toBeVisible();
+    expect(screen.getByText("Active release")).toBeVisible();
+    expect(screen.getByText("Graph release")).toBeVisible();
+    expect(loadSnapshots).toHaveBeenCalledWith(expect.any(AbortSignal));
   });
 });
 
@@ -109,6 +212,7 @@ function source(
       processingStatus === "ready"
         ? "50000000-0000-4000-8000-000000000009"
         : null,
+    activeSnapshotDocumentId: null,
     version: 3,
     createdAt: "2026-08-17T12:00:00Z",
     updatedAt: "2026-08-17T12:01:00Z",

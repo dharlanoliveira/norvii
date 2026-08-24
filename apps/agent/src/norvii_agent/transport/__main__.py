@@ -8,7 +8,12 @@ from norvii_agent.providers import (
     OpenAICompatibleChatModel,
     OpenAICompatibleEmbeddingProvider,
 )
-from norvii_agent.retrieval import PostgresRetriever
+from norvii_agent.retrieval import (
+    HybridRetriever,
+    Neo4jGraphRetriever,
+    PostgresRetriever,
+    StrategyRetriever,
+)
 from norvii_agent.transport.server import AgentHTTPServer
 
 
@@ -22,7 +27,13 @@ def main() -> None:
         configuration.embedding_dimensions,
         configuration.embedding_timeout_seconds,
     )
-    retriever = PostgresRetriever(configuration, embeddings)
+    vector_retriever = PostgresRetriever(configuration, embeddings)
+    graph_retriever = Neo4jGraphRetriever(configuration)
+    retriever = StrategyRetriever(
+        vector_retriever,
+        graph_retriever,
+        HybridRetriever(vector_retriever, graph_retriever),
+    )
     model = OpenAICompatibleChatModel(
         configuration.chat_base_url,
         configuration.chat_api_key,

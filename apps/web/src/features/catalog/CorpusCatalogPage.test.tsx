@@ -162,12 +162,24 @@ class ManagementProvider implements ResearchProvider {
     throw new Error("not used");
   }
 
+  publishSnapshot(): Promise<never> {
+    throw new Error("not used");
+  }
+
   getCorpus(): Promise<CorpusResponse> {
     throw new Error("not used");
   }
 
   listSources(): Promise<never[]> {
     return Promise.resolve([]);
+  }
+
+  listSnapshots(): Promise<never[]> {
+    return Promise.resolve([]);
+  }
+
+  getGraphRelease(): Promise<never> {
+    throw new Error("not used");
   }
 
   getDocument(): Promise<never> {

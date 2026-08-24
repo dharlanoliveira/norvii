@@ -13,6 +13,8 @@ import { Link, useParams } from "react-router-dom";
 import type {
   CorpusResponse,
   DocumentResponse,
+  GraphReleaseResponse,
+  SnapshotResponse,
   SourceResponse,
 } from "../../api/contract";
 import type { ChatProvider, ChatReference } from "../../api/chat";
@@ -94,10 +96,13 @@ function LoadedCorpusWorkspace({
   chatProvider,
 }: LoadedCorpusWorkspaceProps) {
   const { t } = useTranslation();
-  const { registerCreatedSource, replaceSource, state } = useCorpusData(
-    provider,
-    corpusId,
-  );
+  const {
+    registerCreatedSource,
+    replaceCorpus,
+    replaceSource,
+    replaceSources,
+    state,
+  } = useCorpusData(provider, corpusId);
   const sourceForms = useSourceForms(provider, corpusId, registerCreatedSource);
   const [mode, setMode] = useState<WorkspaceMode>("chat");
   const sourceViewer = useSourceViewer(provider, corpusId, () => {
@@ -130,6 +135,7 @@ function LoadedCorpusWorkspace({
           sources={state.sources}
         />
         <WorkspacePrimary
+          activeSnapshot={state.corpus.activeSnapshot}
           availableSource={availableSource}
           chatProvider={chatProvider}
           citationUnavailable={sourceViewer.citationUnavailable}
@@ -137,6 +143,12 @@ function LoadedCorpusWorkspace({
           documentState={sourceViewer.documentState}
           mode={mode}
           onAddSource={sourceForms.showAddSourceForm}
+          onLoadSnapshotHistory={(signal) =>
+            provider.listSnapshots(corpusId, signal)
+          }
+          onLoadGraphRelease={(snapshotId, signal) =>
+            provider.getGraphRelease(corpusId, snapshotId, signal)
+          }
           onModeChange={setMode}
           onReferenceSelect={(reference) =>
             sourceViewer.selectReference(state.sources, reference)
@@ -151,6 +163,29 @@ function LoadedCorpusWorkspace({
               signal,
             );
             replaceSource(updated);
+          }}
+          onPublish={async (source, signal) => {
+            const activeSnapshot = state.corpus.activeSnapshot;
+            if (
+              activeSnapshot === null ||
+              activeSnapshot === undefined ||
+              source.latestReadyDocumentId === null
+            ) {
+              return;
+            }
+            await provider.publishSnapshot(
+              corpusId,
+              source.id,
+              source.latestReadyDocumentId,
+              activeSnapshot.releaseVersion,
+              signal,
+            );
+            const [corpus, sources] = await Promise.all([
+              provider.getCorpus(corpusId, signal),
+              provider.listSources(corpusId, signal),
+            ]);
+            replaceCorpus(corpus);
+            replaceSources(sources);
           }}
           onRetry={async (source, signal) => {
             const updated = await provider.retrySource(
@@ -240,8 +275,22 @@ function useCorpusData(provider: ResearchProvider, corpusId: string) {
     );
     setPollSources(isActiveSource(updated));
   };
+  const replaceCorpus = (updated: CorpusResponse): void => {
+    setState((current) =>
+      current.status === "ready" ? { ...current, corpus: updated } : current,
+    );
+  };
+  const replaceSources = (sources: readonly SourceResponse[]): void => {
+    setState((current) => replaceWorkspaceSources(current, sources));
+  };
 
-  return { registerCreatedSource, replaceSource, state };
+  return {
+    registerCreatedSource,
+    replaceCorpus,
+    replaceSource,
+    replaceSources,
+    state,
+  };
 }
 
 function useSourceForms(
@@ -543,6 +592,7 @@ function SourceTreeItem({
 }
 
 interface WorkspacePrimaryProps {
+  readonly activeSnapshot?: CorpusResponse["activeSnapshot"];
   readonly availableSource?: SourceResponse | undefined;
   readonly chatProvider?: ChatProvider | undefined;
   readonly citationUnavailable: boolean;
@@ -550,9 +600,20 @@ interface WorkspacePrimaryProps {
   readonly documentState: DocumentState;
   readonly mode: WorkspaceMode;
   readonly onAddSource: () => void;
+  readonly onLoadSnapshotHistory: (
+    signal: AbortSignal,
+  ) => Promise<readonly SnapshotResponse[]>;
+  readonly onLoadGraphRelease: (
+    snapshotId: string,
+    signal: AbortSignal,
+  ) => Promise<GraphReleaseResponse>;
   readonly onModeChange: (mode: WorkspaceMode) => void;
   readonly onReferenceSelect: (reference: ChatReference) => void;
   readonly onReprocess: (
+    source: SourceResponse,
+    signal: AbortSignal,
+  ) => Promise<void>;
+  readonly onPublish: (
     source: SourceResponse,
     signal: AbortSignal,
   ) => Promise<void>;
@@ -567,6 +628,7 @@ interface WorkspacePrimaryProps {
 }
 
 function WorkspacePrimary({
+  activeSnapshot,
   availableSource,
   chatProvider,
   citationUnavailable,
@@ -574,9 +636,12 @@ function WorkspacePrimary({
   documentState,
   mode,
   onAddSource,
+  onLoadSnapshotHistory,
+  onLoadGraphRelease,
   onModeChange,
   onReferenceSelect,
   onReprocess,
+  onPublish,
   onRetry,
   onSelectSource,
   onSelectUnit,
@@ -596,12 +661,16 @@ function WorkspacePrimary({
         />
       </div>
       <SourcePanel
+        activeSnapshot={activeSnapshot}
         availableSource={availableSource}
         citationUnavailable={citationUnavailable}
         documentState={documentState}
         hidden={mode !== "source"}
         onAddSource={onAddSource}
+        onLoadSnapshotHistory={onLoadSnapshotHistory}
+        onLoadGraphRelease={onLoadGraphRelease}
         onReprocess={onReprocess}
+        onPublish={onPublish}
         onRetry={onRetry}
         onSelectSource={onSelectSource}
         onSelectUnit={onSelectUnit}
@@ -613,12 +682,24 @@ function WorkspacePrimary({
 }
 
 interface SourcePanelProps {
+  readonly activeSnapshot?: CorpusResponse["activeSnapshot"];
   readonly availableSource?: SourceResponse | undefined;
   readonly citationUnavailable: boolean;
   readonly documentState: DocumentState;
   readonly hidden: boolean;
   readonly onAddSource: () => void;
+  readonly onLoadSnapshotHistory: (
+    signal: AbortSignal,
+  ) => Promise<readonly SnapshotResponse[]>;
+  readonly onLoadGraphRelease: (
+    snapshotId: string,
+    signal: AbortSignal,
+  ) => Promise<GraphReleaseResponse>;
   readonly onReprocess: (
+    source: SourceResponse,
+    signal: AbortSignal,
+  ) => Promise<void>;
+  readonly onPublish: (
     source: SourceResponse,
     signal: AbortSignal,
   ) => Promise<void>;
@@ -633,12 +714,16 @@ interface SourcePanelProps {
 }
 
 function SourcePanel({
+  activeSnapshot,
   availableSource,
   citationUnavailable,
   documentState,
   hidden,
   onAddSource,
+  onLoadSnapshotHistory,
+  onLoadGraphRelease,
   onReprocess,
+  onPublish,
   onRetry,
   onSelectSource,
   onSelectUnit,
@@ -667,9 +752,13 @@ function SourcePanel({
         />
       ) : (
         <SelectedSourceContent
+          activeSnapshot={activeSnapshot}
           citationUnavailable={citationUnavailable}
           documentState={documentState}
+          onLoadSnapshotHistory={onLoadSnapshotHistory}
+          onLoadGraphRelease={onLoadGraphRelease}
           onReprocess={onReprocess}
+          onPublish={onPublish}
           onRetry={onRetry}
           onSelectUnit={onSelectUnit}
           selectedSource={selectedSource}
@@ -684,9 +773,13 @@ function SourcePanel({
 }
 
 function SelectedSourceContent({
+  activeSnapshot,
   citationUnavailable,
   documentState,
+  onLoadSnapshotHistory,
+  onLoadGraphRelease,
   onReprocess,
+  onPublish,
   onRetry,
   onSelectUnit,
   selectedSource,
@@ -702,6 +795,10 @@ function SelectedSourceContent({
     <>
       <SourceStatus
         source={selectedSource}
+        activeSnapshot={activeSnapshot}
+        onLoadSnapshotHistory={onLoadSnapshotHistory}
+        onLoadGraphRelease={onLoadGraphRelease}
+        onPublish={onPublish}
         onRetry={onRetry}
         onReprocess={onReprocess}
       />

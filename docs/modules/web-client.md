@@ -15,6 +15,9 @@ This document describes the production client. Product exploration lives in `pro
 - adaptation between API stream parts and client view models;
 - loading, empty, error, retry, and abstention states;
 - interface language selection and locale-sensitive presentation;
+- active snapshot identity, candidate-release state, explicit publication, and on-demand
+  snapshot-manifest inspection;
+- retrieval-strategy selection, graph-path inspection, and independent strategy comparison;
 - client-side validation that improves feedback without replacing server validation.
 
 ## Does not own
@@ -33,6 +36,24 @@ the client MUST NOT reconstruct them by parsing Markdown.
 
 Transport clients map external schemas into feature-owned client models. UI
 components receive those models and do not call `fetch` directly.
+
+## Corpus snapshot presentation
+
+The catalog shows the active immutable snapshot for each corpus without displacing its language
+or jurisdiction. The workspace keeps research bound to that release: chat citations include the
+snapshot identity returned by the stream, and the source workspace distinguishes an active
+document from a ready candidate. A maintainer must explicitly publish a ready candidate.
+
+Snapshot history and manifests load only when requested from the source workspace. The view
+exposes the snapshot identity, manifest hash, source revisions, official origins, capture times,
+document identities, and content hashes so an evaluator can inspect a release without treating
+raw retrieval internals as normal reading UI.
+
+The same on-demand inspection surface shows the active snapshot's graph-release readiness and
+entity/relationship counts. Chat lets an evaluator choose vector, graph, or hybrid retrieval;
+the comparison tool reruns the latest question independently for all three strategies. A graph
+or hybrid result remains explicitly unavailable when no ready graph release exists, and citation
+or graph-path evidence opens the immutable source location without losing the answer.
 
 ## Internationalization boundary
 

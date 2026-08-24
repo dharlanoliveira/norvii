@@ -39,9 +39,9 @@ func TestCorpusIngestionSchemaIsCanonicalSeededAndRepeatable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Apply() error = %v", err)
 	}
-	if firstStatus.CurrentVersion != 6 || secondStatus.CurrentVersion != 6 {
+	if firstStatus.CurrentVersion != 8 || secondStatus.CurrentVersion != 8 {
 		t.Fatalf(
-			"migration versions = %d and %d, want 6 and 6",
+			"migration versions = %d and %d, want 8 and 8",
 			firstStatus.CurrentVersion,
 			secondStatus.CurrentVersion,
 		)
@@ -50,11 +50,20 @@ func TestCorpusIngestionSchemaIsCanonicalSeededAndRepeatable(t *testing.T) {
 	connection := openCatalogTestConnection(t, ctx, config.Postgres)
 	expectedTables := []string{
 		"corpora",
+		"corpus_snapshot_documents",
+		"corpus_snapshot_releases",
+		"corpus_snapshots",
 		"document_units",
 		"document_versions",
+		"graph_release_entities",
+		"graph_release_relationships",
+		"graph_releases",
 		"ingestion_work",
 		"pdf_origins",
 		"processing_attempts",
+		"semantic_entities",
+		"semantic_extraction_runs",
+		"semantic_relationships",
 		"source_revisions",
 		"sources",
 		"url_origins",
@@ -77,12 +86,17 @@ func TestCorpusIngestionSchemaIsCanonicalSeededAndRepeatable(t *testing.T) {
 
 	expectedIndexes := []string{
 		"corpora_enabled_order_idx",
+		"corpus_snapshot_documents_document_idx",
 		"document_units_locator_uidx",
 		"document_units_parent_order_idx",
 		"document_versions_revision_pipeline_unique",
+		"graph_releases_snapshot_status_idx",
 		"ingestion_work_active_source_uidx",
 		"ingestion_work_pending_order_idx",
 		"processing_attempts_source_order_idx",
+		"semantic_entities_extraction_supported_idx",
+		"semantic_extraction_runs_document_ready_idx",
+		"semantic_relationships_extraction_supported_idx",
 		"sources_corpus_order_idx",
 	}
 	indexRows, err := connection.Query(ctx, `

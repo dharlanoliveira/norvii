@@ -20,6 +20,18 @@ describe("HTTP research provider", () => {
           return Promise.resolve(jsonResponse(sourceResponse("pdf")));
         if (url.endsWith("/sources/url"))
           return Promise.resolve(jsonResponse(sourceResponse()));
+        if (url.endsWith("/graph-release")) {
+          return Promise.resolve(jsonResponse(graphReleaseResponse()));
+        }
+        if (url.endsWith("/snapshots")) {
+          return Promise.resolve(
+            jsonResponse(
+              init?.method === "POST"
+                ? snapshotPublicationResponse()
+                : [snapshotPublicationResponse().snapshot],
+            ),
+          );
+        }
         if (url.includes("/sources/"))
           return Promise.resolve(jsonResponse(sourceResponse()));
         if (url.endsWith("/corpora") || url.includes("includeDisabled")) {
@@ -45,6 +57,16 @@ describe("HTTP research provider", () => {
     await expect(provider.listSources(corpusId, signal)).resolves.toHaveLength(
       1,
     );
+    await expect(
+      provider.listSnapshots(corpusId, signal),
+    ).resolves.toHaveLength(1);
+    await expect(
+      provider.getGraphRelease(
+        corpusId,
+        "70000000-0000-4000-8000-000000000001",
+        signal,
+      ),
+    ).resolves.toMatchObject({ status: "ready" });
     await expect(
       provider.getDocument(corpusId, sourceId, signal),
     ).resolves.toMatchObject({ id: documentResponse().id });
@@ -84,6 +106,15 @@ describe("HTTP research provider", () => {
       provider.reprocessSource(corpusId, sourceId, 2, signal),
     ).resolves.toMatchObject({ id: sourceId });
     await expect(
+      provider.publishSnapshot(
+        corpusId,
+        sourceId,
+        documentResponse().id,
+        1,
+        signal,
+      ),
+    ).resolves.toMatchObject({ published: true });
+    await expect(
       provider.disableCorpus(corpusId, 1, signal),
     ).resolves.toMatchObject({
       id: corpusId,
@@ -99,6 +130,12 @@ describe("HTTP research provider", () => {
     );
     expect(requests).toContain(
       "https://api.example.test/v1/corpora?includeDisabled=true",
+    );
+    expect(requests).toContain(
+      `https://api.example.test/v1/corpora/${corpusId}/snapshots`,
+    );
+    expect(requests).toContain(
+      `https://api.example.test/v1/corpora/${corpusId}/snapshots/70000000-0000-4000-8000-000000000001/graph-release`,
     );
     expect(requests).toContain(
       `https://api.example.test/v1/corpora/${corpusId}/sources/${sourceId}/reprocess`,
@@ -173,6 +210,21 @@ function corpusResponse() {
   };
 }
 
+function graphReleaseResponse() {
+  return {
+    id: "80000000-0000-4000-8000-000000000001",
+    corpusId,
+    snapshotId: "70000000-0000-4000-8000-000000000001",
+    manifestSha256: "a".repeat(64),
+    buildVersion: "legal-graph-v1",
+    status: "ready",
+    entityCount: 8,
+    relationshipCount: 4,
+    createdAt: "2026-08-24T12:00:00Z",
+    completedAt: "2026-08-24T12:01:00Z",
+  };
+}
+
 function sourceResponse(kind: "url" | "pdf" = "url") {
   return {
     id: sourceId,
@@ -219,5 +271,36 @@ function documentResponse() {
       finalUrl: "https://example.org/law",
       extractedContentSha256: "a".repeat(64),
     },
+  };
+}
+
+function snapshotPublicationResponse() {
+  const snapshotId = "70000000-0000-4000-8000-000000000001";
+  return {
+    snapshot: {
+      id: snapshotId,
+      corpusId,
+      manifestSha256: "a".repeat(64),
+      createdBy: "local-maintainer",
+      createdAt: "2026-08-24T12:00:00Z",
+      members: [
+        {
+          sourceId,
+          sourceRevisionId: "40000000-0000-4000-8000-000000000001",
+          documentId: documentResponse().id,
+          officialOrigin: "https://example.org/law",
+          capturedAt: "2026-08-24T11:00:00Z",
+          contentSha256: "b".repeat(64),
+        },
+      ],
+    },
+    release: {
+      id: snapshotId,
+      manifestSha256: "a".repeat(64),
+      createdAt: "2026-08-24T12:00:00Z",
+      activatedAt: "2026-08-24T12:00:00Z",
+      releaseVersion: 1,
+    },
+    published: true,
   };
 }

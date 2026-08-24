@@ -40,6 +40,8 @@ func (client *Client) Ask(
 	body, err := json.Marshal(map[string]string{
 		"question":          researchRequest.Question,
 		"interfaceLanguage": researchRequest.InterfaceLanguage,
+		"snapshotId":        researchRequest.SnapshotID.String(),
+		"strategy":          researchRequest.Strategy,
 	})
 	if err != nil {
 		return chatdomain.Result{}, fmt.Errorf("encode agent request: %w", err)
@@ -137,6 +139,7 @@ func (client *Client) handleEvent(
 type evidenceReference struct {
 	ID                string    `json:"id"`
 	CorpusID          uuid.UUID `json:"corpusId"`
+	SnapshotID        uuid.UUID `json:"snapshotId"`
 	SourceID          uuid.UUID `json:"sourceId"`
 	DocumentID        uuid.UUID `json:"documentId"`
 	DocumentVersionID uuid.UUID `json:"documentVersionId"`
@@ -177,7 +180,7 @@ func evidenceValues(references []evidenceReference) []chatdomain.Evidence {
 	evidence := make([]chatdomain.Evidence, 0, len(references))
 	for _, reference := range references {
 		evidence = append(evidence, chatdomain.Evidence{
-			ID: reference.ID, CorpusID: reference.CorpusID, SourceID: reference.SourceID,
+			ID: reference.ID, CorpusID: reference.CorpusID, SnapshotID: reference.SnapshotID, SourceID: reference.SourceID,
 			DocumentID: reference.DocumentID, DocumentVersionID: reference.DocumentVersionID,
 			SourceRevisionID: reference.SourceRevisionID, PipelineVersion: reference.PipelineVersion,
 			SourceTitle: reference.SourceTitle, UnitLocator: reference.UnitLocator,

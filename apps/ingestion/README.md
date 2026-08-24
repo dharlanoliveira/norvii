@@ -29,6 +29,22 @@ workspace to create an immutable v3 document version and backfill its chunks. A
 provider failure records a safe failed attempt and leaves the preceding ready document
 unchanged.
 
+## Build a graph release
+
+Semantic extraction is performed only during offline ingestion. After reprocessing sources and
+publishing a snapshot, build its derived Neo4j projection explicitly. This command never changes
+the canonical PostgreSQL source documents or activates a snapshot:
+
+```bash
+python infra/scripts/run-with-environment.py infra/.env \
+  uv run --directory apps/ingestion norvii-build-graph-release \
+  --corpus-id <corpus-id> --snapshot-id <snapshot-id>
+```
+
+The build uses only supported extraction records for the named published snapshot. It is
+idempotent for the same semantic manifest; a graph or hybrid chat request safely remains
+unavailable until the release is ready.
+
 ## Quality and contracts
 
 ```bash

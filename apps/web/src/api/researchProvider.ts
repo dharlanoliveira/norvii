@@ -2,11 +2,17 @@ import {
   parseCorpusList,
   parseCorpusResponse,
   parseDocumentResponse,
+  parseGraphReleaseResponse,
   parseErrorEnvelope,
+  parseSnapshotList,
+  parseSnapshotPublicationResponse,
   parseSourceList,
   type CorpusResponse,
   type DocumentResponse,
+  type GraphReleaseResponse,
   type PublicErrorCode,
+  type SnapshotPublicationResponse,
+  type SnapshotResponse,
   type SourceResponse,
 } from "./contract";
 import type {
@@ -71,6 +77,31 @@ class HttpResearchProvider implements ResearchProvider {
     return parseSourceList(
       await this.#request(
         `${this.#baseUrl}/corpora/${encodeURIComponent(corpusId)}/sources`,
+        signal,
+      ),
+    );
+  }
+
+  async listSnapshots(
+    corpusId: string,
+    signal: AbortSignal,
+  ): Promise<readonly SnapshotResponse[]> {
+    return parseSnapshotList(
+      await this.#request(
+        `${this.#baseUrl}/corpora/${encodeURIComponent(corpusId)}/snapshots`,
+        signal,
+      ),
+    );
+  }
+
+  async getGraphRelease(
+    corpusId: string,
+    snapshotId: string,
+    signal: AbortSignal,
+  ): Promise<GraphReleaseResponse> {
+    return parseGraphReleaseResponse(
+      await this.#request(
+        `${this.#baseUrl}/corpora/${encodeURIComponent(corpusId)}/snapshots/${encodeURIComponent(snapshotId)}/graph-release`,
         signal,
       ),
     );
@@ -165,6 +196,23 @@ class HttpResearchProvider implements ResearchProvider {
       "reprocess",
       version,
       signal,
+    );
+  }
+
+  async publishSnapshot(
+    corpusId: string,
+    sourceId: string,
+    documentId: string,
+    expectedReleaseVersion: number,
+    signal: AbortSignal,
+  ): Promise<SnapshotPublicationResponse> {
+    return parseSnapshotPublicationResponse(
+      await this.#request(
+        `${this.#baseUrl}/corpora/${encodeURIComponent(corpusId)}/snapshots`,
+        signal,
+        "POST",
+        { sourceId, documentId, expectedReleaseVersion },
+      ),
     );
   }
 

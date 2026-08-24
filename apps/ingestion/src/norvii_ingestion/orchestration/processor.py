@@ -24,6 +24,7 @@ from norvii_ingestion.enrichment.embedding import EmbeddingProviderError
 from norvii_ingestion.extraction.html import ExtractionError
 from norvii_ingestion.extraction.pdf import PdfExtractionError
 from norvii_ingestion.publication.postgres.repository import WorkRepositoryError
+from norvii_ingestion.semantic.extraction import ExtractionProviderError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
     from norvii_ingestion.domain.artifacts import DocumentArtifact
     from norvii_ingestion.domain.models import IngestionWork
     from norvii_ingestion.enrichment.embedding import EmbeddingProvider
+    from norvii_ingestion.semantic.extraction import SemanticExtractor
 
 _FAILURE_MAPPINGS: tuple[tuple[type[Exception], FailureCategory], ...] = (
     (UnsafeUrlError, FailureCategory.UNSAFE_URL),
@@ -42,6 +44,7 @@ _FAILURE_MAPPINGS: tuple[tuple[type[Exception], FailureCategory], ...] = (
     (AcquisitionError, FailureCategory.ACQUISITION_FAILED),
     (ExtractionError, FailureCategory.EXTRACTION_FAILED),
     (PdfExtractionError, FailureCategory.EXTRACTION_FAILED),
+    (ExtractionProviderError, FailureCategory.EXTRACTION_FAILED),
     (EmbeddingProviderError, FailureCategory.PUBLICATION_FAILED),
     (WorkRepositoryError, FailureCategory.PUBLICATION_FAILED),
 )
@@ -115,6 +118,7 @@ class IngestionProcessor:
         clock: Callable[[], datetime],
         embedding_provider: EmbeddingProvider,
         embedding_model: str,
+        semantic_extractor: SemanticExtractor | None = None,
     ) -> None:
         self._repository = repository
         self._acquirer = acquirer
@@ -123,12 +127,18 @@ class IngestionProcessor:
         self._clock = clock
         self._embedding_provider = embedding_provider
         self._embedding_model = embedding_model
+        self._semantic_extractor = semantic_extractor
 
     def process(self, work: IngestionWork) -> None:
         """Acquire, extract, and publish, or persist one safe failure category."""
         try:
             content, media_type, final_url = self._origin(work)
             artifact = self._extract(work, content)
+            semantic_extraction = (
+                self._semantic_extractor.extract(artifact)
+                if self._semantic_extractor is not None
+                else None
+            )
             retrieval_chunks = LegalChunker().chunk(artifact)
             embeddings = self._embedding_provider.embed(
                 tuple(chunk.text for chunk in retrieval_chunks)
@@ -159,6 +169,7 @@ class IngestionProcessor:
                     origin_sha256=capture.content_sha256,
                     artifact=artifact,
                     retrieval_chunks=enriched_chunks,
+                    semantic_extraction=semantic_extraction,
                 ),
                 now,
             )

@@ -36,19 +36,20 @@ type rowScanner interface {
 
 // Record is the authoritative source lifecycle read model.
 type Record struct {
-	ID                    uuid.UUID
-	CorpusID              uuid.UUID
-	Title                 string
-	Kind                  domain.Kind
-	ProcessingStatus      domain.Status
-	FailureCategory       *string
-	LatestReadyDocumentID *uuid.UUID
-	Version               int
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-	Origin                Origin
-	LatestAttempt         *Attempt
-	Attempts              []Attempt
+	ID                       uuid.UUID
+	CorpusID                 uuid.UUID
+	Title                    string
+	Kind                     domain.Kind
+	ProcessingStatus         domain.Status
+	FailureCategory          *string
+	LatestReadyDocumentID    *uuid.UUID
+	ActiveSnapshotDocumentID *uuid.UUID
+	Version                  int
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
+	Origin                   Origin
+	LatestAttempt            *Attempt
+	Attempts                 []Attempt
 }
 
 // Origin is the safe source provenance projection without PDF bytes.
@@ -507,6 +508,7 @@ func setLatestAttempt(record *Record) {
 func scanRecord(row rowScanner) (Record, error) {
 	var record Record
 	var latestDocument pgtype.UUID
+	var activeSnapshotDocument pgtype.UUID
 	var attemptNumber *int
 	var attemptPipeline, attemptStatus *string
 	var attemptStarted *time.Time
@@ -522,6 +524,7 @@ func scanRecord(row rowScanner) (Record, error) {
 		&record.ProcessingStatus,
 		&record.FailureCategory,
 		&latestDocument,
+		&activeSnapshotDocument,
 		&record.Version,
 		&record.CreatedAt,
 		&record.UpdatedAt,
@@ -552,6 +555,10 @@ func scanRecord(row rowScanner) (Record, error) {
 		id := uuid.UUID(latestDocument.Bytes)
 		record.LatestReadyDocumentID = &id
 	}
+	if activeSnapshotDocument.Valid {
+		id := uuid.UUID(activeSnapshotDocument.Bytes)
+		record.ActiveSnapshotDocumentID = &id
+	}
 	if attemptNumber != nil && attemptPipeline != nil && attemptStatus != nil && attemptStarted != nil {
 		record.LatestAttempt = &Attempt{
 			Number: *attemptNumber, PipelineVersion: *attemptPipeline, Status: *attemptStatus,
@@ -565,7 +572,7 @@ func scanRecord(row rowScanner) (Record, error) {
 
 const sourceProjectionSQL = `
 	SELECT s.id, s.corpus_id, s.title, s.kind, s.processing_status,
-	       s.latest_failure_category, s.latest_ready_document_id,
+	       s.latest_failure_category, s.latest_ready_document_id, active.document_id,
 	       s.version, s.created_at, s.updated_at,
 	       u.submitted_url, u.normalized_url, p.original_filename,
 	       COALESCE(r.media_type, p.detected_media_type),
@@ -578,6 +585,9 @@ const sourceProjectionSQL = `
 	FROM sources s
 	LEFT JOIN url_origins u ON u.corpus_id = s.corpus_id AND u.source_id = s.id
 	LEFT JOIN pdf_origins p ON p.corpus_id = s.corpus_id AND p.source_id = s.id
+	LEFT JOIN corpus_snapshot_releases release ON release.corpus_id = s.corpus_id
+	LEFT JOIN corpus_snapshot_documents active
+	  ON active.snapshot_id = release.snapshot_id AND active.source_id = s.id
 	LEFT JOIN LATERAL (
 		SELECT content_sha256, captured_at, media_type, byte_size, final_url,
 		       extracted_content_sha256

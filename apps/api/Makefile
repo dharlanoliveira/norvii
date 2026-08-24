@@ -1,4 +1,4 @@
-.PHONY: build ci coverage dependencies-check format format-check migrate migration-status test test-race verify-persistence vet
+.PHONY: build ci coverage dependencies-check format format-check initialize-snapshots migrate migration-status test test-race verify-persistence vet
 
 build:
 	go build ./...
@@ -18,6 +18,9 @@ format-check:
 
 migrate:
 	go run ./cmd/migrate
+
+initialize-snapshots:
+	go run ./cmd/initialize-snapshots
 
 migration-status:
 	go run ./cmd/migration-status

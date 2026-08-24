@@ -9,25 +9,43 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { SourceResponse } from "../../api/contract";
+import type {
+  ActiveSnapshotResponse,
+  GraphReleaseResponse,
+  SnapshotResponse,
+  SourceResponse,
+} from "../../api/contract";
 import { ResearchRequestError } from "../../api/researchProvider";
+import { SnapshotHistory } from "./SnapshotHistory";
+
+type SourceStatusAction = (
+  source: SourceResponse,
+  signal: AbortSignal,
+) => Promise<void>;
 
 interface SourceStatusProps {
   readonly source: SourceResponse;
-  readonly onRetry: (
-    source: SourceResponse,
+  readonly activeSnapshot?: ActiveSnapshotResponse | null | undefined;
+  readonly onLoadSnapshotHistory: (
     signal: AbortSignal,
-  ) => Promise<void>;
-  readonly onReprocess: (
-    source: SourceResponse,
+  ) => Promise<readonly SnapshotResponse[]>;
+  readonly onLoadGraphRelease: (
+    snapshotId: string,
     signal: AbortSignal,
-  ) => Promise<void>;
+  ) => Promise<GraphReleaseResponse>;
+  readonly onPublish: SourceStatusAction;
+  readonly onRetry: SourceStatusAction;
+  readonly onReprocess: SourceStatusAction;
 }
 
 const ATTEMPT_HISTORY_LIMIT = 3;
 
 export function SourceStatus({
   source,
+  activeSnapshot,
+  onLoadSnapshotHistory,
+  onLoadGraphRelease,
+  onPublish,
   onRetry,
   onReprocess,
 }: SourceStatusProps) {
@@ -37,7 +55,7 @@ export function SourceStatus({
   >("idle");
   const visibleAttempts = source.attempts.slice(0, ATTEMPT_HISTORY_LIMIT);
 
-  const run = (action: typeof onRetry): void => {
+  const run = (action: SourceStatusAction): void => {
     const controller = new AbortController();
     setOutcome("saving");
     void action(source, controller.signal)
@@ -50,6 +68,18 @@ export function SourceStatus({
         ),
       );
   };
+  const canPublish =
+    source.processingStatus === "ready" &&
+    source.latestReadyDocumentId !== null &&
+    activeSnapshot !== null &&
+    activeSnapshot !== undefined &&
+    source.latestReadyDocumentId !== source.activeSnapshotDocumentId;
+  const publicationState =
+    source.processingStatus !== "ready" || source.latestReadyDocumentId === null
+      ? undefined
+      : source.latestReadyDocumentId === source.activeSnapshotDocumentId
+        ? "active"
+        : "candidate";
 
   return (
     <section
@@ -65,6 +95,11 @@ export function SourceStatus({
           >
             {t(`sourceStatus.${source.processingStatus}`)}
           </span>
+          {publicationState === undefined ? null : (
+            <span className="source-status__publication-state">
+              {t(`sourceManagement.snapshot.${publicationState}`)}
+            </span>
+          )}
         </div>
         <div
           className="source-status__actions"
@@ -224,6 +259,12 @@ export function SourceStatus({
               ) : null}
             </div>
           </details>
+          <SnapshotHistory
+            key={activeSnapshot?.id ?? "no-active-snapshot"}
+            activeSnapshot={activeSnapshot}
+            loadGraphRelease={onLoadGraphRelease}
+            loadSnapshots={onLoadSnapshotHistory}
+          />
           {source.processingStatus === "failed" ? (
             <button
               className="source-status__action"
@@ -233,6 +274,22 @@ export function SourceStatus({
             >
               <RefreshCw aria-hidden="true" size={14} />
               {t("sourceManagement.lifecycle.retry")}
+            </button>
+          ) : null}
+          {source.processingStatus === "ready" &&
+          publicationState !== "active" ? (
+            <button
+              className="source-status__action"
+              type="button"
+              disabled={outcome === "saving" || !canPublish}
+              title={
+                canPublish
+                  ? undefined
+                  : t("sourceManagement.snapshot.publishUnavailable")
+              }
+              onClick={() => run(onPublish)}
+            >
+              {t("sourceManagement.snapshot.publish")}
             </button>
           ) : null}
           {source.processingStatus === "ready" ? (

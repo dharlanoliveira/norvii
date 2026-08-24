@@ -280,6 +280,7 @@ class PostgresWorkRepository:
                 if created:
                     self._insert_units(cursor, document_id, command)
                     self._insert_retrieval_chunks(cursor, work, document_id, command)
+                    self._insert_semantic_extraction(cursor, work, document_id, command, now)
                 self._complete_attempt(
                     cursor,
                     work,
@@ -521,6 +522,86 @@ class PostgresWorkRepository:
                     chunk.embedding_model,
                 )
                 for ordinal, chunk in enumerate(chunks)
+            ],
+        )
+
+    @staticmethod
+    def _insert_semantic_extraction(
+        cursor: psycopg.Cursor[tuple[object, ...]],
+        work: IngestionWork,
+        document_id: UUID,
+        command: PublicationCommand,
+        now: datetime,
+    ) -> None:
+        extraction = command.semantic_extraction
+        if extraction is None:
+            return
+        cursor.execute(
+            """
+            INSERT INTO semantic_extraction_runs (
+                id, corpus_id, source_id, document_id, extraction_version, model_identifier,
+                input_sha256, status, input_tokens, output_tokens, duration_milliseconds,
+                created_at, completed_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'ready', %s, %s, %s, %s, %s)
+            """,
+            (
+                extraction.id,
+                work.claim.corpus_id,
+                work.claim.source_id,
+                document_id,
+                extraction.extraction_version,
+                extraction.model_identifier,
+                str(extraction.input_sha256),
+                extraction.input_tokens,
+                extraction.output_tokens,
+                extraction.duration_milliseconds,
+                now,
+                now,
+            ),
+        )
+        cursor.executemany(
+            """
+            INSERT INTO semantic_entities (
+                id, extraction_run_id, corpus_id, source_id, document_id, evidence_unit_id,
+                entity_type, label, normalized_label, validation_status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'supported')
+            """,
+            [
+                (
+                    entity.id,
+                    extraction.id,
+                    work.claim.corpus_id,
+                    work.claim.source_id,
+                    document_id,
+                    entity.evidence_unit_id,
+                    entity.entity_type,
+                    entity.label,
+                    entity.normalized_label,
+                )
+                for entity in extraction.entities
+            ],
+        )
+        cursor.executemany(
+            """
+            INSERT INTO semantic_relationships (
+                id, extraction_run_id, corpus_id, source_id, document_id, subject_entity_id,
+                object_entity_id, evidence_unit_id, relationship_type, qualifier, validation_status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'supported')
+            """,
+            [
+                (
+                    relationship.id,
+                    extraction.id,
+                    work.claim.corpus_id,
+                    work.claim.source_id,
+                    document_id,
+                    relationship.subject_entity_id,
+                    relationship.object_entity_id,
+                    relationship.evidence_unit_id,
+                    relationship.relationship_type,
+                    relationship.qualifier,
+                )
+                for relationship in extraction.relationships
             ],
         )
 
