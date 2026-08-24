@@ -19,7 +19,7 @@ describe("authoritative corpus workspace", () => {
             : input.url;
       if (url.endsWith("/sources"))
         return Promise.resolve(jsonResponse([source()]));
-      if (url.endsWith("/document"))
+      if (url.endsWith("/document") || url.includes("/documents/"))
         return Promise.resolve(jsonResponse(document()));
       return Promise.resolve(jsonResponse(corpus()));
     });
@@ -36,6 +36,8 @@ describe("authoritative corpus workspace", () => {
               corpusId: "10000000-0000-4000-8000-000000000002",
               sourceId: "20000000-0000-4000-8000-000000000002",
               documentId: "50000000-0000-4000-8000-000000000001",
+              documentVersionId: "50000000-0000-4000-8000-000000000001",
+              sourceTitle: "Official English GDPR text",
               unitLocator: "article-1",
               startOffset: 0,
               endOffset: 21,
@@ -69,20 +71,26 @@ describe("authoritative corpus workspace", () => {
       "/corpora/10000000-0000-4000-8000-000000000002",
     );
 
-    const sourceItem = await screen.findByRole("treeitem", {
+    await screen.findByRole("treeitem", {
       name: /Official English GDPR text/,
     });
     await user.click(screen.getByRole("tab", { name: "Source" }));
     expect(
       screen.getByRole("heading", {
-        name: "Select a source from the library.",
+        name: "Open a source to begin reviewing.",
       }),
     ).toBeVisible();
     expect(
       screen.getByText(
-        "Documents and official links open here while your conversation remains available.",
+        "Inspect preserved legal text and open cited provisions while keeping the conversation available.",
       ),
     ).toBeVisible();
+    await user.click(
+      screen.getByRole("button", {
+        name: "Open Official English GDPR text",
+      }),
+    );
+    expect(await screen.findByText("Persisted legal text.")).toBeVisible();
     await user.click(screen.getByRole("tab", { name: "Chat" }));
     await user.type(
       screen.getByRole("textbox", { name: "Research question" }),
@@ -90,24 +98,34 @@ describe("authoritative corpus workspace", () => {
     );
     await user.click(screen.getByRole("button", { name: "Send question" }));
     await user.click(
-      await screen.findByRole("button", { name: "[1] article-1" }),
+      await screen.findByRole("button", {
+        name: "Open Article 1 in Official English GDPR text",
+      }),
     );
-    await user.click(screen.getByRole("tab", { name: "Source" }));
-
-    await user.click(sourceItem);
 
     expect(await screen.findByText("Persisted legal text.")).toBeVisible();
-    const documentCall = fetchResponse.mock.calls.find(([input]) => {
+    const immutableDocumentCall = fetchResponse.mock.calls.find(([input]) => {
       const url =
         typeof input === "string"
           ? input
           : input instanceof URL
             ? input.href
             : input.url;
-      return url.endsWith("/document");
+      return url.includes("/documents/50000000-0000-4000-8000-000000000001");
     });
-    expect(documentCall).toBeDefined();
-    expect(documentCall?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    expect(immutableDocumentCall).toBeDefined();
+    expect(immutableDocumentCall?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    expect(
+      fetchResponse.mock.calls.some(([input]) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        return url.endsWith("/document");
+      }),
+    ).toBe(true);
     expect(screen.getByRole("article", { name: "Article 1" })).toHaveAttribute(
       "data-selected",
       "true",
@@ -174,11 +192,17 @@ describe("authoritative corpus workspace", () => {
     expect(addUrl).toHaveAttribute("aria-expanded", "false");
     expect(addPdf).toHaveAttribute("aria-expanded", "false");
 
-    await user.click(addUrl);
+    await user.click(screen.getByRole("tab", { name: "Source" }));
+    await user.click(
+      screen.getByRole("button", { name: "Add an official source" }),
+    );
     expect(addUrl).toHaveAttribute("aria-expanded", "true");
     expect(
       screen.getByRole("form", { name: "Add an official web source" }),
     ).toBeVisible();
+
+    await user.click(addUrl);
+    expect(addUrl).toHaveAttribute("aria-expanded", "false");
 
     await user.click(addPdf);
     expect(addUrl).toHaveAttribute("aria-expanded", "false");
@@ -186,6 +210,120 @@ describe("authoritative corpus workspace", () => {
     expect(
       screen.getByRole("form", { name: "Upload an official PDF" }),
     ).toBeVisible();
+  });
+
+  it("registers an official URL source in the active corpus", async () => {
+    const user = userEvent.setup();
+    const fetchResponse = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = requestUrl(input);
+      if (url.endsWith("/sources/url"))
+        return Promise.resolve(jsonResponse(source()));
+      if (url.endsWith("/sources")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(corpus()));
+    });
+
+    renderAtRoute(
+      <Routes>
+        <Route
+          path="corpora/:corpusId"
+          element={
+            <CorpusWorkspacePage
+              provider={createHttpResearchProvider({ fetch: fetchResponse })}
+            />
+          }
+        />
+      </Routes>,
+      "/corpora/10000000-0000-4000-8000-000000000002",
+    );
+
+    await screen.findByText("No sources are registered in this corpus yet.");
+    await user.click(screen.getByRole("button", { name: "Add official URL" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Source title" }),
+      "Official English GDPR text",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Official HTTPS URL" }),
+      "https://example.org/gdpr",
+    );
+    await user.click(screen.getByRole("button", { name: "Add URL source" }));
+
+    expect(
+      await screen.findByRole("treeitem", {
+        name: /Official English GDPR text/,
+      }),
+    ).toBeVisible();
+    const createCall = fetchResponse.mock.calls.find(([input]) =>
+      requestUrl(input).endsWith("/sources/url"),
+    );
+    expect(createCall?.[1]).toMatchObject({ method: "POST" });
+    const requestBody = createCall?.[1]?.body;
+    expect(typeof requestBody).toBe("string");
+    if (typeof requestBody !== "string")
+      throw new Error("Expected URL source request body to be JSON.");
+    expect(JSON.parse(requestBody)).toEqual({
+      title: "Official English GDPR text",
+      url: "https://example.org/gdpr",
+    });
+  });
+
+  it("keeps a failed source selectable and retries its ingestion", async () => {
+    const failedSource = {
+      ...source(),
+      processingStatus: "failed",
+      failureCategory: "acquisition_failed",
+      latestReadyDocumentId: null,
+    };
+    const retriedSource = {
+      ...failedSource,
+      processingStatus: "processing",
+      failureCategory: null,
+      version: 3,
+    };
+    const fetchResponse = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = requestUrl(input);
+      if (url.endsWith("/retry"))
+        return Promise.resolve(jsonResponse(retriedSource));
+      if (url.endsWith("/sources"))
+        return Promise.resolve(jsonResponse([failedSource]));
+      return Promise.resolve(jsonResponse(corpus()));
+    });
+    const user = userEvent.setup();
+
+    renderAtRoute(
+      <Routes>
+        <Route
+          path="corpora/:corpusId"
+          element={
+            <CorpusWorkspacePage
+              provider={createHttpResearchProvider({ fetch: fetchResponse })}
+            />
+          }
+        />
+      </Routes>,
+      "/corpora/10000000-0000-4000-8000-000000000002",
+    );
+
+    await user.click(
+      await screen.findByRole("treeitem", {
+        name: "Official English GDPR text (Failed)",
+      }),
+    );
+    expect(
+      await screen.findByText(
+        "The latest attempt ended with a safe failure category.",
+      ),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Retry ingestion" }));
+
+    expect(
+      await screen.findByText("Processing", { selector: "output" }),
+    ).toBeVisible();
+    expect(
+      fetchResponse.mock.calls.some(([input]) =>
+        requestUrl(input).endsWith("/retry"),
+      ),
+    ).toBe(true);
   });
 });
 
@@ -287,4 +425,12 @@ function jsonResponse(value: unknown): Response {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function requestUrl(input: RequestInfo | URL): string {
+  return typeof input === "string"
+    ? input
+    : input instanceof URL
+      ? input.href
+      : input.url;
 }

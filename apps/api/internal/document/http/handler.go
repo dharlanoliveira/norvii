@@ -14,6 +14,7 @@ import (
 
 type reader interface {
 	GetLatest(context.Context, uuid.UUID, uuid.UUID) (documentpostgres.Document, error)
+	GetVersion(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (documentpostgres.Document, error)
 }
 
 // Handler maps immutable document reads to the stable v1 HTTP contract.
@@ -30,6 +31,10 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 		"GET /api/v1/corpora/{corpusId}/sources/{sourceId}/document",
 		handler.getLatest,
 	)
+	mux.HandleFunc(
+		"GET /api/v1/corpora/{corpusId}/sources/{sourceId}/documents/{documentVersionId}",
+		handler.getVersion,
+	)
 }
 
 func (handler *Handler) getLatest(writer http.ResponseWriter, request *http.Request) {
@@ -40,6 +45,28 @@ func (handler *Handler) getLatest(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 	document, err := handler.reader.GetLatest(request.Context(), corpusID, sourceID)
+	if errors.Is(err, documentpostgres.ErrNotFound) {
+		writeNotFound(writer, request)
+		return
+	}
+	if err != nil {
+		writeUnavailable(writer, request)
+		return
+	}
+	httpserver.WriteJSON(writer, http.StatusOK, newDocumentResponse(document))
+}
+
+func (handler *Handler) getVersion(writer http.ResponseWriter, request *http.Request) {
+	corpusID, corpusError := uuid.Parse(request.PathValue("corpusId"))
+	sourceID, sourceError := uuid.Parse(request.PathValue("sourceId"))
+	documentVersionID, documentError := uuid.Parse(request.PathValue("documentVersionId"))
+	if corpusError != nil || sourceError != nil || documentError != nil {
+		writeInvalidID(writer, request)
+		return
+	}
+	document, err := handler.reader.GetVersion(
+		request.Context(), corpusID, sourceID, documentVersionID,
+	)
 	if errors.Is(err, documentpostgres.ErrNotFound) {
 		writeNotFound(writer, request)
 		return

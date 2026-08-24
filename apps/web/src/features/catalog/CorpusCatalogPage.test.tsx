@@ -174,6 +174,10 @@ class ManagementProvider implements ResearchProvider {
     throw new Error("not used");
   }
 
+  getDocumentVersion(): Promise<never> {
+    throw new Error("not used");
+  }
+
   updateCorpus(
     corpusId: string,
     update: CorpusUpdate,

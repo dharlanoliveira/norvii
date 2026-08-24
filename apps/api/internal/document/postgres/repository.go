@@ -75,8 +75,7 @@ func (repository *Repository) GetLatest(
 	corpusID uuid.UUID,
 	sourceID uuid.UUID,
 ) (Document, error) {
-	var document Document
-	err := repository.database.QueryRow(ctx, `
+	return repository.readDocument(ctx, `
 		SELECT d.id, d.source_revision_id, d.pipeline_version,
 		       d.text_content, d.text_sha256, d.created_at,
 		       r.content_sha256, r.captured_at, r.media_type, r.byte_size,
@@ -92,7 +91,35 @@ func (repository *Repository) GetLatest(
 		 AND r.source_id = d.source_id
 		WHERE s.corpus_id = $1 AND s.id = $2
 		  AND s.processing_status IN ('ready', 'pending', 'failed')
-		  AND d.publication_status = 'published'`, corpusID, sourceID).Scan(
+		  AND d.publication_status = 'published'`, corpusID, sourceID)
+}
+
+// GetVersion returns one exact published document version owned by the corpus and source.
+func (repository *Repository) GetVersion(
+	ctx context.Context,
+	corpusID uuid.UUID,
+	sourceID uuid.UUID,
+	documentVersionID uuid.UUID,
+) (Document, error) {
+	return repository.readDocument(ctx, `
+		SELECT d.id, d.source_revision_id, d.pipeline_version,
+		       d.text_content, d.text_sha256, d.created_at,
+		       r.content_sha256, r.captured_at, r.media_type, r.byte_size,
+		       r.final_url, r.extracted_content_sha256
+		FROM document_versions d
+		JOIN sources s
+		  ON s.id = d.source_id AND s.corpus_id = d.corpus_id
+		JOIN source_revisions r
+		  ON r.id = d.source_revision_id
+		 AND r.corpus_id = d.corpus_id
+		 AND r.source_id = d.source_id
+		WHERE d.corpus_id = $1 AND d.source_id = $2 AND d.id = $3
+		  AND d.publication_status = 'published'`, corpusID, sourceID, documentVersionID)
+}
+
+func (repository *Repository) readDocument(ctx context.Context, query string, args ...any) (Document, error) {
+	var document Document
+	err := repository.database.QueryRow(ctx, query, args...).Scan(
 		&document.ID,
 		&document.SourceRevisionID,
 		&document.PipelineVersion,
@@ -110,7 +137,7 @@ func (repository *Repository) GetLatest(
 		return Document{}, ErrNotFound
 	}
 	if err != nil {
-		return Document{}, fmt.Errorf("get latest source document: %w", err)
+		return Document{}, fmt.Errorf("get source document: %w", err)
 	}
 	rows, err := repository.database.Query(ctx, `
 		SELECT id, parent_id, kind, ordinal, marker, label,

@@ -42,6 +42,10 @@ func TestHandlerStreamsGroundedEventsInOrder(t *testing.T) {
 	if !strings.Contains(body, `"unitLocator":"article-1"`) {
 		t.Fatalf("evidence event must use the public camelCase contract: %s", body)
 	}
+	if !strings.Contains(body, `"inspection":{"outcome":"completed"`) ||
+		!strings.Contains(body, `"totalMilliseconds":`) {
+		t.Fatalf("completed event must expose inspection measurements: %s", body)
+	}
 }
 
 func TestHandlerMapsInsufficientEvidenceToAbstention(t *testing.T) {

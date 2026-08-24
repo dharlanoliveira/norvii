@@ -19,6 +19,12 @@ export interface ResearchProvider {
     sourceId: string,
     signal: AbortSignal,
   ): Promise<DocumentResponse>;
+  getDocumentVersion(
+    corpusId: string,
+    sourceId: string,
+    documentVersionId: string,
+    signal: AbortSignal,
+  ): Promise<DocumentResponse>;
   createUrlSource(
     corpusId: string,
     draft: UrlSourceDraft,

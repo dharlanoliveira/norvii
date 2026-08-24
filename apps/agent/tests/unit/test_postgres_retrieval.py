@@ -87,6 +87,10 @@ def test_search_uses_one_question_vector_and_only_ready_latest_chunks(
                 0,
                 40,
                 "The regulation protects personal data.",
+                0.1834,
+                UUID("40000000-0000-4000-8000-000000000001"),
+                "corpus-ingestion-v1",
+                "Official law",
             )
         ]
     )
@@ -103,8 +107,15 @@ def test_search_uses_one_question_vector_and_only_ready_latest_chunks(
     assert embeddings.texts == ("What does the regulation protect?",)
     assert len(evidence) == 1
     assert evidence[0].rank == 1
+    assert evidence[0].document_version_id == document_id
+    assert evidence[0].source_revision_id == UUID("40000000-0000-4000-8000-000000000001")
+    assert evidence[0].pipeline_version == "corpus-ingestion-v1"
+    assert evidence[0].source_title == "Official law"
+    assert evidence[0].cosine_distance == 0.1834
     assert "c.embedding <=> %s::vector" in cursor.query
+    assert "s.title, c.ordinal" in cursor.query
+    assert "ORDER BY cosine_distance, ordinal, id" in cursor.query
     assert "c.enrichment_status = 'ready'" in cursor.query
     assert "latest_ready_document_id = c.document_id" in cursor.query
     assert "to_tsvector" not in cursor.query
-    assert cursor.parameters == (corpus_id, "[0.1,0.2]")
+    assert cursor.parameters == ("[0.1,0.2]", corpus_id)

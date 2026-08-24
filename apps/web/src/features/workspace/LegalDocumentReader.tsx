@@ -1,4 +1,5 @@
 import { BookOpenText } from "lucide-react";
+import type { ReactNode, RefObject } from "react";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -6,28 +7,36 @@ import type {
   DocumentResponse,
   DocumentUnitResponse,
 } from "../../api/contract";
+import type { CitedRange } from "./citationLocation";
 
 interface LegalDocumentReaderProps {
   readonly document: DocumentResponse;
   readonly selectedUnitId: string | undefined;
   readonly onSelect: (unitId: string) => void;
+  readonly citedRange?: CitedRange | undefined;
 }
 
 export function LegalDocumentReader({
   document,
   selectedUnitId,
   onSelect,
+  citedRange,
 }: LegalDocumentReaderProps) {
   const { t } = useTranslation();
   const selectedRef = useRef<HTMLElement>(null);
+  const citationRef = useRef<HTMLElement>(null);
   const locations = useMemo(() => readingLocations(document), [document]);
   const visibleUnits = locations.length > 0 ? locations : document.units;
   const selectedId = visibleUnits.some((unit) => unit.id === selectedUnitId)
     ? selectedUnitId
     : visibleUnits[0]?.id;
   useLayoutEffect(() => {
-    selectedRef.current?.scrollIntoView({ block: "start" });
-  }, [selectedId]);
+    const target =
+      citedRange === undefined ? selectedRef.current : citationRef.current;
+    target?.scrollIntoView({
+      block: citedRange === undefined ? "start" : "center",
+    });
+  }, [citedRange, selectedId]);
 
   return (
     <section className="legal-reader" aria-label={t("viewer.readerLabel")}>
@@ -73,7 +82,9 @@ export function LegalDocumentReader({
               </header>
               <div className="legal-unit__body">
                 {paragraphs.map((paragraph, index) => (
-                  <p key={`${unit.id}-${String(index)}`}>{paragraph}</p>
+                  <p key={`${unit.id}-${String(index)}`}>
+                    {highlightedText(paragraph, citedRange, citationRef)}
+                  </p>
                 ))}
               </div>
             </article>
@@ -112,20 +123,71 @@ function locationKind(unit: DocumentUnitResponse, t: Translator): string {
   return t(`viewer.unitKinds.${kind}`);
 }
 
+interface UnitParagraph {
+  readonly text: string;
+  readonly startOffset: number;
+  readonly endOffset: number;
+}
+
 function unitParagraphs(
   documentText: string,
   unit: DocumentUnitResponse,
-): readonly string[] {
-  let content = documentText.slice(unit.startOffset, unit.endOffset).trim();
+): readonly UnitParagraph[] {
+  const rawContent = documentText.slice(unit.startOffset, unit.endOffset);
+  const leadingWhitespace = rawContent.length - rawContent.trimStart().length;
+  let content = rawContent.trim();
+  let startOffset = unit.startOffset + leadingWhitespace;
   const marker = displayMarker(unit);
   if (marker && content.startsWith(marker)) {
-    content = content.slice(marker.length).trimStart();
+    const afterMarker = content.slice(marker.length);
+    content = afterMarker.trimStart();
+    startOffset += marker.length;
+    startOffset += afterMarker.length - content.length;
   }
-  const paragraphs = content
-    .split(/\n+/u)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
-  return paragraphs.length > 0 ? paragraphs : [content];
+  const paragraphs = [...content.matchAll(/[^\n]+/gu)]
+    .map((match) => {
+      const line = match[0];
+      const text = line.trim();
+      const leading = line.length - line.trimStart().length;
+      const paragraphStart = startOffset + match.index + leading;
+      return {
+        text,
+        startOffset: paragraphStart,
+        endOffset: paragraphStart + text.length,
+      };
+    })
+    .filter((paragraph) => paragraph.text !== "");
+  return paragraphs.length > 0
+    ? paragraphs
+    : [{ text: content, startOffset, endOffset: startOffset + content.length }];
+}
+
+function highlightedText(
+  paragraph: UnitParagraph,
+  citedRange: CitedRange | undefined,
+  citationRef: RefObject<HTMLElement | null>,
+): ReactNode {
+  if (
+    citedRange === undefined ||
+    citedRange.startOffset >= paragraph.endOffset ||
+    citedRange.endOffset <= paragraph.startOffset
+  ) {
+    return paragraph.text;
+  }
+  const start = Math.max(0, citedRange.startOffset - paragraph.startOffset);
+  const end = Math.min(
+    paragraph.text.length,
+    citedRange.endOffset - paragraph.startOffset,
+  );
+  return (
+    <>
+      {paragraph.text.slice(0, start)}
+      <mark className="legal-citation-highlight" ref={citationRef}>
+        {paragraph.text.slice(start, end)}
+      </mark>
+      {paragraph.text.slice(end)}
+    </>
+  );
 }
 
 function readingLocations(

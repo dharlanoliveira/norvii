@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { DocumentResponse } from "../../api/contract";
 import { renderAtRoute } from "../../test/render";
+import { resolveVisibleUnitId } from "./citationLocation";
 import { LegalDocumentReader } from "./LegalDocumentReader";
 
 describe("legal document reader", () => {
@@ -89,6 +90,36 @@ describe("legal document reader", () => {
     expect(
       screen.getByRole("article", { name: "Art. 1\u00ba" }),
     ).toHaveTextContent("I - first item");
+  });
+
+  it("maps a nested citation to its article context and highlights its exact span", () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
+    const legalDocument = brazilianDocument();
+    const startOffset = legalDocument.text.indexOf("I -");
+    const endOffset = startOffset + "I - a opera\u00e7\u00e3o".length;
+    const selectedUnitId = resolveVisibleUnitId(
+      legalDocument,
+      "article-3-item-1",
+      {
+        startOffset,
+        endOffset,
+      },
+    );
+
+    renderAtRoute(
+      <LegalDocumentReader
+        document={legalDocument}
+        selectedUnitId={selectedUnitId}
+        onSelect={vi.fn()}
+        citedRange={{ startOffset, endOffset }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("article", { name: "Art. 3\u00ba" }),
+    ).toHaveAttribute("data-selected", "true");
+    expect(screen.getByText("I - a opera\u00e7\u00e3o").tagName).toBe("MARK");
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
   });
 });
 
@@ -253,6 +284,7 @@ function brazilianDocument(): DocumentResponse {
         label: "I -",
         startOffset: itemStart,
         endOffset: paragraphStart,
+        locator: "article-3-item-1",
       },
       {
         ...structuralUnit,

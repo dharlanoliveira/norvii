@@ -74,6 +74,34 @@ func TestGetLatestHidesMissingAndForeignDocuments(t *testing.T) {
 	}
 }
 
+func TestGetVersionReadsOnlyTheRequestedPublishedDocument(t *testing.T) {
+	mock := newPoolMock(t)
+	corpusID := uuid.New()
+	sourceID := uuid.New()
+	documentID := uuid.New()
+	revisionID := uuid.New()
+	now := time.Date(2026, time.August, 18, 12, 0, 0, 0, time.UTC)
+	mock.ExpectQuery("FROM document_versions d").WithArgs(corpusID, sourceID, documentID).WillReturnRows(
+		mock.NewRows(documentColumns()).AddRow(
+			documentID, revisionID, "corpus-ingestion-v1", "Immutable text", "text-hash", now,
+			"content-hash", now, "text/html", int64(100), nil, nil,
+		),
+	)
+	mock.ExpectQuery("FROM document_units").WithArgs(documentID).WillReturnRows(mock.NewRows(unitColumns()))
+
+	document, err := NewRepository(mock).GetVersion(context.Background(), corpusID, sourceID, documentID)
+
+	if err != nil {
+		t.Fatalf("GetVersion() error = %v", err)
+	}
+	if document.ID != documentID || document.Text != "Immutable text" {
+		t.Fatalf("GetVersion() = %+v, want requested document", document)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("database expectations = %v", err)
+	}
+}
+
 func TestGetLatestReportsUnitQueryFailure(t *testing.T) {
 	mock := newPoolMock(t)
 	now := time.Now().UTC()

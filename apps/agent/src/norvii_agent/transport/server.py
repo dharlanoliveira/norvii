@@ -13,7 +13,7 @@ from norvii_agent.graph import GroundedChatRequest
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from norvii_agent.graph import Evidence, GroundedChatGraph
+    from norvii_agent.graph import AnswerInspection, Evidence, GroundedChatGraph
 
 _CORPUS_PATH = re.compile(r"^/v1/corpora/(?P<corpus>[0-9a-f-]+)/chat/stream$")
 _MAX_REQUEST_BODY_BYTES = 64 * 1024
@@ -113,6 +113,7 @@ class AgentRequestHandler(BaseHTTPRequestHandler):
                         "answer": result.answer,
                         "references": [_reference(item) for item in result.evidence],
                         "telemetry": _telemetry("completed", len(result.evidence)),
+                        "inspection": _inspection(result.inspection),
                     },
                 )
             else:
@@ -184,12 +185,61 @@ def _reference(evidence: Evidence) -> dict[str, object]:
         "corpusId": str(evidence.corpus_id),
         "sourceId": str(evidence.source_id),
         "documentId": str(evidence.document_id),
+        "documentVersionId": str(evidence.document_version_id or evidence.document_id),
+        "sourceRevisionId": _uuid_or_none(evidence.source_revision_id),
+        "pipelineVersion": evidence.pipeline_version,
+        "sourceTitle": evidence.source_title,
         "unitLocator": evidence.unit_locator,
         "startOffset": evidence.start_offset,
         "endOffset": evidence.end_offset,
         "excerpt": evidence.excerpt,
         "rank": evidence.rank,
+        "cosineDistance": evidence.cosine_distance,
     }
+
+
+def _inspection(inspection: AnswerInspection | None) -> dict[str, object]:
+    """Serialize safe terminal inspection metadata without provider payloads."""
+    if inspection is None:
+        return {
+            "outcome": "completed",
+            "retrieval": {
+                "strategy": "vector",
+                "topK": 8,
+                "returnedCount": 0,
+                "embeddingModel": None,
+            },
+            "measurements": {
+                "retrievalMilliseconds": None,
+                "generationMilliseconds": None,
+                "totalMilliseconds": None,
+                "inputTokens": None,
+                "outputTokens": None,
+            },
+            "evidence": [],
+        }
+    measurements = inspection.measurements
+    return {
+        "outcome": inspection.outcome,
+        "retrieval": {
+            "strategy": inspection.retrieval.strategy,
+            "topK": inspection.retrieval.top_k,
+            "returnedCount": inspection.retrieval.returned_count,
+            "embeddingModel": inspection.retrieval.embedding_model,
+        },
+        "measurements": {
+            "retrievalMilliseconds": measurements.retrieval_milliseconds,
+            "generationMilliseconds": measurements.generation_milliseconds,
+            "totalMilliseconds": measurements.total_milliseconds,
+            "inputTokens": measurements.input_tokens,
+            "outputTokens": measurements.output_tokens,
+        },
+        "evidence": [_reference(item) for item in inspection.evidence],
+    }
+
+
+def _uuid_or_none(value: object) -> str | None:
+    return str(value) if value is not None else None
 
 
 def _telemetry(outcome: str, evidence_count: int) -> dict[str, object]:

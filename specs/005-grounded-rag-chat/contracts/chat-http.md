@@ -46,12 +46,24 @@ data: {"type":"completed","requestId":"...","answer":"...","references":[...],"t
 ## Evidence reference
 
 Each reference has `id`, `corpusId`, `sourceId`, `documentId`, `unitLocator`, `startOffset`,
-`endOffset`, `excerpt`, and `rank`. `excerpt` is bounded and faithful to the preserved document.
+`endOffset`, `excerpt`, and `rank`. Feature 006 adds `documentVersionId`, `sourceRevisionId`,
+`pipelineVersion`, `sourceTitle`, and nullable `cosineDistance`. `documentVersionId` identifies
+the immutable `document_versions` record used by the answer. `excerpt` is bounded and faithful to
+the preserved document.
+
+## Citation inspection
+
+Terminal events may add an `inspection` object. A completed answer exposes its immutable ordered
+evidence, vector retrieval metadata, and execution measurements. Measurements are `null` when the
+owning component cannot report them; the service never estimates tokens or uses zero to represent
+an unavailable value. Non-completed terminal events expose only safe outcome and measurements and
+do not present evidence as grounded support.
 
 ## Terminal outcomes
 
-- `completed`: final answer and at least one resolvable reference for each supported factual
-  segment.
+- `completed`: a grounded factual answer with at least one resolvable reference for each supported
+  factual segment, or a scope-limited conversational response with no evidence references and no
+  factual or legal claims.
 - `abstained`: insufficient evidence, unavailable ready documents, or failed grounding validation;
   no answer citations are presented as factual support.
 - `cancelled`: the client or server cancelled the request; partial text is not marked complete.

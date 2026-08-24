@@ -5,8 +5,14 @@ from collections.abc import Callable
 from http.client import HTTPConnection
 from threading import Thread
 
-from norvii_agent.graph import GroundedChatRequest, GroundedChatResult
-from norvii_agent.transport.server import AgentHTTPServer
+from norvii_agent.graph import (
+    AnswerInspection,
+    ExecutionMeasurements,
+    GroundedChatRequest,
+    GroundedChatResult,
+    RetrievalInspection,
+)
+from norvii_agent.transport.server import AgentHTTPServer, _inspection
 
 
 class EmptyEvidenceGraph:
@@ -50,3 +56,30 @@ def test_chat_stream_reads_only_the_declared_request_body_length() -> None:
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_terminal_inspection_serializes_measurements_and_evidence_metadata() -> None:
+    inspection = AnswerInspection(
+        outcome="completed",
+        retrieval=RetrievalInspection("vector", 8, 1, "text-embedding-3-small"),
+        measurements=ExecutionMeasurements(12, 34, None, 10, None),
+        evidence=(),
+    )
+
+    payload = _inspection(inspection)
+
+    assert payload["outcome"] == "completed"
+    assert payload["retrieval"] == {
+        "strategy": "vector",
+        "topK": 8,
+        "returnedCount": 1,
+        "embeddingModel": "text-embedding-3-small",
+    }
+    assert payload["measurements"] == {
+        "retrievalMilliseconds": 12,
+        "generationMilliseconds": 34,
+        "totalMilliseconds": None,
+        "inputTokens": 10,
+        "outputTokens": None,
+    }
+    assert payload["evidence"] == []

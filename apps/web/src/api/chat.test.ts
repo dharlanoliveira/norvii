@@ -156,4 +156,61 @@ describe("HTTP grounded chat provider", () => {
       ),
     ).rejects.toMatchObject({ status: 502 });
   });
+
+  it("preserves nullable inspection measurements and rejects negative values", () => {
+    const event = parseChatEvent({
+      type: "completed",
+      requestId: "request-1",
+      answer: "Answer [1].",
+      references: [],
+      telemetry: {
+        outcome: "completed",
+        evidenceCount: 0,
+        durationMilliseconds: 1,
+      },
+      inspection: {
+        outcome: "completed",
+        retrieval: {
+          strategy: "vector",
+          topK: 8,
+          returnedCount: 0,
+          embeddingModel: null,
+        },
+        measurements: {
+          retrievalMilliseconds: null,
+          generationMilliseconds: 1,
+          totalMilliseconds: 1,
+          inputTokens: null,
+          outputTokens: null,
+        },
+        evidence: [],
+      },
+    });
+    expect(
+      event.type === "completed" && event.inspection?.measurements.inputTokens,
+    ).toBeNull();
+    expect(() =>
+      parseChatEvent({
+        type: "completed",
+        requestId: "request-1",
+        answer: "Answer [1].",
+        references: [],
+        telemetry: {
+          outcome: "completed",
+          evidenceCount: 0,
+          durationMilliseconds: 1,
+        },
+        inspection: {
+          outcome: "completed",
+          measurements: {
+            retrievalMilliseconds: -1,
+            generationMilliseconds: null,
+            totalMilliseconds: null,
+            inputTokens: null,
+            outputTokens: null,
+          },
+        },
+      }),
+    ).toThrow("retrieval duration must not be negative");
+  });
 });

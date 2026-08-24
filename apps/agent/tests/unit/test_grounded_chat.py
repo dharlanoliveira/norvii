@@ -19,6 +19,7 @@ class FakeRetriever:
 class FakeModel:
     def __init__(self, answer: str) -> None:
         self.answer = answer
+        self.received_evidence: tuple[Evidence, ...] | None = None
 
     def generate(
         self,
@@ -28,8 +29,8 @@ class FakeModel:
         emit: Callable[[str], None],
     ) -> str:
         assert question
-        assert evidence
         assert interface_language == "en"
+        self.received_evidence = evidence
         emit(self.answer)
         return self.answer
 
@@ -48,9 +49,11 @@ def evidence() -> Evidence:
     )
 
 
-def test_graph_completes_grounded_answer_and_emits_model_delta() -> None:
+def test_graph_completes_grounded_answer_and_hides_its_mode_marker() -> None:
     deltas: list[str] = []
-    graph = GroundedChatGraph(FakeRetriever((evidence(),)), FakeModel("The rule applies [1]."))
+    graph = GroundedChatGraph(
+        FakeRetriever((evidence(),)), FakeModel("[NORVII_GROUNDED]\nThe rule applies [1].")
+    )
 
     result = graph.run(
         GroundedChatRequest(UUID("10000000-0000-4000-8000-000000000001"), "What applies?"),
@@ -60,15 +63,24 @@ def test_graph_completes_grounded_answer_and_emits_model_delta() -> None:
     assert result.status == "completed"
     assert result.evidence[0].unit_locator == "article-1"
     assert deltas == ["The rule applies [1]."]
+    assert result.inspection is not None
+    assert result.inspection.retrieval.strategy == "vector"
+    assert result.inspection.retrieval.returned_count == 1
+    assert result.inspection.measurements.retrieval_milliseconds is not None
+    assert result.inspection.measurements.generation_milliseconds is not None
+    assert result.inspection.evidence == result.evidence
 
 
-def test_graph_abstains_before_model_when_retrieval_is_empty() -> None:
-    graph = GroundedChatGraph(FakeRetriever(()), FakeModel("must not run"))
+def test_graph_generates_scope_limited_response_when_retrieval_is_empty() -> None:
+    model = FakeModel("[NORVII_SCOPE_LIMITED]\nHello. Ask me about documents in this corpus.")
+    graph = GroundedChatGraph(FakeRetriever(()), model)
 
     result = graph.run(
         GroundedChatRequest(UUID("10000000-0000-4000-8000-000000000001"), "Unknown?"),
         lambda _: None,
     )
 
-    assert result.status == "abstained"
-    assert result.reason == "insufficient_evidence"
+    assert result.status == "completed"
+    assert result.answer == "Hello. Ask me about documents in this corpus."
+    assert result.evidence == ()
+    assert model.received_evidence == ()

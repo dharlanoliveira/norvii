@@ -11,7 +11,7 @@ describe("HTTP research provider", () => {
       .fn<typeof fetch>()
       .mockImplementation((input, init) => {
         const url = requestUrl(input);
-        if (url.endsWith("/document"))
+        if (url.endsWith("/document") || url.includes("/documents/"))
           return Promise.resolve(jsonResponse(documentResponse()));
         if (url.endsWith("/sources") && init?.method === "GET") {
           return Promise.resolve(jsonResponse([sourceResponse()]));
@@ -47,6 +47,14 @@ describe("HTTP research provider", () => {
     );
     await expect(
       provider.getDocument(corpusId, sourceId, signal),
+    ).resolves.toMatchObject({ id: documentResponse().id });
+    await expect(
+      provider.getDocumentVersion(
+        corpusId,
+        sourceId,
+        documentResponse().id,
+        signal,
+      ),
     ).resolves.toMatchObject({ id: documentResponse().id });
     await expect(
       provider.createCorpus(corpusDraft(), signal),
@@ -94,6 +102,9 @@ describe("HTTP research provider", () => {
     );
     expect(requests).toContain(
       `https://api.example.test/v1/corpora/${corpusId}/sources/${sourceId}/reprocess`,
+    );
+    expect(requests).toContain(
+      `https://api.example.test/v1/corpora/${corpusId}/sources/${sourceId}/documents/${documentResponse().id}`,
     );
   });
 

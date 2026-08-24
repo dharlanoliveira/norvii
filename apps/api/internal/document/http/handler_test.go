@@ -20,6 +20,10 @@ func (reader *fakeReader) GetLatest(context.Context, uuid.UUID, uuid.UUID) (docu
 	return reader.document, nil
 }
 
+func (reader *fakeReader) GetVersion(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (documentpostgres.Document, error) {
+	return reader.document, nil
+}
+
 func TestGetLatestWritesCompleteDocumentAndUnits(t *testing.T) {
 	corpusID := uuid.New()
 	sourceID := uuid.New()
@@ -45,6 +49,24 @@ func TestGetLatestWritesCompleteDocumentAndUnits(t *testing.T) {
 
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "Persisted legal text.") ||
 		!strings.Contains(recorder.Body.String(), `"mediaType":"text/html"`) {
+		t.Fatalf("response status/body = %d/%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestGetVersionWritesTheRequestedDocumentRoute(t *testing.T) {
+	corpusID := uuid.New()
+	sourceID := uuid.New()
+	documentVersionID := uuid.New()
+	mux := http.NewServeMux()
+	NewHandler(&fakeReader{document: documentpostgres.Document{ID: documentVersionID, Text: "Immutable legal text."}}).Register(mux)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/corpora/"+corpusID.String()+"/sources/"+sourceID.String()+"/documents/"+documentVersionID.String(),
+		nil,
+	))
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "Immutable legal text.") {
 		t.Fatalf("response status/body = %d/%s", recorder.Code, recorder.Body.String())
 	}
 }

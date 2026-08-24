@@ -46,6 +46,7 @@ Portuguese is permitted only in Portuguese localization values, preserved legal 
 - Introduce an interface, class, generic, factory, or abstraction only when it creates a real seam, enforces an invariant, or removes demonstrated duplication.
 - Prefer composition over inheritance and dependency injection over hidden global state.
 - Keep functions and methods focused. Split branching code when naming a distinct rule makes the behavior clearer.
+- Before implementation is complete, inspect changed orchestration points for accumulated responsibilities. A function that coordinates independent lifecycles, such as loading data, mutating data, UI forms, selection, or streaming, must delegate each lifecycle to a focused hook, component, service, or domain operation with an explicit input/output boundary.
 - Avoid speculative extension points, pass-through wrappers, generic utility buckets, and premature frameworks.
 - Make invalid states difficult to represent where the language supports it.
 
@@ -64,6 +65,7 @@ Portuguese is permitted only in Portuguese localization values, preserved legal 
 - Prefer deterministic tests through public behavior.
 - Use integration or contract tests at database, HTTP, queue, filesystem, LLM, and cross-language boundaries.
 - Run the narrowest relevant formatter, static analysis, tests, and build commands available in the repository.
+- Treat a cognitive-complexity warning from configured analysis as a design defect, not a lint exception to suppress. Refactor the responsible behavior into named cohesive units and add behavior tests for the extracted boundaries before handoff.
 - Do not claim a check passed unless it was executed successfully.
 
 ### 6. Review the diff

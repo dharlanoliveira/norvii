@@ -1,25 +1,36 @@
-import { FileText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-export function SourceSelectionPrompt() {
+interface SourceSelectionPromptProps {
+  readonly sourceTitle?: string | undefined;
+  readonly onOpenSource?: (() => void) | undefined;
+  readonly onAddSource: () => void;
+}
+
+export function SourceSelectionPrompt({
+  sourceTitle,
+  onOpenSource,
+  onAddSource,
+}: SourceSelectionPromptProps) {
   const { t } = useTranslation();
+  const canOpenSource = sourceTitle !== undefined && onOpenSource !== undefined;
 
   return (
     <section
       className="source-selection-prompt"
       aria-labelledby="source-selection-title"
     >
-      <div className="source-selection-prompt__document" aria-hidden="true">
-        <span className="source-selection-prompt__sheet source-selection-prompt__sheet--back" />
-        <span className="source-selection-prompt__sheet source-selection-prompt__sheet--front">
-          <FileText size={28} strokeWidth={1.5} />
-          <span>01</span>
-        </span>
-      </div>
       <div className="source-selection-prompt__copy">
-        <p className="kicker">{t("viewer.noSourceKicker")}</p>
         <h2 id="source-selection-title">{t("viewer.noSourceTitle")}</h2>
         <p>{t("viewer.noSourceBody")}</p>
+        <button
+          className="source-selection-prompt__action"
+          type="button"
+          onClick={canOpenSource ? onOpenSource : onAddSource}
+        >
+          {canOpenSource
+            ? t("viewer.openSource", { source: sourceTitle })
+            : t("viewer.addFirstSource")}
+        </button>
       </div>
     </section>
   );

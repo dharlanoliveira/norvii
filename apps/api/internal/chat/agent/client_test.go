@@ -124,6 +124,34 @@ func TestClientHandlesEvidenceAndUnknownEvents(t *testing.T) {
 	}
 }
 
+func TestClientMapsInspectionMetadata(t *testing.T) {
+	corpusID := uuid.New()
+	sourceID := uuid.New()
+	documentID := uuid.New()
+	reference := `{"id":"ref-1","corpusId":"` + corpusID.String() + `","sourceId":"` + sourceID.String() + `","documentId":"` + documentID.String() + `","documentVersionId":"` + documentID.String() + `","unitLocator":"article-1","startOffset":1,"endOffset":8,"excerpt":"text","rank":1,"cosineDistance":0.18}`
+	body := "event: completed\ndata: {\"type\":\"completed\",\"answer\":\"Answer\",\"references\":[" + reference + "],\"inspection\":{\"outcome\":\"completed\",\"retrieval\":{\"strategy\":\"vector\",\"topK\":8,\"returnedCount\":1,\"embeddingModel\":null},\"measurements\":{\"retrievalMilliseconds\":12,\"generationMilliseconds\":34,\"totalMilliseconds\":50,\"inputTokens\":null,\"outputTokens\":7},\"evidence\":[" + reference + "]}}\n\n"
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	result, err := NewClient(config.AgentConfig{BaseURL: server.URL, Timeout: time.Second}).Ask(
+		context.Background(), chatdomain.Request{CorpusID: corpusID}, func(string) {},
+	)
+	if err != nil {
+		t.Fatalf("Ask() error = %v", err)
+	}
+	if result.Inspection == nil || result.Inspection.Retrieval == nil {
+		t.Fatalf("inspection = %#v, want retrieval metadata", result.Inspection)
+	}
+	if result.Inspection.Measurements.TotalMilliseconds == nil || *result.Inspection.Measurements.TotalMilliseconds != 50 {
+		t.Fatalf("total milliseconds = %#v, want 50", result.Inspection.Measurements.TotalMilliseconds)
+	}
+	if result.Evidence[0].CosineDistance == nil || *result.Evidence[0].CosineDistance != 0.18 {
+		t.Fatalf("cosine distance = %#v, want 0.18", result.Evidence[0].CosineDistance)
+	}
+}
+
 func TestClientRejectsInvalidAndIncompleteAgentStreams(t *testing.T) {
 	tests := []struct {
 		name string
