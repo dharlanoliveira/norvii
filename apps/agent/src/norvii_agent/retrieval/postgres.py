@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 import psycopg
 
-from norvii_agent.graph import Evidence
+from norvii_agent.graph import Evidence, RetrievalInspection
 
 if TYPE_CHECKING:
     from norvii_agent.config import AgentConfig
     from norvii_agent.providers import EmbeddingProvider
+
+_DISTANCE_INDEX = 8
+_SOURCE_REVISION_INDEX = 9
+_PIPELINE_VERSION_INDEX = 10
+_SOURCE_TITLE_INDEX = 11
 
 
 class PostgresRetriever:
@@ -20,6 +26,7 @@ class PostgresRetriever:
     def __init__(self, configuration: AgentConfig, embeddings: EmbeddingProvider) -> None:
         self._configuration = configuration
         self._embeddings = embeddings
+        self.last_retrieval: RetrievalInspection | None = None
 
     def search(self, corpus_id: UUID, question: str) -> tuple[Evidence, ...]:
         """Return the nearest ready vectors within the active corpus boundary."""
@@ -40,23 +47,37 @@ class PostgresRetriever:
         ):
             cursor.execute(
                 """
-                SELECT c.id, c.corpus_id, c.source_id, c.document_id,
-                       c.context_locator, c.start_offset, c.end_offset, c.content
-                FROM retrieval_chunks c
-                JOIN document_versions d ON d.id = c.document_id
-                JOIN corpora co ON co.id = c.corpus_id AND co.status = 'enabled'
-                JOIN sources s ON s.corpus_id = c.corpus_id
-                 AND s.id = c.source_id AND s.latest_ready_document_id = c.document_id
-                WHERE c.corpus_id = %s
-                  AND d.publication_status = 'published'
-                  AND c.enrichment_status = 'ready'
-                  AND c.embedding IS NOT NULL
-                ORDER BY c.embedding <=> %s::vector, c.ordinal, c.id
+                WITH ranked_chunks AS (
+                    SELECT c.id, c.corpus_id, c.source_id, c.document_id,
+                           c.context_locator, c.start_offset, c.end_offset, c.content,
+                           c.embedding <=> %s::vector AS cosine_distance,
+                           d.source_revision_id, d.pipeline_version, s.title, c.ordinal
+                    FROM retrieval_chunks c
+                    JOIN document_versions d ON d.id = c.document_id
+                    JOIN corpora co ON co.id = c.corpus_id AND co.status = 'enabled'
+                    JOIN sources s ON s.corpus_id = c.corpus_id
+                     AND s.id = c.source_id AND s.latest_ready_document_id = c.document_id
+                    WHERE c.corpus_id = %s
+                      AND d.publication_status = 'published'
+                      AND c.enrichment_status = 'ready'
+                      AND c.embedding IS NOT NULL
+                )
+                SELECT id, corpus_id, source_id, document_id,
+                       context_locator, start_offset, end_offset, content,
+                       cosine_distance, source_revision_id, pipeline_version, title
+                FROM ranked_chunks
+                ORDER BY cosine_distance, ordinal, id
                 LIMIT 8
                 """,
-                (corpus_id, vector_literal),
+                (vector_literal, corpus_id),
             )
             rows = cursor.fetchall()
+        self.last_retrieval = RetrievalInspection(
+            strategy="vector",
+            top_k=8,
+            returned_count=len(rows),
+            embedding_model=self._configuration.embedding_model or None,
+        )
         return tuple(
             Evidence(
                 id=str(row[0]),
@@ -68,6 +89,25 @@ class PostgresRetriever:
                 end_offset=row[6],
                 excerpt=row[7],
                 rank=index + 1,
+                document_version_id=row[3],
+                cosine_distance=_finite_distance(
+                    row[_DISTANCE_INDEX] if len(row) > _DISTANCE_INDEX else None
+                ),
+                source_revision_id=(
+                    row[_SOURCE_REVISION_INDEX] if len(row) > _SOURCE_REVISION_INDEX else None
+                ),
+                pipeline_version=(
+                    row[_PIPELINE_VERSION_INDEX] if len(row) > _PIPELINE_VERSION_INDEX else None
+                ),
+                source_title=(row[_SOURCE_TITLE_INDEX] if len(row) > _SOURCE_TITLE_INDEX else None),
             )
             for index, row in enumerate(rows)
         )
+
+
+def _finite_distance(value: object) -> float | None:
+    """Return only finite non-negative distance values from pgvector."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    distance = float(value)
+    return distance if distance >= 0 and math.isfinite(distance) else None

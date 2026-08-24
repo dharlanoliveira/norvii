@@ -103,6 +103,7 @@ func (client *Client) handleEvent(
 		Reason     string              `json:"reason"`
 		Code       string              `json:"code"`
 		References []evidenceReference `json:"references"`
+		Inspection *inspectionPayload  `json:"inspection"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &event); err != nil {
 		return fmt.Errorf("decode agent %s event: %w", eventName, err)
@@ -115,6 +116,7 @@ func (client *Client) handleEvent(
 	case "completed":
 		result.Answer = event.Answer
 		result.Evidence = evidenceValues(event.References)
+		result.Inspection = inspectionValue(event.Inspection, result.Evidence, "completed")
 		*terminal = true
 	case "abstained":
 		*terminal = true
@@ -133,15 +135,42 @@ func (client *Client) handleEvent(
 }
 
 type evidenceReference struct {
-	ID          string    `json:"id"`
-	CorpusID    uuid.UUID `json:"corpusId"`
-	SourceID    uuid.UUID `json:"sourceId"`
-	DocumentID  uuid.UUID `json:"documentId"`
-	UnitLocator string    `json:"unitLocator"`
-	StartOffset int       `json:"startOffset"`
-	EndOffset   int       `json:"endOffset"`
-	Excerpt     string    `json:"excerpt"`
-	Rank        int       `json:"rank"`
+	ID                string    `json:"id"`
+	CorpusID          uuid.UUID `json:"corpusId"`
+	SourceID          uuid.UUID `json:"sourceId"`
+	DocumentID        uuid.UUID `json:"documentId"`
+	DocumentVersionID uuid.UUID `json:"documentVersionId"`
+	SourceRevisionID  uuid.UUID `json:"sourceRevisionId"`
+	PipelineVersion   string    `json:"pipelineVersion"`
+	SourceTitle       string    `json:"sourceTitle"`
+	UnitLocator       string    `json:"unitLocator"`
+	StartOffset       int       `json:"startOffset"`
+	EndOffset         int       `json:"endOffset"`
+	Excerpt           string    `json:"excerpt"`
+	Rank              int       `json:"rank"`
+	CosineDistance    *float64  `json:"cosineDistance"`
+}
+
+type inspectionPayload struct {
+	Outcome      string               `json:"outcome"`
+	Retrieval    *retrievalInspection `json:"retrieval"`
+	Measurements measurementPayload   `json:"measurements"`
+	Evidence     []evidenceReference  `json:"evidence"`
+}
+
+type retrievalInspection struct {
+	Strategy       string  `json:"strategy"`
+	TopK           int     `json:"topK"`
+	ReturnedCount  int     `json:"returnedCount"`
+	EmbeddingModel *string `json:"embeddingModel"`
+}
+
+type measurementPayload struct {
+	RetrievalMilliseconds  *int64 `json:"retrievalMilliseconds"`
+	GenerationMilliseconds *int64 `json:"generationMilliseconds"`
+	TotalMilliseconds      *int64 `json:"totalMilliseconds"`
+	InputTokens            *int64 `json:"inputTokens"`
+	OutputTokens           *int64 `json:"outputTokens"`
 }
 
 func evidenceValues(references []evidenceReference) []chatdomain.Evidence {
@@ -149,10 +178,41 @@ func evidenceValues(references []evidenceReference) []chatdomain.Evidence {
 	for _, reference := range references {
 		evidence = append(evidence, chatdomain.Evidence{
 			ID: reference.ID, CorpusID: reference.CorpusID, SourceID: reference.SourceID,
-			DocumentID: reference.DocumentID, UnitLocator: reference.UnitLocator,
+			DocumentID: reference.DocumentID, DocumentVersionID: reference.DocumentVersionID,
+			SourceRevisionID: reference.SourceRevisionID, PipelineVersion: reference.PipelineVersion,
+			SourceTitle: reference.SourceTitle, UnitLocator: reference.UnitLocator,
 			StartOffset: reference.StartOffset, EndOffset: reference.EndOffset,
-			Excerpt: reference.Excerpt, Rank: reference.Rank,
+			Excerpt: reference.Excerpt, Rank: reference.Rank, CosineDistance: reference.CosineDistance,
 		})
 	}
 	return evidence
+}
+
+func inspectionValue(payload *inspectionPayload, evidence []chatdomain.Evidence, outcome string) *chatdomain.Inspection {
+	if payload == nil {
+		return &chatdomain.Inspection{Outcome: outcome, Evidence: evidence}
+	}
+	inspection := &chatdomain.Inspection{
+		Outcome: payload.Outcome, Evidence: evidence,
+		Measurements: chatdomain.Measurements{
+			RetrievalMilliseconds:  payload.Measurements.RetrievalMilliseconds,
+			GenerationMilliseconds: payload.Measurements.GenerationMilliseconds,
+			TotalMilliseconds:      payload.Measurements.TotalMilliseconds,
+			InputTokens:            payload.Measurements.InputTokens,
+			OutputTokens:           payload.Measurements.OutputTokens,
+		},
+	}
+	if inspection.Outcome == "" {
+		inspection.Outcome = outcome
+	}
+	if payload.Retrieval != nil {
+		inspection.Retrieval = &chatdomain.RetrievalInspection{
+			Strategy: payload.Retrieval.Strategy, TopK: payload.Retrieval.TopK,
+			ReturnedCount: payload.Retrieval.ReturnedCount, EmbeddingModel: payload.Retrieval.EmbeddingModel,
+		}
+	}
+	if len(payload.Evidence) > 0 {
+		inspection.Evidence = evidenceValues(payload.Evidence)
+	}
+	return inspection
 }

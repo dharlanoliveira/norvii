@@ -64,6 +64,46 @@ test("shows authoritative empty and failed outcomes", async ({ page }) => {
   await expect(page.getByRole("article")).toHaveCount(0);
 });
 
+test("opens immutable citation evidence and preserves its answer inspection", async ({
+  page,
+}) => {
+  await configureCitationInspectionAPI(page);
+  await page.goto(`/corpora/${corpusId}`);
+
+  await page
+    .getByRole("textbox", { name: "Research question" })
+    .fill("What does Article 1 protect?");
+  await page.getByRole("button", { name: "Send question" }).click();
+
+  await expect(
+    page.getByText("Article 1 protects the cited legal interest."),
+  ).toBeVisible();
+  await page
+    .getByRole("button", {
+      name: "Open Article 1 in Official GDPR text",
+    })
+    .click();
+
+  const highlight = page.locator("mark.legal-citation-highlight");
+  await expect(highlight).toBeVisible();
+  await expect(highlight).toHaveText("Immutable cited version.");
+
+  await page.getByRole("tab", { name: "Chat" }).click();
+  const inspection = page.locator("details.answer-inspection > summary");
+  await inspection.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("details.answer-inspection")).toHaveAttribute(
+    "open",
+    "",
+  );
+  await expect(page.getByText("vector")).toBeVisible();
+  await expect(
+    page
+      .getByRole("list", { name: "Supporting passages" })
+      .getByRole("button", { name: /Official GDPR text/ }),
+  ).toBeVisible();
+});
+
 async function configureAuthoritativeAPI(page: Page): Promise<void> {
   await page.route("**/api/v1/corpora?includeDisabled=true", async (route) =>
     route.fulfill({ json: [corpus()] }),
@@ -77,6 +117,20 @@ async function configureAuthoritativeAPI(page: Page): Promise<void> {
   await page.route(
     `**/api/v1/corpora/${corpusId}/sources/${sourceId}/document`,
     async (route) => route.fulfill({ json: documentResponse() }),
+  );
+}
+
+async function configureCitationInspectionAPI(page: Page): Promise<void> {
+  await configureAuthoritativeAPI(page);
+  await page.route(
+    `**/api/v1/corpora/${corpusId}/sources/${sourceId}/documents/50000000-0000-4000-8000-000000000001`,
+    async (route) => route.fulfill({ json: immutableDocumentResponse() }),
+  );
+  await page.route(`**/api/v1/corpora/${corpusId}/chat/stream`, async (route) =>
+    route.fulfill({
+      body: chatStream(),
+      contentType: "text/event-stream",
+    }),
   );
 }
 
@@ -188,6 +242,108 @@ function documentResponse() {
       },
     ],
   };
+}
+
+function immutableDocumentResponse() {
+  const article = "Article 1\nImmutable cited version.";
+  return {
+    id: "50000000-0000-4000-8000-000000000001",
+    sourceRevisionId: "40000000-0000-4000-8000-000000000001",
+    pipelineVersion: "corpus-ingestion-v1",
+    text: article,
+    textSha256: "e".repeat(64),
+    createdAt: "2026-08-17T12:01:00Z",
+    provenance: {
+      contentSha256: "e".repeat(64),
+      capturedAt: "2026-08-17T12:00:30Z",
+      mediaType: "text/html",
+      byteSize: 2048,
+      finalUrl: "https://example.org/gdpr",
+      extractedContentSha256: "e".repeat(64),
+    },
+    units: [
+      {
+        id: "60000000-0000-4000-8000-000000000000",
+        parentId: null,
+        kind: "document",
+        ordinal: 0,
+        marker: null,
+        label: null,
+        startOffset: 0,
+        endOffset: article.length,
+        startPage: null,
+        endPage: null,
+        locator: "document",
+        contentSha256: "e".repeat(64),
+      },
+      {
+        id: "60000000-0000-4000-8000-000000000001",
+        parentId: "60000000-0000-4000-8000-000000000000",
+        kind: "article",
+        ordinal: 0,
+        marker: "Article 1",
+        label: "Article 1",
+        startOffset: 0,
+        endOffset: article.length,
+        startPage: null,
+        endPage: null,
+        locator: "article-1",
+        contentSha256: "f".repeat(64),
+      },
+    ],
+  };
+}
+
+function chatStream(): string {
+  const reference = {
+    id: "reference-1",
+    corpusId,
+    sourceId,
+    documentId: "50000000-0000-4000-8000-000000000001",
+    documentVersionId: "50000000-0000-4000-8000-000000000001",
+    sourceRevisionId: "40000000-0000-4000-8000-000000000001",
+    pipelineVersion: "corpus-ingestion-v1",
+    sourceTitle: "Official GDPR text",
+    cosineDistance: 0.1,
+    unitLocator: "article-1",
+    startOffset: 10,
+    endOffset: 34,
+    excerpt: "Immutable cited version.",
+    rank: 1,
+  };
+  return [
+    { type: "started", requestId: "request-1", corpusId },
+    {
+      type: "completed",
+      requestId: "request-1",
+      answer: "Article 1 protects the cited legal interest. [1]",
+      references: [reference],
+      telemetry: {
+        outcome: "completed",
+        evidenceCount: 1,
+        durationMilliseconds: 5,
+      },
+      inspection: {
+        outcome: "completed",
+        retrieval: {
+          strategy: "vector",
+          topK: 8,
+          returnedCount: 1,
+          embeddingModel: "text-embedding-3-small",
+        },
+        measurements: {
+          retrievalMilliseconds: 1,
+          generationMilliseconds: 3,
+          totalMilliseconds: 5,
+          inputTokens: null,
+          outputTokens: null,
+        },
+        evidence: [reference],
+      },
+    },
+  ]
+    .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+    .join("");
 }
 
 function errorEnvelope(code: string) {

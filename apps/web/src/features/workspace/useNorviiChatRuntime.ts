@@ -6,6 +6,7 @@ import {
 import { useCallback, useMemo, useState } from "react";
 
 import type {
+  ChatInspection,
   ChatProvider,
   ChatReference,
   ChatStreamEvent,
@@ -24,6 +25,7 @@ interface NorviiChatRuntime {
   readonly runtime: AssistantRuntime;
   readonly error: string | undefined;
   readonly referencesByMessageId: ReadonlyMap<string, readonly ChatReference[]>;
+  readonly inspectionsByMessageId: ReadonlyMap<string, ChatInspection>;
 }
 
 export function useNorviiChatRuntime({
@@ -37,6 +39,9 @@ export function useNorviiChatRuntime({
   const [referencesByMessageId, setReferencesByMessageId] = useState<
     ReadonlyMap<string, readonly ChatReference[]>
   >(() => new Map());
+  const [inspectionsByMessageId, setInspectionsByMessageId] = useState<
+    ReadonlyMap<string, ChatInspection>
+  >(() => new Map());
 
   const storeReferences = useCallback(
     (messageId: string | undefined, references: readonly ChatReference[]) => {
@@ -44,6 +49,19 @@ export function useNorviiChatRuntime({
       setReferencesByMessageId((current) => {
         const next = new Map(current);
         next.set(messageId, references);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const storeInspection = useCallback(
+    (messageId: string | undefined, inspection: ChatInspection | undefined) => {
+      if (messageId === undefined || inspection?.outcome !== "completed")
+        return;
+      setInspectionsByMessageId((current) => {
+        const next = new Map(current);
+        next.set(messageId, inspection);
         return next;
       });
     },
@@ -92,6 +110,7 @@ export function useNorviiChatRuntime({
                 break;
               case "completed":
                 storeReferences(assistantMessageId, event.references);
+                storeInspection(assistantMessageId, event.inspection);
                 yield textResult(event.answer);
                 return;
               case "abstained":
@@ -123,11 +142,12 @@ export function useNorviiChatRuntime({
       interfaceLanguage,
       provider,
       storeReferences,
+      storeInspection,
     ],
   );
   const runtime = useLocalRuntime(adapter);
 
-  return { runtime, error, referencesByMessageId };
+  return { runtime, error, referencesByMessageId, inspectionsByMessageId };
 }
 
 function latestQuestion(

@@ -10,6 +10,31 @@ export interface ChatReference {
   readonly endOffset: number;
   readonly excerpt: string;
   readonly rank: number;
+  readonly documentVersionId?: string | undefined;
+  readonly sourceRevisionId?: string | undefined;
+  readonly pipelineVersion?: string | undefined;
+  readonly sourceTitle?: string | undefined;
+  readonly cosineDistance?: number | null | undefined;
+}
+
+export interface ChatInspection {
+  readonly outcome: "completed" | "abstained" | "cancelled" | "failed";
+  readonly retrieval?:
+    | {
+        readonly strategy: "vector";
+        readonly topK: number;
+        readonly returnedCount: number;
+        readonly embeddingModel: string | null;
+      }
+    | undefined;
+  readonly measurements: {
+    readonly retrievalMilliseconds: number | null;
+    readonly generationMilliseconds: number | null;
+    readonly totalMilliseconds: number | null;
+    readonly inputTokens: number | null;
+    readonly outputTokens: number | null;
+  };
+  readonly evidence?: readonly ChatReference[] | undefined;
 }
 
 export type ChatStreamEvent =
@@ -34,17 +59,20 @@ export type ChatStreamEvent =
       readonly answer: string;
       readonly references: readonly ChatReference[];
       readonly telemetry: ChatTelemetry;
+      readonly inspection?: ChatInspection | undefined;
     }
   | {
       readonly type: "abstained";
       readonly requestId: string;
       readonly reason: string;
       readonly telemetry: ChatTelemetry;
+      readonly inspection?: ChatInspection | undefined;
     }
   | {
       readonly type: "cancelled";
       readonly requestId: string;
       readonly telemetry: ChatTelemetry;
+      readonly inspection?: ChatInspection | undefined;
     }
   | {
       readonly type: "error";
@@ -52,6 +80,7 @@ export type ChatStreamEvent =
       readonly code: string;
       readonly message: string;
       readonly telemetry: ChatTelemetry;
+      readonly inspection?: ChatInspection | undefined;
     };
 
 export interface ChatTelemetry {
@@ -190,6 +219,7 @@ export function parseChatEvent(value: unknown): ChatStreamEvent {
         answer: stringValue(value.answer, "chat answer"),
         references: referencesValue(value.references),
         telemetry: telemetryValue(value.telemetry),
+        inspection: inspectionValue(value.inspection),
       };
     case "abstained":
       return {
@@ -197,12 +227,14 @@ export function parseChatEvent(value: unknown): ChatStreamEvent {
         requestId: value.requestId,
         reason: stringValue(value.reason, "abstention reason"),
         telemetry: telemetryValue(value.telemetry),
+        inspection: inspectionValue(value.inspection),
       };
     case "cancelled":
       return {
         type: "cancelled",
         requestId: value.requestId,
         telemetry: telemetryValue(value.telemetry),
+        inspection: inspectionValue(value.inspection),
       };
     case "error":
       return {
@@ -211,6 +243,7 @@ export function parseChatEvent(value: unknown): ChatStreamEvent {
         code: stringValue(value.code, "chat error code"),
         message: stringValue(value.message, "chat error message"),
         telemetry: telemetryValue(value.telemetry),
+        inspection: inspectionValue(value.inspection),
       };
     default:
       throw new TypeError("Chat stream event type is unsupported.");
@@ -223,6 +256,10 @@ function referencesValue(value: unknown): readonly ChatReference[] {
   return value.map((item) => {
     if (!isRecord(item))
       throw new TypeError("Chat reference must be an object.");
+    const documentVersionId = optionalStringValue(
+      item.documentVersionId,
+      "reference document version ID",
+    );
     return {
       id: stringValue(item.id, "reference ID"),
       corpusId: stringValue(item.corpusId, "reference corpus ID"),
@@ -233,8 +270,97 @@ function referencesValue(value: unknown): readonly ChatReference[] {
       endOffset: numberValue(item.endOffset, "reference end offset"),
       excerpt: stringValue(item.excerpt, "reference excerpt"),
       rank: numberValue(item.rank, "reference rank"),
+      documentVersionId,
+      sourceRevisionId: optionalStringValue(
+        item.sourceRevisionId,
+        "reference source revision ID",
+      ),
+      pipelineVersion: optionalStringValue(
+        item.pipelineVersion,
+        "reference pipeline version",
+      ),
+      sourceTitle: optionalStringValue(
+        item.sourceTitle,
+        "reference source title",
+      ),
+      cosineDistance: nullableNonNegativeNumberValue(
+        item.cosineDistance,
+        "reference cosine distance",
+      ),
     };
   });
+}
+
+function inspectionValue(value: unknown): ChatInspection | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value))
+    throw new TypeError("Chat inspection must be an object.");
+  const outcome = stringValue(value.outcome, "inspection outcome");
+  if (!isInspectionOutcome(outcome)) {
+    throw new TypeError("Chat inspection outcome is invalid.");
+  }
+  return {
+    outcome,
+    retrieval: retrievalValue(value.retrieval),
+    measurements: measurementsValue(value.measurements),
+    evidence:
+      value.evidence === undefined
+        ? undefined
+        : referencesValue(value.evidence),
+  };
+}
+
+function retrievalValue(value: unknown): ChatInspection["retrieval"] {
+  if (value === undefined) return undefined;
+  if (!isRecord(value))
+    throw new TypeError("Chat retrieval inspection must be an object.");
+  if (value.strategy !== "vector") {
+    throw new TypeError("Chat retrieval strategy is invalid.");
+  }
+  return {
+    strategy: "vector",
+    topK: nonNegativeNumberValue(value.topK, "retrieval top K"),
+    returnedCount: nonNegativeNumberValue(
+      value.returnedCount,
+      "retrieval returned count",
+    ),
+    embeddingModel: nullableStringValue(
+      value.embeddingModel,
+      "embedding model",
+    ),
+  };
+}
+
+function measurementsValue(value: unknown): ChatInspection["measurements"] {
+  if (!isRecord(value))
+    throw new TypeError("Chat measurements must be an object.");
+  return {
+    retrievalMilliseconds: measurementValue(
+      value.retrievalMilliseconds,
+      "retrieval duration",
+    ),
+    generationMilliseconds: measurementValue(
+      value.generationMilliseconds,
+      "generation duration",
+    ),
+    totalMilliseconds: measurementValue(
+      value.totalMilliseconds,
+      "total duration",
+    ),
+    inputTokens: measurementValue(value.inputTokens, "input tokens"),
+    outputTokens: measurementValue(value.outputTokens, "output tokens"),
+  };
+}
+
+function isInspectionOutcome(
+  value: string,
+): value is ChatInspection["outcome"] {
+  return (
+    value === "completed" ||
+    value === "abstained" ||
+    value === "cancelled" ||
+    value === "failed"
+  );
 }
 
 function telemetryValue(value: unknown): ChatTelemetry {
@@ -264,4 +390,37 @@ function numberValue(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isFinite(value))
     throw new TypeError(`${label} must be a number.`);
   return value;
+}
+
+function nonNegativeNumberValue(value: unknown, label: string): number {
+  const number = numberValue(value, label);
+  if (number < 0) throw new TypeError(`${label} must not be negative.`);
+  return number;
+}
+
+function nullableNonNegativeNumberValue(
+  value: unknown,
+  label: string,
+): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return nonNegativeNumberValue(value, label);
+}
+
+function measurementValue(value: unknown, label: string): number | null {
+  if (value === null) return null;
+  return nonNegativeNumberValue(value, label);
+}
+
+function optionalStringValue(
+  value: unknown,
+  label: string,
+): string | undefined {
+  if (value === undefined) return undefined;
+  return stringValue(value, label);
+}
+
+function nullableStringValue(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  return stringValue(value, label);
 }

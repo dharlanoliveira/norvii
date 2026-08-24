@@ -170,6 +170,9 @@ class FormProvider implements ResearchProvider {
   getDocument(): Promise<DocumentResponse> {
     return Promise.reject(new Error("not used"));
   }
+  getDocumentVersion(): Promise<DocumentResponse> {
+    return Promise.reject(new Error("not used"));
+  }
   disableCorpus(): Promise<CorpusResponse> {
     return Promise.reject(new Error("not used"));
   }

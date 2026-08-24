@@ -6,7 +6,7 @@ import {
   Languages,
   Link2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 
@@ -16,11 +16,15 @@ import type {
   SourceResponse,
 } from "../../api/contract";
 import type { ChatProvider, ChatReference } from "../../api/chat";
-import type { ResearchProvider } from "../../research/domain/authoritative";
+import type {
+  ResearchProvider,
+  UrlSourceDraft,
+} from "../../research/domain/authoritative";
 import { UrlSourceForm } from "../source-management/UrlSourceForm";
 import { PdfSourceForm } from "../source-management/PdfSourceForm";
 import { SourceStatus } from "../source-management/SourceStatus";
 import { LegalDocumentReader } from "./LegalDocumentReader";
+import { resolveVisibleUnitId, type CitedRange } from "./citationLocation";
 import { ResearchChat } from "./ResearchChat";
 import { SourceSelectionPrompt } from "./SourceSelectionPrompt";
 import {
@@ -46,8 +50,24 @@ type WorkspaceState =
 type DocumentState =
   | { readonly status: "idle" }
   | { readonly status: "loading" }
-  | { readonly status: "ready"; readonly document: DocumentResponse }
+  | {
+      readonly status: "ready";
+      readonly document: DocumentResponse;
+      readonly citedRange?: CitedRange | undefined;
+    }
   | { readonly status: "failed" };
+
+interface CitationTarget {
+  readonly citedRange: CitedRange;
+  readonly documentVersionId: string;
+  readonly source: SourceResponse;
+}
+
+interface ResolvedCitationDocument {
+  readonly citedRange: CitedRange;
+  readonly document: DocumentResponse;
+  readonly selectedUnitId: string;
+}
 
 export function CorpusWorkspacePage({
   provider,
@@ -74,16 +94,84 @@ function LoadedCorpusWorkspace({
   chatProvider,
 }: LoadedCorpusWorkspaceProps) {
   const { t } = useTranslation();
-  const [state, setState] = useState<WorkspaceState>({ status: "loading" });
+  const { registerCreatedSource, replaceSource, state } = useCorpusData(
+    provider,
+    corpusId,
+  );
+  const sourceForms = useSourceForms(provider, corpusId, registerCreatedSource);
   const [mode, setMode] = useState<WorkspaceMode>("chat");
-  const [selectedSourceId, setSelectedSourceId] = useState<string>();
-  const [documentState, setDocumentState] = useState<DocumentState>({
-    status: "idle",
+  const sourceViewer = useSourceViewer(provider, corpusId, () => {
+    setMode("source");
   });
-  const [showUrlForm, setShowUrlForm] = useState(false);
-  const [showPdfForm, setShowPdfForm] = useState(false);
+
+  if (state.status === "loading")
+    return <output>{t("workspace.loading")}</output>;
+  if (state.status === "failed")
+    return <p role="alert">{t("workspace.loadFailed")}</p>;
+
+  const selectedSource = state.sources.find(
+    (source) => source.id === sourceViewer.selectedSourceId,
+  );
+  const availableSource = state.sources[0];
+  return (
+    <section className="workspace-page" aria-labelledby="workspace-title">
+      <WorkspaceHeader corpus={state.corpus} />
+      <div className="workspace-frame">
+        <SourceLibrary
+          addSourceRef={sourceForms.addSourceRef}
+          onCreatePdfSource={sourceForms.createPdfSource}
+          onCreateUrlSource={sourceForms.createUrlSource}
+          onSelectSource={sourceViewer.selectSource}
+          onTogglePdfForm={sourceForms.togglePdfForm}
+          onToggleUrlForm={sourceForms.toggleUrlForm}
+          selectedSourceId={sourceViewer.selectedSourceId}
+          showPdfForm={sourceForms.showPdfForm}
+          showUrlForm={sourceForms.showUrlForm}
+          sources={state.sources}
+        />
+        <WorkspacePrimary
+          availableSource={availableSource}
+          chatProvider={chatProvider}
+          citationUnavailable={sourceViewer.citationUnavailable}
+          corpusId={corpusId}
+          documentState={sourceViewer.documentState}
+          mode={mode}
+          onAddSource={sourceForms.showAddSourceForm}
+          onModeChange={setMode}
+          onReferenceSelect={(reference) =>
+            sourceViewer.selectReference(state.sources, reference)
+          }
+          onSelectSource={sourceViewer.selectSource}
+          onSelectUnit={sourceViewer.selectUnit}
+          onReprocess={async (source, signal) => {
+            const updated = await provider.reprocessSource(
+              corpusId,
+              source.id,
+              source.version,
+              signal,
+            );
+            replaceSource(updated);
+          }}
+          onRetry={async (source, signal) => {
+            const updated = await provider.retrySource(
+              corpusId,
+              source.id,
+              source.version,
+              signal,
+            );
+            replaceSource(updated);
+          }}
+          selectedSource={selectedSource}
+          selectedUnitId={sourceViewer.selectedUnitId}
+        />
+      </div>
+    </section>
+  );
+}
+
+function useCorpusData(provider: ResearchProvider, corpusId: string) {
+  const [state, setState] = useState<WorkspaceState>({ status: "loading" });
   const [pollSources, setPollSources] = useState(false);
-  const [selectedUnitId, setSelectedUnitId] = useState<string>();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -131,9 +219,104 @@ function LoadedCorpusWorkspace({
     };
   }, [corpusId, pollSources, provider]);
 
+  const registerCreatedSource = (source: SourceResponse): void => {
+    setState((current) =>
+      current.status === "ready"
+        ? { ...current, sources: [...current.sources, source] }
+        : current,
+    );
+    setPollSources(true);
+  };
+  const replaceSource = (updated: SourceResponse): void => {
+    setState((current) =>
+      current.status === "ready"
+        ? {
+            ...current,
+            sources: current.sources.map((source) =>
+              source.id === updated.id ? updated : source,
+            ),
+          }
+        : current,
+    );
+    setPollSources(isActiveSource(updated));
+  };
+
+  return { registerCreatedSource, replaceSource, state };
+}
+
+function useSourceForms(
+  provider: ResearchProvider,
+  corpusId: string,
+  registerCreatedSource: (source: SourceResponse) => void,
+) {
+  const [showUrlForm, setShowUrlForm] = useState(false);
+  const [showPdfForm, setShowPdfForm] = useState(false);
+  const addSourceRef = useRef<HTMLButtonElement>(null);
+
+  const showAddSourceForm = (): void => {
+    setShowPdfForm(false);
+    setShowUrlForm(true);
+    requestAnimationFrame(() => addSourceRef.current?.focus());
+  };
+  const toggleUrlForm = (): void => {
+    setShowPdfForm(false);
+    setShowUrlForm((visible) => !visible);
+  };
+  const togglePdfForm = (): void => {
+    setShowUrlForm(false);
+    setShowPdfForm((visible) => !visible);
+  };
+  const createUrlSource = async (
+    draft: UrlSourceDraft,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const source = await provider.createUrlSource(corpusId, draft, signal);
+    registerCreatedSource(source);
+    setShowUrlForm(false);
+  };
+  const createPdfSource = async (
+    title: string,
+    file: File,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const source = await provider.createPdfSource(
+      corpusId,
+      title,
+      file,
+      signal,
+    );
+    registerCreatedSource(source);
+    setShowPdfForm(false);
+  };
+
+  return {
+    addSourceRef,
+    createPdfSource,
+    createUrlSource,
+    showAddSourceForm,
+    showPdfForm,
+    showUrlForm,
+    togglePdfForm,
+    toggleUrlForm,
+  };
+}
+
+function useSourceViewer(
+  provider: ResearchProvider,
+  corpusId: string,
+  activateSourceMode: () => void,
+) {
+  const [selectedSourceId, setSelectedSourceId] = useState<string>();
+  const [documentState, setDocumentState] = useState<DocumentState>({
+    status: "idle",
+  });
+  const [selectedUnitId, setSelectedUnitId] = useState<string>();
+  const [citationUnavailable, setCitationUnavailable] = useState(false);
+
   const selectSource = (source: SourceResponse, unitLocator?: string): void => {
+    setCitationUnavailable(false);
     setSelectedSourceId(source.id);
-    setMode("source");
+    activateSourceMode();
     if (source.processingStatus !== "ready") {
       setDocumentState({ status: "idle" });
       return;
@@ -154,221 +337,398 @@ function LoadedCorpusWorkspace({
         if (!controller.signal.aborted) setDocumentState({ status: "failed" });
       });
   };
-
-  if (state.status === "loading")
-    return <output>{t("workspace.loading")}</output>;
-  if (state.status === "failed")
-    return <p role="alert">{t("workspace.loadFailed")}</p>;
-
-  const selectedSource = state.sources.find(
-    (source) => source.id === selectedSourceId,
-  );
-  const selectReference = (reference: ChatReference): void => {
-    const source = state.sources.find(
-      (source) => source.id === reference.sourceId,
-    );
-    if (source === undefined) return;
-    selectSource(source, reference.unitLocator);
+  const selectReference = (
+    sources: readonly SourceResponse[],
+    reference: ChatReference,
+  ): void => {
+    const target = resolveCitationTarget(corpusId, sources, reference);
+    if (target === undefined) {
+      setCitationUnavailable(true);
+      return;
+    }
+    setSelectedSourceId(target.source.id);
+    activateSourceMode();
+    setCitationUnavailable(false);
+    setDocumentState({ status: "loading" });
+    const controller = new AbortController();
+    void provider
+      .getDocumentVersion(
+        corpusId,
+        target.source.id,
+        target.documentVersionId,
+        controller.signal,
+      )
+      .then((document) => {
+        const resolvedDocument = resolveCitationDocument(
+          document,
+          reference.unitLocator,
+          target.citedRange,
+        );
+        if (
+          resolvedDocument === undefined ||
+          document.id !== target.documentVersionId
+        ) {
+          setCitationUnavailable(true);
+          setDocumentState({ status: "idle" });
+          return;
+        }
+        setSelectedUnitId(resolvedDocument.selectedUnitId);
+        setDocumentState({
+          status: "ready",
+          document: resolvedDocument.document,
+          citedRange: resolvedDocument.citedRange,
+        });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setCitationUnavailable(true);
+          setDocumentState({ status: "idle" });
+        }
+      });
   };
-  return (
-    <section className="workspace-page" aria-labelledby="workspace-title">
-      <header className="workspace-heading">
-        <div>
-          <Link className="workspace-heading__back" to="/">
-            <ArrowLeft aria-hidden="true" size={15} />
-            {t("workspace.backToCatalog")}
-          </Link>
-          <p className="kicker">{t("workspace.activeCorpus")}</p>
-          <h1 id="workspace-title">{state.corpus.name}</h1>
-        </div>
-        <div className="workspace-heading__meta">
-          <Languages aria-hidden="true" size={15} />
-          <span>{t(`language.${state.corpus.language}`)}</span>
-          <span>{state.corpus.jurisdiction}</span>
-        </div>
-      </header>
-      <div className="workspace-frame">
-        <aside
-          className="source-library"
-          aria-labelledby="source-library-title"
-        >
-          <header>
-            <p>{t("workspace.library")}</p>
-            <span id="source-library-title">
-              {t("workspace.libraryDescription")}
-            </span>
-          </header>
-          <div className="source-library__actions">
-            <button
-              type="button"
-              aria-controls="url-source-form"
-              aria-expanded={showUrlForm}
-              onClick={() => {
-                setShowPdfForm(false);
-                setShowUrlForm((visible) => !visible);
-              }}
-            >
-              <Link2 aria-hidden="true" size={15} />
-              {t("sourceManagement.addUrl")}
-            </button>
-            <button
-              type="button"
-              aria-controls="pdf-source-form"
-              aria-expanded={showPdfForm}
-              onClick={() => {
-                setShowUrlForm(false);
-                setShowPdfForm((visible) => !visible);
-              }}
-            >
-              <FileUp aria-hidden="true" size={15} />
-              {t("sourceManagement.addPdf")}
-            </button>
-          </div>
-          {showUrlForm ? (
-            <UrlSourceForm
-              onSubmit={async (draft, signal) => {
-                const created = await provider.createUrlSource(
-                  corpusId,
-                  draft,
-                  signal,
-                );
-                setState((current) =>
-                  current.status === "ready"
-                    ? { ...current, sources: [...current.sources, created] }
-                    : current,
-                );
-                setPollSources(true);
-                setShowUrlForm(false);
-              }}
-            />
-          ) : null}
-          {showPdfForm ? (
-            <PdfSourceForm
-              onSubmit={async (title, file, signal) => {
-                const created = await provider.createPdfSource(
-                  corpusId,
-                  title,
-                  file,
-                  signal,
-                );
-                setState((current) =>
-                  current.status === "ready"
-                    ? { ...current, sources: [...current.sources, created] }
-                    : current,
-                );
-                setPollSources(true);
-                setShowPdfForm(false);
-              }}
-            />
-          ) : null}
-          {state.sources.length === 0 ? (
-            <output>{t("workspace.emptySources")}</output>
-          ) : null}
-          <div className="source-tree" role="tree" aria-label={t("tree.label")}>
-            {state.sources.map((source) => {
-              const statusLabel = t(`sourceStatus.${source.processingStatus}`);
-              return (
-                <button
-                  type="button"
-                  role="treeitem"
-                  aria-selected={source.id === selectedSourceId}
-                  aria-label={`${source.title} (${statusLabel})`}
-                  className="source-tree__source"
-                  key={source.id}
-                  onClick={() => selectSource(source)}
-                >
-                  {source.kind === "pdf" ? (
-                    <FileText aria-hidden="true" size={15} />
-                  ) : (
-                    <ExternalLink aria-hidden="true" size={15} />
-                  )}
-                  <span>{source.title}</span>
-                  <small>{statusLabel}</small>
-                </button>
-              );
-            })}
-          </div>
-        </aside>
-        <section className="workspace-primary">
-          <header className="workspace-primary__toolbar">
-            <WorkspaceModeSelector mode={mode} onChange={setMode} />
-          </header>
-          <div id="chat-panel" role="tabpanel" hidden={mode !== "chat"}>
-            <ResearchChat
-              corpusId={corpusId}
-              provider={chatProvider}
-              onReferenceSelect={selectReference}
-            />
-          </div>
-          <div
-            id="source-panel"
-            role="tabpanel"
-            hidden={mode !== "source"}
-            className={!selectedSource ? "source-panel--empty" : undefined}
-          >
-            {!selectedSource ? <SourceSelectionPrompt /> : null}
-            {selectedSource ? (
-              <SourceStatus
-                source={selectedSource}
-                onRetry={async (source, signal) => {
-                  const updated = await provider.retrySource(
-                    corpusId,
-                    source.id,
-                    source.version,
-                    signal,
-                  );
-                  replaceSource(updated);
-                }}
-                onReprocess={async (source, signal) => {
-                  const updated = await provider.reprocessSource(
-                    corpusId,
-                    source.id,
-                    source.version,
-                    signal,
-                  );
-                  replaceSource(updated);
-                }}
-              />
-            ) : null}
-            {selectedSource && selectedSource.processingStatus !== "ready" ? (
-              <output>
-                {t(`sourceStatus.${selectedSource.processingStatus}`)}
-              </output>
-            ) : null}
-            {documentState.status === "loading" ? (
-              <output>{t("viewer.loading")}</output>
-            ) : null}
-            {documentState.status === "failed" ? (
-              <p role="alert">{t("viewer.loadFailed")}</p>
-            ) : null}
-            {documentState.status === "ready" ? (
-              <div className="source-document">
-                <LegalDocumentReader
-                  document={documentState.document}
-                  selectedUnitId={selectedUnitId}
-                  onSelect={setSelectedUnitId}
-                />
-              </div>
-            ) : null}
-          </div>
-        </section>
-      </div>
-    </section>
-  );
-
-  function replaceSource(updated: SourceResponse): void {
-    setState((current) =>
-      current.status === "ready"
-        ? {
-            ...current,
-            sources: current.sources.map((source) =>
-              source.id === updated.id ? updated : source,
-            ),
-          }
+  const selectUnit = (unitId: string): void => {
+    setSelectedUnitId(unitId);
+    setDocumentState((current) =>
+      current.status === "ready" && current.citedRange !== undefined
+        ? { ...current, citedRange: undefined }
         : current,
     );
-    setPollSources(isActiveSource(updated));
-  }
+  };
+
+  return {
+    citationUnavailable,
+    documentState,
+    selectedSourceId,
+    selectedUnitId,
+    selectReference,
+    selectSource,
+    selectUnit,
+  };
+}
+
+function WorkspaceHeader({ corpus }: { readonly corpus: CorpusResponse }) {
+  const { t } = useTranslation();
+  return (
+    <header className="workspace-heading">
+      <div>
+        <Link className="workspace-heading__back" to="/">
+          <ArrowLeft aria-hidden="true" size={15} />
+          {t("workspace.backToCatalog")}
+        </Link>
+        <p className="kicker">{t("workspace.activeCorpus")}</p>
+        <h1 id="workspace-title">{corpus.name}</h1>
+      </div>
+      <div className="workspace-heading__meta">
+        <Languages aria-hidden="true" size={15} />
+        <span>{t(`language.${corpus.language}`)}</span>
+        <span>{corpus.jurisdiction}</span>
+      </div>
+    </header>
+  );
+}
+
+interface SourceLibraryProps {
+  readonly addSourceRef: RefObject<HTMLButtonElement | null>;
+  readonly onCreatePdfSource: (
+    title: string,
+    file: File,
+    signal: AbortSignal,
+  ) => Promise<void>;
+  readonly onCreateUrlSource: (
+    draft: UrlSourceDraft,
+    signal: AbortSignal,
+  ) => Promise<void>;
+  readonly onSelectSource: (
+    source: SourceResponse,
+    unitLocator?: string,
+  ) => void;
+  readonly onTogglePdfForm: () => void;
+  readonly onToggleUrlForm: () => void;
+  readonly selectedSourceId?: string | undefined;
+  readonly showPdfForm: boolean;
+  readonly showUrlForm: boolean;
+  readonly sources: readonly SourceResponse[];
+}
+
+function SourceLibrary({
+  addSourceRef,
+  onCreatePdfSource,
+  onCreateUrlSource,
+  onSelectSource,
+  onTogglePdfForm,
+  onToggleUrlForm,
+  selectedSourceId,
+  showPdfForm,
+  showUrlForm,
+  sources,
+}: SourceLibraryProps) {
+  const { t } = useTranslation();
+  return (
+    <aside className="source-library" aria-labelledby="source-library-title">
+      <header>
+        <p>{t("workspace.library")}</p>
+        <span id="source-library-title">
+          {t("workspace.libraryDescription")}
+        </span>
+      </header>
+      <div className="source-library__actions">
+        <button
+          type="button"
+          ref={addSourceRef}
+          aria-controls="url-source-form"
+          aria-expanded={showUrlForm}
+          onClick={onToggleUrlForm}
+        >
+          <Link2 aria-hidden="true" size={15} />
+          {t("sourceManagement.addUrl")}
+        </button>
+        <button
+          type="button"
+          aria-controls="pdf-source-form"
+          aria-expanded={showPdfForm}
+          onClick={onTogglePdfForm}
+        >
+          <FileUp aria-hidden="true" size={15} />
+          {t("sourceManagement.addPdf")}
+        </button>
+      </div>
+      {showUrlForm ? <UrlSourceForm onSubmit={onCreateUrlSource} /> : null}
+      {showPdfForm ? <PdfSourceForm onSubmit={onCreatePdfSource} /> : null}
+      {sources.length === 0 ? (
+        <output>{t("workspace.emptySources")}</output>
+      ) : null}
+      <div className="source-tree" role="tree" aria-label={t("tree.label")}>
+        {sources.map((source) => (
+          <SourceTreeItem
+            key={source.id}
+            onSelect={onSelectSource}
+            selected={source.id === selectedSourceId}
+            source={source}
+          />
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function SourceTreeItem({
+  onSelect,
+  selected,
+  source,
+}: {
+  readonly onSelect: (source: SourceResponse) => void;
+  readonly selected: boolean;
+  readonly source: SourceResponse;
+}) {
+  const { t } = useTranslation();
+  const statusLabel = t(`sourceStatus.${source.processingStatus}`);
+  return (
+    <button
+      type="button"
+      role="treeitem"
+      aria-selected={selected}
+      aria-label={`${source.title} (${statusLabel})`}
+      className="source-tree__source"
+      onClick={() => onSelect(source)}
+    >
+      {source.kind === "pdf" ? (
+        <FileText aria-hidden="true" size={15} />
+      ) : (
+        <ExternalLink aria-hidden="true" size={15} />
+      )}
+      <span>{source.title}</span>
+      <small>{statusLabel}</small>
+    </button>
+  );
+}
+
+interface WorkspacePrimaryProps {
+  readonly availableSource?: SourceResponse | undefined;
+  readonly chatProvider?: ChatProvider | undefined;
+  readonly citationUnavailable: boolean;
+  readonly corpusId: string;
+  readonly documentState: DocumentState;
+  readonly mode: WorkspaceMode;
+  readonly onAddSource: () => void;
+  readonly onModeChange: (mode: WorkspaceMode) => void;
+  readonly onReferenceSelect: (reference: ChatReference) => void;
+  readonly onReprocess: (
+    source: SourceResponse,
+    signal: AbortSignal,
+  ) => Promise<void>;
+  readonly onRetry: (
+    source: SourceResponse,
+    signal: AbortSignal,
+  ) => Promise<void>;
+  readonly onSelectSource: (source: SourceResponse) => void;
+  readonly onSelectUnit: (unitId: string) => void;
+  readonly selectedSource?: SourceResponse | undefined;
+  readonly selectedUnitId?: string | undefined;
+}
+
+function WorkspacePrimary({
+  availableSource,
+  chatProvider,
+  citationUnavailable,
+  corpusId,
+  documentState,
+  mode,
+  onAddSource,
+  onModeChange,
+  onReferenceSelect,
+  onReprocess,
+  onRetry,
+  onSelectSource,
+  onSelectUnit,
+  selectedSource,
+  selectedUnitId,
+}: WorkspacePrimaryProps) {
+  return (
+    <section className="workspace-primary">
+      <header className="workspace-primary__toolbar">
+        <WorkspaceModeSelector mode={mode} onChange={onModeChange} />
+      </header>
+      <div id="chat-panel" role="tabpanel" hidden={mode !== "chat"}>
+        <ResearchChat
+          corpusId={corpusId}
+          provider={chatProvider}
+          onReferenceSelect={onReferenceSelect}
+        />
+      </div>
+      <SourcePanel
+        availableSource={availableSource}
+        citationUnavailable={citationUnavailable}
+        documentState={documentState}
+        hidden={mode !== "source"}
+        onAddSource={onAddSource}
+        onReprocess={onReprocess}
+        onRetry={onRetry}
+        onSelectSource={onSelectSource}
+        onSelectUnit={onSelectUnit}
+        selectedSource={selectedSource}
+        selectedUnitId={selectedUnitId}
+      />
+    </section>
+  );
+}
+
+interface SourcePanelProps {
+  readonly availableSource?: SourceResponse | undefined;
+  readonly citationUnavailable: boolean;
+  readonly documentState: DocumentState;
+  readonly hidden: boolean;
+  readonly onAddSource: () => void;
+  readonly onReprocess: (
+    source: SourceResponse,
+    signal: AbortSignal,
+  ) => Promise<void>;
+  readonly onRetry: (
+    source: SourceResponse,
+    signal: AbortSignal,
+  ) => Promise<void>;
+  readonly onSelectSource: (source: SourceResponse) => void;
+  readonly onSelectUnit: (unitId: string) => void;
+  readonly selectedSource?: SourceResponse | undefined;
+  readonly selectedUnitId?: string | undefined;
+}
+
+function SourcePanel({
+  availableSource,
+  citationUnavailable,
+  documentState,
+  hidden,
+  onAddSource,
+  onReprocess,
+  onRetry,
+  onSelectSource,
+  onSelectUnit,
+  selectedSource,
+  selectedUnitId,
+}: SourcePanelProps) {
+  const { t } = useTranslation();
+  return (
+    <div
+      id="source-panel"
+      role="tabpanel"
+      hidden={hidden}
+      className={
+        selectedSource === undefined ? "source-panel--empty" : undefined
+      }
+    >
+      {selectedSource === undefined ? (
+        <SourceSelectionPrompt
+          sourceTitle={availableSource?.title}
+          onOpenSource={
+            availableSource === undefined
+              ? undefined
+              : () => onSelectSource(availableSource)
+          }
+          onAddSource={onAddSource}
+        />
+      ) : (
+        <SelectedSourceContent
+          citationUnavailable={citationUnavailable}
+          documentState={documentState}
+          onReprocess={onReprocess}
+          onRetry={onRetry}
+          onSelectUnit={onSelectUnit}
+          selectedSource={selectedSource}
+          selectedUnitId={selectedUnitId}
+        />
+      )}
+      {selectedSource === undefined && citationUnavailable ? (
+        <p role="alert">{t("errors.unavailableCitation")}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function SelectedSourceContent({
+  citationUnavailable,
+  documentState,
+  onReprocess,
+  onRetry,
+  onSelectUnit,
+  selectedSource,
+  selectedUnitId,
+}: Omit<
+  SourcePanelProps,
+  "availableSource" | "hidden" | "onAddSource" | "onSelectSource"
+> & {
+  readonly selectedSource: SourceResponse;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <SourceStatus
+        source={selectedSource}
+        onRetry={onRetry}
+        onReprocess={onReprocess}
+      />
+      {selectedSource.processingStatus !== "ready" ? (
+        <output>{t(`sourceStatus.${selectedSource.processingStatus}`)}</output>
+      ) : null}
+      {documentState.status === "loading" ? (
+        <output>{t("viewer.loading")}</output>
+      ) : null}
+      {documentState.status === "failed" ? (
+        <p role="alert">{t("viewer.loadFailed")}</p>
+      ) : null}
+      {citationUnavailable ? (
+        <p role="alert">{t("errors.unavailableCitation")}</p>
+      ) : null}
+      {documentState.status === "ready" ? (
+        <div className="source-document">
+          <LegalDocumentReader
+            document={documentState.document}
+            selectedUnitId={selectedUnitId}
+            onSelect={onSelectUnit}
+            citedRange={documentState.citedRange}
+          />
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 function replaceWorkspaceSources(
@@ -376,6 +736,45 @@ function replaceWorkspaceSources(
   sources: readonly SourceResponse[],
 ): WorkspaceState {
   return state.status === "ready" ? { ...state, sources } : state;
+}
+
+function resolveCitationTarget(
+  corpusId: string,
+  sources: readonly SourceResponse[],
+  reference: ChatReference,
+): CitationTarget | undefined {
+  if (
+    reference.corpusId !== corpusId ||
+    reference.documentVersionId === undefined
+  ) {
+    return undefined;
+  }
+  const source = sources.find(
+    (candidate) => candidate.id === reference.sourceId,
+  );
+  if (source === undefined) return undefined;
+  return {
+    source,
+    documentVersionId: reference.documentVersionId,
+    citedRange: {
+      startOffset: reference.startOffset,
+      endOffset: reference.endOffset,
+    },
+  };
+}
+
+function resolveCitationDocument(
+  document: DocumentResponse,
+  unitLocator: string,
+  citedRange: CitedRange,
+): ResolvedCitationDocument | undefined {
+  const selectedUnitId = resolveVisibleUnitId(
+    document,
+    unitLocator,
+    citedRange,
+  );
+  if (selectedUnitId === undefined) return undefined;
+  return { document, citedRange, selectedUnitId };
 }
 
 function isActiveSource(source: SourceResponse): boolean {

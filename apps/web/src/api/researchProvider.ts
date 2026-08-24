@@ -89,6 +89,20 @@ class HttpResearchProvider implements ResearchProvider {
     );
   }
 
+  async getDocumentVersion(
+    corpusId: string,
+    sourceId: string,
+    documentVersionId: string,
+    signal: AbortSignal,
+  ): Promise<DocumentResponse> {
+    return parseDocumentResponse(
+      await this.#request(
+        `${this.#baseUrl}/corpora/${encodeURIComponent(corpusId)}/sources/${encodeURIComponent(sourceId)}/documents/${encodeURIComponent(documentVersionId)}`,
+        signal,
+      ),
+    );
+  }
+
   async createCorpus(
     draft: CorpusDraft,
     signal: AbortSignal,

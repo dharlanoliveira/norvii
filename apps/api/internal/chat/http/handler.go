@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	chatdomain "github.com/dharlanoliveira/norvii/apps/api/internal/chat/domain"
 	"github.com/dharlanoliveira/norvii/apps/api/internal/platform/httpserver"
@@ -64,6 +65,7 @@ func (handler *Handler) stream(writer http.ResponseWriter, request *http.Request
 	}
 
 	requestID := uuid.New()
+	startedAt := time.Now()
 	writer.Header().Set("Content-Type", "text/event-stream")
 	writer.Header().Set("Cache-Control", "no-cache")
 	writer.Header().Set("Connection", "keep-alive")
@@ -81,7 +83,7 @@ func (handler *Handler) stream(writer http.ResponseWriter, request *http.Request
 		CorpusID: corpusID, Question: payload.Question, InterfaceLanguage: payload.InterfaceLanguage,
 	}, func(delta string) { deltas = append(deltas, delta) })
 	if err != nil {
-		handler.writeTerminalError(writer, requestID, err)
+		handler.writeTerminalError(writer, requestID, err, elapsedMilliseconds(startedAt))
 		return
 	}
 	if err := writeEvent(writer, "evidence", map[string]any{
@@ -96,26 +98,31 @@ func (handler *Handler) stream(writer http.ResponseWriter, request *http.Request
 			return
 		}
 	}
+	durationMilliseconds := elapsedMilliseconds(startedAt)
+	inspection := inspectionResponse(result.Inspection, result.Evidence, durationMilliseconds, "completed")
 	_ = writeEvent(writer, "completed", map[string]any{
 		"type": "completed", "requestId": requestID,
 		"answer": result.Answer, "references": evidenceResponses(result.Evidence),
-		"telemetry": map[string]any{"outcome": "completed", "evidenceCount": len(result.Evidence), "durationMilliseconds": 0},
+		"telemetry":  map[string]any{"outcome": "completed", "evidenceCount": len(result.Evidence), "durationMilliseconds": durationMilliseconds},
+		"inspection": inspection,
 	})
 }
 
-func (handler *Handler) writeTerminalError(writer http.ResponseWriter, requestID uuid.UUID, err error) {
+func (handler *Handler) writeTerminalError(writer http.ResponseWriter, requestID uuid.UUID, err error, durationMilliseconds int64) {
 	if errors.Is(err, context.Canceled) {
 		_ = writeEvent(writer, "cancelled", map[string]any{
 			"type": "cancelled", "requestId": requestID,
-			"telemetry": map[string]any{"outcome": "cancelled", "evidenceCount": 0, "durationMilliseconds": 0},
+			"telemetry":  map[string]any{"outcome": "cancelled", "evidenceCount": 0, "durationMilliseconds": durationMilliseconds},
+			"inspection": inspectionResponse(nil, nil, durationMilliseconds, "cancelled"),
 		})
 		return
 	}
 	if errors.Is(err, chatdomain.ErrInsufficientEvidence) || errors.Is(err, chatdomain.ErrGroundingValidation) {
 		_ = writeEvent(writer, "abstained", map[string]any{
 			"type": "abstained", "requestId": requestID,
-			"reason":    "insufficient_evidence",
-			"telemetry": map[string]any{"outcome": "abstained", "evidenceCount": 0, "durationMilliseconds": 0},
+			"reason":     "insufficient_evidence",
+			"telemetry":  map[string]any{"outcome": "abstained", "evidenceCount": 0, "durationMilliseconds": durationMilliseconds},
+			"inspection": inspectionResponse(nil, nil, durationMilliseconds, "abstained"),
 		})
 		return
 	}
@@ -128,21 +135,27 @@ func (handler *Handler) writeTerminalError(writer http.ResponseWriter, requestID
 	}
 	_ = writeEvent(writer, "error", map[string]any{
 		"type": "error", "requestId": requestID, "code": code,
-		"message":   "The grounded chat request could not be completed.",
-		"telemetry": map[string]any{"outcome": "failed", "evidenceCount": 0, "durationMilliseconds": 0},
+		"message":    "The grounded chat request could not be completed.",
+		"telemetry":  map[string]any{"outcome": "failed", "evidenceCount": 0, "durationMilliseconds": durationMilliseconds},
+		"inspection": inspectionResponse(nil, nil, durationMilliseconds, "failed"),
 	})
 }
 
 type evidenceResponse struct {
-	ID          string    `json:"id"`
-	CorpusID    uuid.UUID `json:"corpusId"`
-	SourceID    uuid.UUID `json:"sourceId"`
-	DocumentID  uuid.UUID `json:"documentId"`
-	UnitLocator string    `json:"unitLocator"`
-	StartOffset int       `json:"startOffset"`
-	EndOffset   int       `json:"endOffset"`
-	Excerpt     string    `json:"excerpt"`
-	Rank        int       `json:"rank"`
+	ID                string    `json:"id"`
+	CorpusID          uuid.UUID `json:"corpusId"`
+	SourceID          uuid.UUID `json:"sourceId"`
+	DocumentID        uuid.UUID `json:"documentId"`
+	DocumentVersionID uuid.UUID `json:"documentVersionId,omitempty"`
+	SourceRevisionID  uuid.UUID `json:"sourceRevisionId,omitempty"`
+	PipelineVersion   string    `json:"pipelineVersion,omitempty"`
+	SourceTitle       string    `json:"sourceTitle,omitempty"`
+	UnitLocator       string    `json:"unitLocator"`
+	StartOffset       int       `json:"startOffset"`
+	EndOffset         int       `json:"endOffset"`
+	Excerpt           string    `json:"excerpt"`
+	Rank              int       `json:"rank"`
+	CosineDistance    *float64  `json:"cosineDistance"`
 }
 
 func evidenceResponses(evidence []chatdomain.Evidence) []evidenceResponse {
@@ -150,12 +163,69 @@ func evidenceResponses(evidence []chatdomain.Evidence) []evidenceResponse {
 	for _, item := range evidence {
 		responses = append(responses, evidenceResponse{
 			ID: item.ID, CorpusID: item.CorpusID, SourceID: item.SourceID,
-			DocumentID: item.DocumentID, UnitLocator: item.UnitLocator,
+			DocumentID: item.DocumentID, DocumentVersionID: item.DocumentVersionID,
+			SourceRevisionID: item.SourceRevisionID, PipelineVersion: item.PipelineVersion,
+			SourceTitle: item.SourceTitle, UnitLocator: item.UnitLocator,
 			StartOffset: item.StartOffset, EndOffset: item.EndOffset,
-			Excerpt: item.Excerpt, Rank: item.Rank,
+			Excerpt: item.Excerpt, Rank: item.Rank, CosineDistance: item.CosineDistance,
 		})
 	}
 	return responses
+}
+
+type inspectionEventResponse struct {
+	Outcome      string              `json:"outcome"`
+	Retrieval    *retrievalResponse  `json:"retrieval,omitempty"`
+	Measurements measurementResponse `json:"measurements"`
+	Evidence     []evidenceResponse  `json:"evidence,omitempty"`
+}
+
+type retrievalResponse struct {
+	Strategy       string  `json:"strategy"`
+	TopK           int     `json:"topK"`
+	ReturnedCount  int     `json:"returnedCount"`
+	EmbeddingModel *string `json:"embeddingModel"`
+}
+
+type measurementResponse struct {
+	RetrievalMilliseconds  *int64 `json:"retrievalMilliseconds"`
+	GenerationMilliseconds *int64 `json:"generationMilliseconds"`
+	TotalMilliseconds      *int64 `json:"totalMilliseconds"`
+	InputTokens            *int64 `json:"inputTokens"`
+	OutputTokens           *int64 `json:"outputTokens"`
+}
+
+func inspectionResponse(inspection *chatdomain.Inspection, evidence []chatdomain.Evidence, total int64, outcome string) inspectionEventResponse {
+	if inspection == nil {
+		inspection = &chatdomain.Inspection{Outcome: outcome, Evidence: evidence}
+	}
+	inspectionCopy := *inspection
+	inspectionCopy.Outcome = outcome
+	inspectionCopy.Measurements.TotalMilliseconds = &total
+	response := inspectionEventResponse{
+		Outcome: inspectionCopy.Outcome,
+		Measurements: measurementResponse{
+			RetrievalMilliseconds:  inspectionCopy.Measurements.RetrievalMilliseconds,
+			GenerationMilliseconds: inspectionCopy.Measurements.GenerationMilliseconds,
+			TotalMilliseconds:      inspectionCopy.Measurements.TotalMilliseconds,
+			InputTokens:            inspectionCopy.Measurements.InputTokens,
+			OutputTokens:           inspectionCopy.Measurements.OutputTokens,
+		},
+	}
+	if inspectionCopy.Retrieval != nil {
+		response.Retrieval = &retrievalResponse{
+			Strategy: inspectionCopy.Retrieval.Strategy, TopK: inspectionCopy.Retrieval.TopK,
+			ReturnedCount: inspectionCopy.Retrieval.ReturnedCount, EmbeddingModel: inspectionCopy.Retrieval.EmbeddingModel,
+		}
+	}
+	if outcome == "completed" {
+		response.Evidence = evidenceResponses(inspectionCopy.Evidence)
+	}
+	return response
+}
+
+func elapsedMilliseconds(startedAt time.Time) int64 {
+	return time.Since(startedAt).Milliseconds()
 }
 
 func writeEvent(writer http.ResponseWriter, name string, value any) error {

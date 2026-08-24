@@ -24,6 +24,14 @@
 - Keep English and Portuguese resources structurally complete and type-safe, with English as the default locale. Do not translate legal content, citations, user input, or generated answers through interface resources.
 - Avoid large page components, prop drilling across many layers, effect-driven state machines, and premature memoization.
 
+## React orchestration and complexity control
+
+- A page component may compose feature concerns, but it must not own several independent lifecycles at once. Treat server loading and refresh, mutation forms, source or document selection, streaming, and transient display state as separate concerns.
+- When a component starts coordinating more than one of those concerns, extract the lifecycle into a focused hook or child component. Give the extracted unit a domain name and a small input/output contract; do not hide the same branching in a generic helper.
+- Keep async effects and their cleanup next to the state they own. A hook that polls sources should not also own form visibility; a document-selection hook should not also mutate source records.
+- Use a complexity checkpoint before handoff for changed React pages, hooks, and event handlers: review each conditional branch for a distinct responsibility, and split independent decision trees before static analysis reports cognitive complexity.
+- If SonarCloud or another configured analyzer reports cognitive complexity, fix the design and add user-visible tests for the extracted behavior. Do not disable the rule, raise the threshold, or replace the finding with superficial wrappers.
+
 ## Network and streaming
 
 - Validate responses and streaming parts at the client boundary.
