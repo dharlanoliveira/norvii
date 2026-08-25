@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SnapshotResponse, SourceResponse } from "../../api/contract";
+import { ResearchRequestError } from "../../api/researchProvider";
 import { renderAtRoute } from "../../test/render";
 import { SourceStatus } from "./SourceStatus";
 
@@ -196,7 +197,102 @@ describe("source lifecycle status", () => {
     expect(screen.getByText("Graph release")).toBeVisible();
     expect(loadSnapshots).toHaveBeenCalledWith(expect.any(AbortSignal));
   });
+
+  it("explains a failed lifecycle action without losing the source state", async () => {
+    const user = userEvent.setup();
+    renderAtRoute(
+      <SourceStatus
+        source={source("failed")}
+        onLoadGraphRelease={vi.fn().mockRejectedValue(new Error("not used"))}
+        onLoadSnapshotHistory={vi.fn().mockResolvedValue([])}
+        onPublish={vi.fn()}
+        onRetry={vi.fn().mockRejectedValue(new Error("unavailable"))}
+        onReprocess={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Retry ingestion" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The source action could not be queued.",
+    );
+    expect(
+      screen.getByRole("button", { name: "Retry ingestion" }),
+    ).toBeEnabled();
+  });
+
+  it("asks the researcher to reload after a stale publication attempt", async () => {
+    const user = userEvent.setup();
+    renderAtRoute(
+      <SourceStatus
+        source={source("ready")}
+        activeSnapshot={activeSnapshot()}
+        onLoadGraphRelease={vi.fn().mockRejectedValue(new Error("not used"))}
+        onLoadSnapshotHistory={vi.fn().mockResolvedValue([])}
+        onPublish={vi
+          .fn()
+          .mockRejectedValue(
+            new ResearchRequestError(
+              "stale_state",
+              "stale",
+              undefined,
+              "request-1",
+            ),
+          )}
+        onRetry={vi.fn()}
+        onReprocess={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Publish snapshot" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This source changed. Reload before trying the action again.",
+    );
+  });
+
+  it("offers the preserved PDF download when the source is a PDF", () => {
+    const readySource = source("ready");
+    renderAtRoute(
+      <SourceStatus
+        source={{
+          ...readySource,
+          kind: "pdf",
+          origin: {
+            ...readySource.origin,
+            kind: "pdf",
+            submittedUrl: null,
+            normalizedUrl: null,
+            originalFilename: "law.pdf",
+            mediaType: "application/pdf",
+          },
+        }}
+        onLoadGraphRelease={vi.fn().mockRejectedValue(new Error("not used"))}
+        onLoadSnapshotHistory={vi.fn().mockResolvedValue([])}
+        onPublish={vi.fn()}
+        onRetry={vi.fn()}
+        onReprocess={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("link", { name: "Download preserved PDF" }),
+    ).toHaveAttribute(
+      "href",
+      "/api/v1/corpora/10000000-0000-4000-8000-000000000009/sources/20000000-0000-4000-8000-000000000009/origin/pdf",
+    );
+  });
 });
+
+function activeSnapshot() {
+  return {
+    id: "70000000-0000-4000-8000-000000000001",
+    manifestSha256: "a".repeat(64),
+    createdAt: "2026-08-24T12:00:00Z",
+    activatedAt: "2026-08-24T12:00:00Z",
+    releaseVersion: 1,
+  };
+}
 
 function source(
   processingStatus: SourceResponse["processingStatus"],

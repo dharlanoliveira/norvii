@@ -391,42 +391,9 @@ def _relationships(
         return ()
     result: dict[tuple[UUID, UUID, UUID, str], SemanticRelationship] = {}
     for item in value:
-        if not isinstance(item, dict):
+        relationship = _relationship_from_item(item, units, entities_by_label)
+        if relationship is None:
             continue
-        unit = units.get(str(item.get("unitId", "")))
-        relationship_type = item.get("type")
-        try:
-            subject_label = _label(item.get("subject"))
-            object_label = _label(item.get("object"))
-        except ExtractionProviderError:
-            continue
-        subject = entities_by_label.get(subject_label.casefold())
-        object_ = entities_by_label.get(object_label.casefold())
-        if (
-            unit is None
-            or not isinstance(relationship_type, str)
-            or relationship_type not in _RELATIONSHIP_TYPES
-        ):
-            continue
-        if subject is None or object_ is None or subject.id == object_.id:
-            # A provider can emit a relationship whose labels do not map to
-            # the declared entity set. Dropping it keeps graph edges
-            # evidence-backed without discarding the valid extraction batch.
-            continue
-        qualifier = item.get("qualifier")
-        if qualifier is not None and not isinstance(qualifier, str):
-            qualifier = None
-        relationship = SemanticRelationship(
-            id=uuid5(
-                _EXTRACTION_NAMESPACE,
-                f"{unit.id}:{subject.id}:{object_.id}:{relationship_type}:{qualifier or ''}",
-            ),
-            subject_entity_id=subject.id,
-            object_entity_id=object_.id,
-            evidence_unit_id=unit.id,
-            relationship_type=relationship_type,
-            qualifier=_qualifier(qualifier),
-        )
         key = (
             relationship.subject_entity_id,
             relationship.object_entity_id,
@@ -435,6 +402,48 @@ def _relationships(
         )
         result.setdefault(key, relationship)
     return tuple(result.values())
+
+
+def _relationship_from_item(
+    value: object,
+    units: dict[str, DocumentUnit],
+    entities_by_label: dict[str, SemanticEntity],
+) -> SemanticRelationship | None:
+    """Return one valid, entity-backed relationship emitted by the provider."""
+    if not isinstance(value, dict):
+        return None
+    try:
+        subject_label = _label(value.get("subject"))
+        object_label = _label(value.get("object"))
+    except ExtractionProviderError:
+        return None
+    unit = units.get(str(value.get("unitId", "")))
+    relationship_type = value.get("type")
+    subject = entities_by_label.get(subject_label.casefold())
+    object_ = entities_by_label.get(object_label.casefold())
+    if (
+        unit is None
+        or not isinstance(relationship_type, str)
+        or relationship_type not in _RELATIONSHIP_TYPES
+        or subject is None
+        or object_ is None
+        or subject.id == object_.id
+    ):
+        return None
+    qualifier = value.get("qualifier")
+    if qualifier is not None and not isinstance(qualifier, str):
+        qualifier = None
+    return SemanticRelationship(
+        id=uuid5(
+            _EXTRACTION_NAMESPACE,
+            f"{unit.id}:{subject.id}:{object_.id}:{relationship_type}:{qualifier or ''}",
+        ),
+        subject_entity_id=subject.id,
+        object_entity_id=object_.id,
+        evidence_unit_id=unit.id,
+        relationship_type=relationship_type,
+        qualifier=_qualifier(qualifier),
+    )
 
 
 def _label(value: object) -> str:

@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -55,6 +56,55 @@ func TestSnapshotRoutesMapSafePublicationFailures(t *testing.T) {
 				"/api/v1/corpora/"+corpusID.String()+"/snapshots",
 				`{"sourceId":"`+uuid.NewString()+`","documentId":"`+uuid.NewString()+`","expectedReleaseVersion":1}`,
 			)
+			if recorder.Code != test.status || !strings.Contains(recorder.Body.String(), `"code":"`+test.code+`"`) {
+				t.Fatalf("response = %d/%s, want %d/%s", recorder.Code, recorder.Body.String(), test.status, test.code)
+			}
+		})
+	}
+}
+
+func TestSnapshotRoutesListAndGetImmutableSnapshots(t *testing.T) {
+	corpusID := uuid.New()
+	snapshot := publication(corpusID).Snapshot
+	snapshot.Members = []snapshotdomain.Member{{
+		SourceID: uuid.New(), SourceRevisionID: uuid.New(), DocumentID: uuid.New(),
+		OfficialOrigin: "https://example.org/law", CapturedAt: time.Now().UTC(), ContentSHA256: strings.Repeat("b", 64),
+	}}
+	service := &fakeSnapshotService{publication: snapshotdomain.Publication{Snapshot: snapshot}}
+	mux := http.NewServeMux()
+	NewHandler(service).Register(mux)
+
+	list := serveSnapshotRequest(mux, http.MethodGet, "/api/v1/corpora/"+corpusID.String()+"/snapshots", "")
+	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"sourceRevisionId"`) {
+		t.Fatalf("list response = %d/%s, want serialized snapshots", list.Code, list.Body.String())
+	}
+
+	get := serveSnapshotRequest(mux, http.MethodGet, "/api/v1/corpora/"+corpusID.String()+"/snapshots/"+snapshot.ID.String(), "")
+	if get.Code != http.StatusOK || !strings.Contains(get.Body.String(), `"id":"`+snapshot.ID.String()) {
+		t.Fatalf("get response = %d/%s, want snapshot", get.Code, get.Body.String())
+	}
+}
+
+func TestSnapshotRoutesRejectInvalidIdentifiersAndUnavailableService(t *testing.T) {
+	tests := []struct {
+		name    string
+		method  string
+		path    string
+		body    string
+		service *fakeSnapshotService
+		status  int
+		code    string
+	}{
+		{name: "invalid corpus", method: http.MethodGet, path: "/api/v1/corpora/not-a-uuid/snapshots", service: &fakeSnapshotService{}, status: http.StatusBadRequest, code: "invalid_input"},
+		{name: "invalid snapshot", method: http.MethodGet, path: "/api/v1/corpora/" + uuid.NewString() + "/snapshots/not-a-uuid", service: &fakeSnapshotService{}, status: http.StatusBadRequest, code: "invalid_input"},
+		{name: "invalid publication", method: http.MethodPost, path: "/api/v1/corpora/" + uuid.NewString() + "/snapshots", body: `{}`, service: &fakeSnapshotService{}, status: http.StatusBadRequest, code: "invalid_input"},
+		{name: "unavailable list", method: http.MethodGet, path: "/api/v1/corpora/" + uuid.NewString() + "/snapshots", service: &fakeSnapshotService{err: errors.New("database unavailable")}, status: http.StatusServiceUnavailable, code: "unavailable"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			NewHandler(test.service).Register(mux)
+			recorder := serveSnapshotRequest(mux, test.method, test.path, test.body)
 			if recorder.Code != test.status || !strings.Contains(recorder.Body.String(), `"code":"`+test.code+`"`) {
 				t.Fatalf("response = %d/%s, want %d/%s", recorder.Code, recorder.Body.String(), test.status, test.code)
 			}
