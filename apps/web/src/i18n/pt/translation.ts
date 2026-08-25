@@ -298,6 +298,7 @@ export const portugueseTranslation = {
       finishedAt: "Concluída em",
       attemptStatus: "Status da tentativa",
       failureCategory: "Categoria da falha",
+      failureDiagnostic: "Diagnóstico da falha",
       acquiredBytes: "Bytes adquiridos",
       normalizedCharacters: "Caracteres normalizados",
       unitCount: "Unidades do documento",

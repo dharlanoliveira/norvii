@@ -29,6 +29,16 @@ def test_worker_config_rejects_lease_shorter_than_poll_interval() -> None:
         WorkerConfig.from_environment(environment)
 
 
+def test_worker_config_rejects_provider_timeouts_that_can_expire_the_lease() -> None:
+    environment = {
+        "NORVII_INGESTION_LEASE_SECONDS": "120",
+        "NORVII_SEMANTIC_TIMEOUT_SECONDS": "180",
+    }
+
+    with pytest.raises(ConfigurationError, match="semantic and embedding timeouts"):
+        WorkerConfig.from_environment(environment)
+
+
 def test_worker_config_reuses_chat_key_when_embedding_key_is_not_set() -> None:
     config = WorkerConfig.from_environment({"NORVII_CHAT_API_KEY": "local-key"})
 

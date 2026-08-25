@@ -3,7 +3,7 @@
 ## Decision 1: Keep the graph derived and snapshot-scoped
 
 **Decision**: PostgreSQL records immutable semantic extraction artifacts and graph-release
-manifests. Neo4j receives only an idempotent projection for one published snapshot.
+manifests. Neo4j receives only an idempotent projection for one staged immutable snapshot.
 
 **Rationale**: The graph can be deleted and rebuilt without affecting legal source content or an
 active snapshot. This preserves the existing canonical/rebuildable store decision.
@@ -12,16 +12,19 @@ active snapshot. This preserves the existing canonical/rebuildable store decisio
 
 - Use Neo4j as the authority for semantic artifacts. Rejected because immutable source evidence,
   publication, and transactional source lifecycle already belong to PostgreSQL.
-- Project newest ready documents automatically. Rejected because it would make candidates visible
-  before snapshot publication.
+- Project newest ready documents directly. Rejected because it would make candidates visible
+  before snapshot and graph validation.
 
 ## Decision 2: Separate offline semantic enrichment from online retrieval
 
 **Decision**: Extract a bounded set of typed entities and relationships after immutable document
-artifacts exist. Build graph releases only through an explicit command after snapshot publication.
+artifacts exist. The ingestion worker stages an immutable snapshot, builds the graph release, and
+activates the snapshot only after validation succeeds. A separate command remains available only
+to reproduce an already recorded release.
 
-**Rationale**: Model calls cannot occur on the chat path. Explicit operation makes cost, failures,
-and graph readiness observable.
+**Rationale**: Model calls cannot occur on the chat path. Completing the offline release lifecycle
+inside ingestion keeps cost and failures observable while ensuring a successful source attempt is
+actually ready for every supported retrieval strategy.
 
 **Alternatives considered**:
 

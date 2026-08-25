@@ -27,6 +27,8 @@ from norvii_ingestion.domain.models import (
 )
 from norvii_ingestion.enrichment.embedding import EmbeddingProviderError
 from norvii_ingestion.orchestration.processor import ArtifactExtractors, IngestionProcessor
+from norvii_ingestion.publication.postgres.repository import WorkRepositoryError
+from norvii_ingestion.semantic.extraction import ExtractionProviderError
 
 
 class FakeAcquirer:
@@ -73,7 +75,14 @@ class FakeEmbeddingProvider:
 
 class FailingEmbeddingProvider:
     def embed(self, _texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
-        raise EmbeddingProviderError("provider detail must not be exposed")
+        raise EmbeddingProviderError("provider detail must not be exposed", "provider_timeout")
+
+
+class FailingSemanticExtractor:
+    def extract(self, _artifact: DocumentArtifact) -> None:
+        raise ExtractionProviderError(
+            "provider response must not be exposed", "provider_http_status_400"
+        )
 
 
 class RecordingRepository:
@@ -103,6 +112,13 @@ class RecordingRepository:
         assert work.claim.work_id.int != 0
         assert now.tzinfo is not None
         self.failures.append(failure)
+
+
+class FailingPublicationRepository(RecordingRepository):
+    def publish(self, *_args: object, **_kwargs: object) -> None:
+        raise WorkRepositoryError(
+            "database detail must not be exposed", "repository_sqlstate_23505"
+        )
 
 
 def test_processor_acquires_extracts_and_publishes_url_work() -> None:
@@ -199,7 +215,49 @@ def test_processor_preserves_the_ready_version_when_embedding_fails() -> None:
     processor.process(_work())
 
     assert repository.publications == []
-    assert repository.failures == [SafeFailure(FailureCategory.PUBLICATION_FAILED)]
+    assert repository.failures == [
+        SafeFailure(FailureCategory.PUBLICATION_FAILED, "provider_timeout")
+    ]
+
+
+def test_processor_retains_allowlisted_semantic_provider_diagnostic() -> None:
+    repository = RecordingRepository()
+    processor = IngestionProcessor(
+        repository=repository,
+        acquirer=FakeAcquirer(),
+        extractors=ArtifactExtractors(html=FakeExtractor(), pdf=FakeExtractor()),
+        pipeline_version="corpus-ingestion-v3",
+        clock=_now,
+        embedding_provider=FakeEmbeddingProvider(),
+        embedding_model="test-embedding",
+        semantic_extractor=FailingSemanticExtractor(),
+    )
+
+    processor.process(_work())
+
+    assert repository.publications == []
+    assert repository.failures == [
+        SafeFailure(FailureCategory.EXTRACTION_FAILED, "provider_http_status_400")
+    ]
+
+
+def test_processor_retains_allowlisted_repository_diagnostic() -> None:
+    repository = FailingPublicationRepository()
+    processor = IngestionProcessor(
+        repository=repository,
+        acquirer=FakeAcquirer(),
+        extractors=ArtifactExtractors(html=FakeExtractor(), pdf=FakeExtractor()),
+        pipeline_version="corpus-ingestion-v3",
+        clock=_now,
+        embedding_provider=FakeEmbeddingProvider(),
+        embedding_model="test-embedding",
+    )
+
+    processor.process(_work())
+
+    assert repository.failures == [
+        SafeFailure(FailureCategory.PUBLICATION_FAILED, "repository_sqlstate_23505")
+    ]
 
 
 def _work() -> IngestionWork:

@@ -73,6 +73,7 @@ type Attempt struct {
 	StartedAt                time.Time
 	FinishedAt               *time.Time
 	FailureCategory          *string
+	FailureDetail            *string
 	AcquiredByteCount        *int64
 	NormalizedCharacterCount *int64
 	UnitCount                *int
@@ -475,7 +476,7 @@ func listAttempts(
 ) ([]Attempt, error) {
 	rows, err := database.Query(ctx, `
 		SELECT attempt_number, pipeline_version, status, started_at, finished_at,
-		       failure_category, acquired_byte_count, normalized_character_count,
+		       failure_category, failure_detail, acquired_byte_count, normalized_character_count,
 		       unit_count, duration_milliseconds
 		FROM processing_attempts
 		WHERE corpus_id = $1 AND source_id = $2
@@ -488,7 +489,8 @@ func listAttempts(
 		var attempt Attempt
 		err := row.Scan(
 			&attempt.Number, &attempt.PipelineVersion, &attempt.Status, &attempt.StartedAt,
-			&attempt.FinishedAt, &attempt.FailureCategory, &attempt.AcquiredByteCount,
+			&attempt.FinishedAt, &attempt.FailureCategory, &attempt.FailureDetail,
+			&attempt.AcquiredByteCount,
 			&attempt.NormalizedCharacterCount, &attempt.UnitCount, &attempt.DurationMilliseconds,
 		)
 		return attempt, err

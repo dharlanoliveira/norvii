@@ -387,6 +387,7 @@ type attemptResponse struct {
 	StartedAt                time.Time  `json:"startedAt"`
 	FinishedAt               *time.Time `json:"finishedAt"`
 	FailureCategory          *string    `json:"failureCategory"`
+	FailureDetail            *string    `json:"failureDetail"`
 	AcquiredByteCount        *int64     `json:"acquiredByteCount"`
 	NormalizedCharacterCount *int64     `json:"normalizedCharacterCount"`
 	UnitCount                *int       `json:"unitCount"`
@@ -417,7 +418,8 @@ func newAttemptResponse(attempt sourcepostgres.Attempt) attemptResponse {
 	return attemptResponse{
 		Number: attempt.Number, PipelineVersion: attempt.PipelineVersion, Status: attempt.Status,
 		StartedAt: attempt.StartedAt, FinishedAt: attempt.FinishedAt,
-		FailureCategory: attempt.FailureCategory, AcquiredByteCount: attempt.AcquiredByteCount,
+		FailureCategory: attempt.FailureCategory, FailureDetail: attempt.FailureDetail,
+		AcquiredByteCount:        attempt.AcquiredByteCount,
 		NormalizedCharacterCount: attempt.NormalizedCharacterCount, UnitCount: attempt.UnitCount,
 		DurationMilliseconds: attempt.DurationMilliseconds,
 	}

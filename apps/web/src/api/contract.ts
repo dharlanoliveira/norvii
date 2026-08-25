@@ -103,6 +103,7 @@ export interface ProcessingAttemptResponse {
   readonly startedAt: string;
   readonly finishedAt: string | null;
   readonly failureCategory: string | null;
+  readonly failureDetail: string | null;
   readonly acquiredByteCount: number | null;
   readonly normalizedCharacterCount: number | null;
   readonly unitCount: number | null;
@@ -513,6 +514,7 @@ function parseAttempt(value: unknown): ProcessingAttemptResponse | null {
       attempt.failureCategory,
       "attempt failure category",
     ),
+    failureDetail: nullableString(attempt.failureDetail, "attempt failure detail"),
     acquiredByteCount: nullableNonnegativeInteger(
       attempt.acquiredByteCount,
       "acquired bytes",

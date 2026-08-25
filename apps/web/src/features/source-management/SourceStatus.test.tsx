@@ -7,7 +7,7 @@ import { renderAtRoute } from "../../test/render";
 import { SourceStatus } from "./SourceStatus";
 
 describe("source lifecycle status", () => {
-  it("offers retry for a failed source without exposing failure detail", async () => {
+  it("offers retry for a failed source with a safe failure diagnostic", async () => {
     const user = userEvent.setup();
     const retry = vi.fn().mockResolvedValue(undefined);
     renderAtRoute(
@@ -29,6 +29,7 @@ describe("source lifecycle status", () => {
     await user.click(screen.getByText("Source details"));
     expect(screen.getByText("https://example.org/law")).toBeVisible();
     expect(screen.getAllByText("corpus-ingestion-v1")).toHaveLength(3);
+    expect(screen.getByText("provider_response_invalid")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Attempt 4" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Attempt 2" })).toBeVisible();
     expect(
@@ -236,6 +237,8 @@ function source(
       finishedAt: "2026-08-17T12:01:00Z",
       failureCategory:
         processingStatus === "failed" ? "acquisition_failed" : null,
+      failureDetail:
+        processingStatus === "failed" ? "provider_response_invalid" : null,
       acquiredByteCount: 1200,
       normalizedCharacterCount: 800,
       unitCount: 4,
@@ -250,6 +253,8 @@ function source(
         finishedAt: "2026-08-17T12:01:00Z",
         failureCategory:
           processingStatus === "failed" ? "acquisition_failed" : null,
+        failureDetail:
+          processingStatus === "failed" ? "provider_response_invalid" : null,
         acquiredByteCount: 1200,
         normalizedCharacterCount: 800,
         unitCount: 4,
@@ -262,6 +267,7 @@ function source(
         startedAt: "2026-08-17T11:30:00Z",
         finishedAt: "2026-08-17T11:31:00Z",
         failureCategory: "acquisition_failed",
+        failureDetail: null,
         acquiredByteCount: null,
         normalizedCharacterCount: null,
         unitCount: null,
@@ -274,6 +280,7 @@ function source(
         startedAt: "2026-08-17T11:15:00Z",
         finishedAt: "2026-08-17T11:16:00Z",
         failureCategory: "acquisition_failed",
+        failureDetail: null,
         acquiredByteCount: null,
         normalizedCharacterCount: null,
         unitCount: null,
@@ -286,6 +293,7 @@ function source(
         startedAt: "2026-08-17T11:00:00Z",
         finishedAt: "2026-08-17T11:01:00Z",
         failureCategory: "acquisition_failed",
+        failureDetail: null,
         acquiredByteCount: null,
         normalizedCharacterCount: null,
         unitCount: null,

@@ -288,6 +288,7 @@ export const englishTranslation = {
       finishedAt: "Finished at",
       attemptStatus: "Attempt status",
       failureCategory: "Failure category",
+      failureDiagnostic: "Failure diagnostic",
       acquiredBytes: "Acquired bytes",
       normalizedCharacters: "Normalized characters",
       unitCount: "Document units",

@@ -243,6 +243,7 @@ function processingAttempt() {
     startedAt: "2026-08-17T12:00:00Z",
     finishedAt: "2026-08-17T12:00:01Z",
     failureCategory: "extraction_failed",
+    failureDetail: "provider_response_invalid",
     acquiredByteCount: 2048,
     normalizedCharacterCount: 1024,
     unitCount: 1,

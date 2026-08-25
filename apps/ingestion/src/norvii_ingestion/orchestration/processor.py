@@ -198,5 +198,17 @@ def _category(error: Exception) -> FailureCategory:
 
 
 def _safe_failure(error: Exception) -> SafeFailure:
-    detail = error.reason.value if isinstance(error, AcquisitionError) else None
+    detail = _safe_failure_detail(error)
     return SafeFailure(_category(error), detail)
+
+
+def _safe_failure_detail(error: Exception) -> str | None:
+    if isinstance(error, AcquisitionError):
+        return error.reason.value
+    if isinstance(error, ExtractionProviderError):
+        return error.detail
+    if isinstance(error, EmbeddingProviderError):
+        return error.detail
+    if isinstance(error, WorkRepositoryError):
+        return error.detail
+    return None

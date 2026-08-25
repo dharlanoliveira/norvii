@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, cast
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 import psycopg
 
@@ -24,6 +24,13 @@ if TYPE_CHECKING:
 
 class WorkRepositoryError(RuntimeError):
     """Report a safe queue or publication transaction failure."""
+
+    def __init__(self, message: str, detail: str = "repository_operation_failed") -> None:
+        super().__init__(message)
+        self.detail = detail
+
+
+_RETRIEVAL_CHUNK_NAMESPACE = UUID("dec70116-ff61-48f5-8d67-dbf457330dd2")
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,7 +294,9 @@ class PostgresWorkRepository:
                     _Completion(document_id, command, capture, now),
                 )
         except psycopg.Error as error:
-            raise WorkRepositoryError("Publish ingestion artifacts failed.") from error
+            raise WorkRepositoryError(
+                "Publish ingestion artifacts failed.", _repository_error_detail(error)
+            ) from error
         return document_id
 
     def close(self) -> None:
@@ -507,7 +516,7 @@ class PostgresWorkRepository:
             """,
             [
                 (
-                    chunk.id,
+                    retrieval_chunk_id_for_document(document_id, chunk.id),
                     work.claim.corpus_id,
                     work.claim.source_id,
                     document_id,
@@ -662,3 +671,14 @@ def _vector_literal(vector: tuple[float, ...] | None) -> str:
     if vector is None:
         raise ValueError("retrieval chunk embedding is required")
     return "[" + ",".join(format(value, ".17g") for value in vector) + "]"
+
+
+def retrieval_chunk_id_for_document(document_id: UUID, logical_chunk_id: UUID) -> UUID:
+    """Scope a stable logical chunk identity to its immutable document version."""
+    return uuid5(_RETRIEVAL_CHUNK_NAMESPACE, f"{document_id}:{logical_chunk_id}")
+
+
+def _repository_error_detail(error: psycopg.Error) -> str:
+    return (
+        f"repository_sqlstate_{error.sqlstate}" if error.sqlstate else "repository_operation_failed"
+    )

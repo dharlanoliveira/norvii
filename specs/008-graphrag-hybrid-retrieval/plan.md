@@ -7,8 +7,9 @@
 ## Summary
 
 Add a small, evidence-backed legal graph to the existing snapshot-scoped RAG system. Ingestion
-records bounded semantic extraction artifacts against immutable document versions. A graph
-projection is rebuilt explicitly for one published corpus snapshot and is never authoritative.
+records bounded semantic extraction artifacts against immutable document versions, stages a
+candidate snapshot, builds its graph projection, and activates the new snapshot only after the
+derived projection is ready. The graph is never authoritative.
 The agent offers vector, graph, and hybrid retrieval as distinct strategies; every path returns
 the same snapshot-bound evidence references used by the answer and inspection UI.
 
@@ -38,9 +39,10 @@ the documented local budget. Each online strategy retrieves no more than eight c
 locations; graph and hybrid requests remain bounded to a maximum of three graph hops.
 
 **Constraints**: Exactly two curated corpora; one active corpus snapshot per corpus; graph
-releases are immutable and snapshot-scoped; no vector fallback may be represented as graph or
-hybrid retrieval; model enrichment is bounded, explicit, and never runs in the chat request;
-Neo4j is derived and may be rebuilt without changing PostgreSQL or snapshot activation.
+releases are immutable and snapshot-scoped; no fallback may be represented as another strategy;
+model enrichment is bounded and never runs in the chat request; candidate snapshots are never
+active before graph validation; Neo4j is derived and a recorded release may be rebuilt without
+changing canonical legal content or the active snapshot.
 
 **Scale/Scope**: Two initial single-source legal corpora. The initial graph contains document
 structure, legal concepts, actors, rights, obligations, and only evidence-backed relationships
@@ -129,16 +131,16 @@ implementation.
 | `apps/web/` | Change | Select strategies and inspect graph paths without obscuring answers or citations. | Vitest, build, accessibility journeys |
 | `apps/api/` | Change | Validate public strategy requests, resolve active snapshots, and expose release status. | Go tests, HTTP contract tests |
 | `apps/agent/` | Change | Retrieve vector, graph, or hybrid evidence inside one snapshot boundary. | pytest unit and integration tests |
-| `apps/ingestion/` | Change | Produce canonical semantic artifacts and rebuild an idempotent graph release. | pytest unit and integration tests |
+| `apps/ingestion/` | Change | Produce canonical semantic artifacts and coordinate staged snapshot, graph release, and activation. | pytest unit and integration tests |
 | `contracts/` | Change | Version strategy, graph path, readiness, and safe failure fields. | Producer and consumer contract tests |
 | `infra/` | No change | Existing PostgreSQL and Neo4j services already satisfy the topology. | Existing persistence checks |
 
 ### Boundaries and Constraints
 
-- **Cost limits**: Semantic extraction is offline, explicit, and limited to a configured maximum
+- **Cost limits**: Semantic extraction is offline and limited to a configured maximum
   of 12 legal units per provider request, 32 requests per document, and one extraction attempt per
   document-version/prompt-version pair. Provider calls occur during ingestion extraction; the
-  explicit graph-build command only reads persisted canonical artifacts. Chat requests never
+  release coordinator only reads persisted canonical artifacts. Chat requests never
   trigger extraction.
 - **Prototype baseline**: Features 002, 004, 005, 006, and 007 remain the approved workspace and
   evidence baseline. Strategy and graph-path controls are compact inspection affordances.
@@ -150,8 +152,9 @@ implementation.
   extracted relationships, and immutable graph-release records. The mutable readiness pointer is
   separate from snapshot membership. PostgreSQL remains canonical on all failures.
 - **Ingestion artifacts**: Extraction runs are bound to immutable document versions and evidence
-  spans. Candidate artifacts may exist, but graph projection accepts only a named published
-  snapshot. A rebuild is idempotent for the same extraction manifest.
+  spans. The coordinator stages a named immutable snapshot before graph projection, and activates
+  it only after the matching graph release is ready. A rebuild is idempotent for the same
+  extraction manifest.
 - **Streaming**: Existing message event ordering remains unchanged. The terminal inspection gains
   strategy, graph-release, vector contribution, graph contribution, and path fields. Safe
   `graph_unavailable` and `graph_insufficient_evidence` outcomes do not emit grounded evidence.
@@ -164,9 +167,9 @@ implementation.
 - **Observability**: Extraction and projection record model, prompt version, status, counts,
   duration, and provider-reported token usage. API logs include safe strategy and graph-release
   identifiers for request correlation.
-- **Local environment**: A new idempotent graph-build command runs after snapshot initialization;
-  it is explicit because it may make provider calls. Quickstart documents the command, graph
-  status, rebuild, and failure diagnosis.
+- **Local environment**: Reingestion runs the idempotent release coordinator after canonical
+  artifact publication. A separate graph-build command remains for reproducibility only and never
+  makes provider calls. Quickstart documents readiness, rebuild, and failure diagnosis.
 
 ### Repository Paths
 

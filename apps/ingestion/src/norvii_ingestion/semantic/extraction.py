@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import time
 import urllib.request
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request
 from uuid import UUID, uuid5
 
@@ -24,8 +25,11 @@ _ENTITY_TYPES = frozenset({"concept", "actor", "right", "obligation"})
 _RELATIONSHIP_TYPES = frozenset(
     {"defines", "applies_to", "grants", "requires", "protects", "governs"}
 )
-_MAX_UNITS_PER_REQUEST = 12
-_MAX_REQUESTS_PER_DOCUMENT = 32
+# Semantic output must remain small enough to be reliably JSON-validated. The
+# POC intentionally samples opening legal locations instead of attempting an
+# unbounded document-wide graph extraction in a single ingestion run.
+_MAX_UNITS_PER_REQUEST = 1
+_MAX_REQUESTS_PER_DOCUMENT = 8
 _MAX_UNIT_CHARACTERS = 4_000
 _MAX_LABEL_CHARACTERS = 240
 _NORMALIZED_LABEL = re.compile(r"[^a-z0-9]+")
@@ -33,6 +37,10 @@ _NORMALIZED_LABEL = re.compile(r"[^a-z0-9]+")
 
 class ExtractionProviderError(RuntimeError):
     """Indicate a failed or malformed semantic extraction provider response."""
+
+    def __init__(self, message: str, detail: str = "provider_response_invalid") -> None:
+        super().__init__(message)
+        self.detail = detail
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,7 +119,12 @@ class OpenAICompatibleSemanticExtractor:
         input_tokens: int | None = 0
         output_tokens: int | None = 0
         for unit_batch in _batches(selected, _MAX_UNITS_PER_REQUEST):
-            payload = self._request(unit_batch, artifact)
+            timeout_seconds = _remaining_timeout_seconds(started, self.timeout_seconds)
+            if timeout_seconds is None:
+                raise ExtractionProviderError(
+                    "semantic extraction document budget was exhausted", "provider_timeout"
+                )
+            payload = self._request(unit_batch, artifact, timeout_seconds)
             batch_entities, batch_relationships, usage = _validated_batch(payload, unit_batch)
             for entity in batch_entities:
                 key = (entity.evidence_unit_id, entity.entity_type, entity.normalized_label)
@@ -134,7 +147,12 @@ class OpenAICompatibleSemanticExtractor:
             relationships=relationship_values,
         )
 
-    def _request(self, units: Sequence[DocumentUnit], artifact: DocumentArtifact) -> object:
+    def _request(
+        self,
+        units: Sequence[DocumentUnit],
+        artifact: DocumentArtifact,
+        timeout_seconds: int,
+    ) -> object:
         content = [
             {
                 "unitId": str(unit.id),
@@ -172,10 +190,30 @@ class OpenAICompatibleSemanticExtractor:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
                 decoded = json.loads(response.read())
-        except (URLError, TimeoutError, json.JSONDecodeError) as error:
-            raise ExtractionProviderError("semantic extraction provider request failed") from error
+        except HTTPError as error:
+            detail = f"provider_http_status_{error.code}"
+            raise ExtractionProviderError(
+                "semantic extraction provider request failed", detail
+            ) from error
+        except URLError as error:
+            detail = (
+                "provider_timeout"
+                if isinstance(error.reason, TimeoutError)
+                else "provider_transport"
+            )
+            raise ExtractionProviderError(
+                "semantic extraction provider request failed", detail
+            ) from error
+        except TimeoutError as error:
+            raise ExtractionProviderError(
+                "semantic extraction provider request failed", "provider_timeout"
+            ) from error
+        except json.JSONDecodeError as error:
+            raise ExtractionProviderError(
+                "semantic extraction provider response is malformed", "provider_response_invalid"
+            ) from error
         return _completion_content(decoded)
 
 
@@ -193,6 +231,12 @@ def _selected_units(artifact: DocumentArtifact) -> Iterable[DocumentUnit]:
 def _batches(items: Sequence[DocumentUnit], size: int) -> Iterable[tuple[DocumentUnit, ...]]:
     for start in range(0, len(items), size):
         yield tuple(items[start : start + size])
+
+
+def _remaining_timeout_seconds(started: float, document_budget_seconds: int) -> int | None:
+    elapsed = time.perf_counter() - started
+    remaining = document_budget_seconds - elapsed
+    return max(1, math.ceil(remaining)) if remaining > 0 else None
 
 
 def _structural_entities(units: Sequence[DocumentUnit]) -> tuple[SemanticEntity, ...]:
@@ -220,21 +264,29 @@ def _selection_bytes(units: Sequence[DocumentUnit], artifact: DocumentArtifact) 
 
 def _completion_content(payload: object) -> object:
     if not isinstance(payload, dict):
-        raise ExtractionProviderError("semantic extraction response is malformed")
+        raise ExtractionProviderError(
+            "semantic extraction response is malformed", "provider_response_schema_invalid"
+        )
     try:
         content = _message_content(payload)
         return {"content": json.loads(content), "usage": payload.get("usage")}
     except json.JSONDecodeError as error:
-        raise ExtractionProviderError("semantic extraction response is malformed") from error
+        raise ExtractionProviderError(
+            "semantic extraction response is malformed", "provider_response_invalid"
+        ) from error
 
 
 def _message_content(payload: dict[object, object]) -> str:
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-        raise ExtractionProviderError("semantic extraction response is malformed")
+        raise ExtractionProviderError(
+            "semantic extraction response is malformed", "provider_response_schema_invalid"
+        )
     message = choices[0].get("message")
     if not isinstance(message, dict) or not isinstance(message.get("content"), str):
-        raise ExtractionProviderError("semantic extraction response is malformed")
+        raise ExtractionProviderError(
+            "semantic extraction response is malformed", "provider_response_schema_invalid"
+        )
     return cast("str", message["content"])
 
 
@@ -246,7 +298,9 @@ def _validated_batch(
     tuple[int | None, int | None],
 ]:
     if not isinstance(payload, dict) or not isinstance(payload.get("content"), dict):
-        raise ExtractionProviderError("semantic extraction response is malformed")
+        raise ExtractionProviderError(
+            "semantic extraction response is malformed", "provider_response_schema_invalid"
+        )
     content = payload["content"]
     unit_by_id = {str(unit.id): unit for unit in units}
     entities = _entities(content.get("entities"), unit_by_id)
@@ -257,22 +311,26 @@ def _validated_batch(
 
 def _entities(value: object, units: dict[str, DocumentUnit]) -> tuple[SemanticEntity, ...]:
     if not isinstance(value, list):
-        raise ExtractionProviderError("semantic entities are malformed")
+        return ()
     result: dict[UUID, SemanticEntity] = {}
     for item in value:
         if not isinstance(item, dict):
-            raise ExtractionProviderError("semantic entity is malformed")
+            continue
         unit = units.get(str(item.get("unitId", "")))
         entity_type = item.get("type")
         label = item.get("label")
         if unit is None or not isinstance(entity_type, str) or entity_type not in _ENTITY_TYPES:
-            raise ExtractionProviderError("semantic entity references an invalid unit or type")
-        normalized = _normalize_label(label)
+            continue
+        try:
+            normalized = _normalize_label(label)
+            entity_label = _label(label)
+        except ExtractionProviderError:
+            continue
         entity = SemanticEntity(
             id=uuid5(_EXTRACTION_NAMESPACE, f"{unit.id}:{entity_type}:{normalized}"),
             evidence_unit_id=unit.id,
             entity_type=entity_type,
-            label=_label(label),
+            label=entity_label,
             normalized_label=normalized,
         )
         result[entity.id] = entity
@@ -285,27 +343,34 @@ def _relationships(
     entities_by_label: dict[str, SemanticEntity],
 ) -> tuple[SemanticRelationship, ...]:
     if not isinstance(value, list):
-        raise ExtractionProviderError("semantic relationships are malformed")
-    result: dict[UUID, SemanticRelationship] = {}
+        return ()
+    result: dict[tuple[UUID, UUID, UUID, str], SemanticRelationship] = {}
     for item in value:
         if not isinstance(item, dict):
-            raise ExtractionProviderError("semantic relationship is malformed")
+            continue
         unit = units.get(str(item.get("unitId", "")))
         relationship_type = item.get("type")
-        subject = entities_by_label.get(_label(item.get("subject")).casefold())
-        object_ = entities_by_label.get(_label(item.get("object")).casefold())
+        try:
+            subject_label = _label(item.get("subject"))
+            object_label = _label(item.get("object"))
+        except ExtractionProviderError:
+            continue
+        subject = entities_by_label.get(subject_label.casefold())
+        object_ = entities_by_label.get(object_label.casefold())
         if (
             unit is None
             or not isinstance(relationship_type, str)
             or relationship_type not in _RELATIONSHIP_TYPES
-            or subject is None
-            or object_ is None
-            or subject.id == object_.id
         ):
-            raise ExtractionProviderError("semantic relationship is not evidence-backed")
+            continue
+        if subject is None or object_ is None or subject.id == object_.id:
+            # A provider can emit a relationship whose labels do not map to
+            # the declared entity set. Dropping it keeps graph edges
+            # evidence-backed without discarding the valid extraction batch.
+            continue
         qualifier = item.get("qualifier")
         if qualifier is not None and not isinstance(qualifier, str):
-            raise ExtractionProviderError("semantic relationship qualifier is malformed")
+            qualifier = None
         relationship = SemanticRelationship(
             id=uuid5(
                 _EXTRACTION_NAMESPACE,
@@ -317,7 +382,13 @@ def _relationships(
             relationship_type=relationship_type,
             qualifier=_qualifier(qualifier),
         )
-        result[relationship.id] = relationship
+        key = (
+            relationship.subject_entity_id,
+            relationship.object_entity_id,
+            relationship.evidence_unit_id,
+            relationship.relationship_type,
+        )
+        result.setdefault(key, relationship)
     return tuple(result.values())
 
 
@@ -327,14 +398,18 @@ def _label(value: object) -> str:
         or not value.strip()
         or len(value.strip()) > _MAX_LABEL_CHARACTERS
     ):
-        raise ExtractionProviderError("semantic label is invalid")
+        raise ExtractionProviderError(
+            "semantic label is invalid", "provider_response_schema_invalid"
+        )
     return value.strip()
 
 
 def _normalize_label(value: object) -> str:
     normalized = _NORMALIZED_LABEL.sub(" ", _label(value).casefold()).strip()
     if not normalized:
-        raise ExtractionProviderError("semantic label is invalid")
+        raise ExtractionProviderError(
+            "semantic label is invalid", "provider_response_schema_invalid"
+        )
     return normalized
 
 
@@ -348,7 +423,9 @@ def _qualifier(value: object) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
-        raise ExtractionProviderError("semantic relationship qualifier is malformed")
+        raise ExtractionProviderError(
+            "semantic relationship qualifier is malformed", "provider_response_schema_invalid"
+        )
     return value.strip() or None
 
 

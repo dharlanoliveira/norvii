@@ -6,32 +6,23 @@
 - Configure `NORVII_SEMANTIC_*` settings for bounded semantic extraction.
 - Start Norvii with `make bootstrap`.
 
-## Build graph releases explicitly
+## Reingest a graph-ready corpus
 
-1. Reprocess each source that must participate in the graph. This explicit ingestion step runs
-   bounded semantic extraction and may call the configured provider.
-2. Publish the ready candidate snapshot in the workspace and copy its corpus and snapshot IDs
-   from Snapshot history.
-3. Build the graph release from the repository root:
-
-   ```bash
-   python infra/scripts/run-with-environment.py infra/.env \
-     uv run --directory apps/ingestion norvii-build-graph-release \
-     --corpus-id <corpus-id> --snapshot-id <snapshot-id>
-   ```
-
-4. Inspect readiness:
+1. Reprocess a source from the workspace. The ingestion pipeline runs bounded semantic
+   extraction, stages an immutable snapshot, builds its derived graph release, and activates the
+   snapshot only after that release is ready.
+2. Inspect the active snapshot and its graph-release readiness:
 
    ```bash
    curl http://127.0.0.1:8080/api/v1/corpora/<corpus-id>/snapshots/<snapshot-id>/graph-release
    ```
 
-5. Repeat the build command. It must report the same ready release identity and not create a
-   duplicate projection.
+3. Confirm that Vector, Graph, and Hybrid can answer against the new active snapshot without a
+   separate publication or build action.
 
-The graph-build command is explicit and reads only persisted canonical artifacts; it does not call
-the semantic provider. Neither semantic extraction nor graph construction runs as a side effect of
-application startup, source browsing, or a chat request.
+The optional graph-build command reads only persisted canonical artifacts and exists to reproduce
+an already recorded release. Neither semantic extraction nor graph construction runs as a side
+effect of application startup, source browsing, or a chat request.
 
 ## Verify strategy isolation
 
@@ -44,10 +35,11 @@ application startup, source browsing, or a chat request.
 
 ## Verify candidate safety
 
-1. Reingest one official source without publishing its candidate.
-2. Run graph and hybrid retrieval for the current active snapshot.
+1. Reingest one official source and observe its release-stage state.
+2. While the candidate is staging or graph validation is in progress, run all strategies against
+   the active snapshot.
 3. Confirm the candidate's entities, relationships, and evidence remain absent.
-4. Publish the candidate snapshot, build its graph release explicitly, and confirm the preceding
+4. Confirm that activation occurs only after the new graph release is ready, while the preceding
    graph release remains inspectable for its preceding snapshot.
 
 ## Verify failure behavior
@@ -70,7 +62,6 @@ python .github/scripts/validate_contracts.py
 python .github/scripts/validate_repository_language.py
 ```
 
-The graph-release build and end-to-end cross-store isolation journey require semantic artifacts
-for a freshly reprocessed and explicitly published snapshot. Do not trigger that reingestion as a
-verification side effect when it would incur provider cost; run it deliberately as the first part
-of this quickstart.
+The graph-release and end-to-end cross-store isolation journey require semantic artifacts for a
+freshly reprocessed source. Do not trigger reingestion as a verification side effect when it would
+incur provider cost; run it deliberately as the first part of this quickstart.

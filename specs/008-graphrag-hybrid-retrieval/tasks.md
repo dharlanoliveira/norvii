@@ -18,10 +18,10 @@ selection can use them.
 - [X] T002 [P] Add graph-release domain values, validation, and unit tests in `apps/api/internal/graphrelease/domain/graph_release.go` and `apps/api/internal/graphrelease/domain/graph_release_test.go` per FR-002 through FR-006.
 - [X] T003 [P] Version the strategy, graph-path, contribution, and safe-outcome stream contract in `specs/005-grounded-rag-chat/contracts/chat-stream.schema.json`, `specs/008-graphrag-hybrid-retrieval/contracts/graphrag-stream.md`, and consumer/provider contract tests per FR-001, FR-007 through FR-009.
 - [ ] T004 Implement canonical graph-release persistence, matching-snapshot validation, deterministic manifest identity, and repository tests in `apps/api/internal/graphrelease/postgres/repository.go` and `apps/api/internal/graphrelease/postgres/repository_test.go` per FR-002 through FR-006 and FR-013.
-- [ ] T005 Implement the explicit graph-release status and inspection HTTP capability with handler tests in `apps/api/internal/graphrelease/application/service.go`, `apps/api/internal/graphrelease/http/handler.go`, and related tests per FR-003, FR-009, and FR-015.
+- [ ] T005 Implement graph-release status and inspection HTTP capability with handler tests in `apps/api/internal/graphrelease/application/service.go`, `apps/api/internal/graphrelease/http/handler.go`, and related tests per FR-003, FR-009, and FR-015.
 
 **Checkpoint**: Canonical extraction artifacts and immutable graph-release records can safely
-describe one published snapshot before any graph is queried.
+describe one staged snapshot before any graph is queried.
 
 ---
 
@@ -48,16 +48,15 @@ answer without weakening the active snapshot boundary.
 
 ## Phase 3: User Story 2 - Publish and inspect an evidence-backed legal graph (Priority: P2)
 
-**Goal**: A maintainer can build, inspect, and safely diagnose a graph release for a published
-snapshot; candidates remain excluded.
+**Goal**: A maintainer can inspect and safely diagnose a graph release for a staged snapshot;
+candidates remain excluded until the complete release is activated.
 
-**Independent Test**: Build a graph release from a seeded snapshot, inspect its entity and
-relationship provenance, reingest a candidate, and prove it is absent until publication plus a
-new graph build complete.
+**Independent Test**: Reingest a candidate, inspect its entity and relationship provenance, and
+prove it remains absent until automatic graph validation and snapshot activation complete.
 
 - [X] T013 [P] [US2] Add bounded semantic extraction values, provider adapter, and deterministic tests in `apps/ingestion/src/norvii_ingestion/semantic/`, `apps/ingestion/tests/unit/semantic/`, and `apps/ingestion/src/norvii_ingestion/config/__init__.py` per FR-005, FR-006, and FR-015.
 - [X] T014 [US2] Persist extraction runs, entities, and relationships atomically with immutable document provenance in `apps/ingestion/src/norvii_ingestion/publication/postgres/repository.py`, `apps/ingestion/src/norvii_ingestion/orchestration/processor.py`, and regression tests per FR-004 through FR-006 and FR-015.
-- [ ] T015 [US2] Implement idempotent published-snapshot graph projection and explicit build command in `apps/ingestion/src/norvii_ingestion/graph_projection/`, `apps/ingestion/src/norvii_ingestion/graph_projection/__main__.py`, and integration tests per FR-003, FR-004, FR-013, and SC-002 and SC-005.
+- [ ] T015 [US2] Implement idempotent staged-snapshot graph projection and reproducibility command in `apps/ingestion/src/norvii_ingestion/graph_projection/`, `apps/ingestion/src/norvii_ingestion/graph_projection/__main__.py`, and integration tests per FR-003, FR-004, FR-013, and SC-002 and SC-005.
 - [ ] T016 [US2] Expose graph-release summary and safe build/readiness state through `apps/api/internal/graphrelease/`, `apps/api/cmd/server/main.go`, and API tests per FR-003, FR-009, and FR-015.
 - [ ] T017 [US2] Add graph-release status, rebuild guidance, and evidence-attributed graph inspection to `apps/web/src/features/source-management/`, `apps/web/src/features/workspace/CorpusWorkspacePage.tsx`, localized resources, and component tests per FR-003 through FR-006 and FR-014.
 
@@ -112,8 +111,8 @@ or hiding a failed graph release.
 1. Establish immutable canonical graph-release boundaries and safe contract variants.
 2. Deliver and test the online strategy selection with seeded graph data, preserving all existing
    vector behavior.
-3. Add bounded semantic extraction and an explicit idempotent graph builder that supplies real
-   graph data for published snapshots.
+3. Add bounded semantic extraction and an idempotent graph builder that supplies real graph data
+   for staged snapshots before activation.
 4. Add the evaluator comparison view only after each strategy's independent inspection is clear.
 5. Run the complete reproducibility and quality gate, then converge remaining work.
 
@@ -123,3 +122,14 @@ or hiding a failed graph release.
 - [ ] T024 Add a service-backed graph-projection integration journey that builds the same published snapshot three times and verifies identical graph membership, evidence locations, readiness, and candidate exclusion per T015, FR-003, FR-004, FR-013, SC-002, and SC-005 (partial).
 - [ ] T025 Add Playwright strategy-comparison journeys for ready graph/hybrid results, an unavailable strategy, and graph-path source navigation retention per T020, FR-009 through FR-012, and SC-001 through SC-004 (missing).
 - [ ] T026 Execute the documented paid reingestion, publish, and graph-build journey for both curated corpora, then record the real graph-release measurements and reproducibility evidence in quickstart per T022, SC-005, and SC-006 (partial).
+
+## Phase 7: Automatic graph-ready reingestion
+
+**Purpose**: Make a successful reingestion complete the complete offline evidence-release lifecycle
+without exposing a new candidate snapshot before its graph release is ready.
+
+- [ ] T027 Add staged-snapshot creation and graph-ready activation application operations, HTTP contracts, and Go behavior tests under `apps/api/internal/snapshot/` per FR-003, FR-004, and FR-016.
+- [ ] T028 Add a cohesive Python release coordinator and HTTP client that stages a snapshot, builds the derived Neo4j projection, then activates only the matching ready snapshot; add deterministic failure and idempotency tests under `apps/ingestion/src/norvii_ingestion/` and `apps/ingestion/tests/` per FR-003, FR-004, FR-015, and SC-002.
+- [ ] T029 Ensure reused immutable documents obtain missing semantic artifacts idempotently before release coordination, with PostgreSQL repository regression coverage under `apps/ingestion/src/norvii_ingestion/publication/postgres/` and `apps/ingestion/tests/` per FR-016.
+- [ ] T030 Surface the release-stage state and safe actionable diagnostic in the source-status view, with TypeScript contract and component tests under `apps/web/src/` per FR-009, FR-014, and FR-015.
+- [ ] T031 Add an end-to-end seeded reingestion journey for both corpora that verifies a successful attempt activates a graph-ready snapshot and makes Vector, Graph, and Hybrid available without a separate command per SC-008.

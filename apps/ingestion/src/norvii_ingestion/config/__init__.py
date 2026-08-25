@@ -53,6 +53,16 @@ class WorkerConfig:
         ).strip()
         if not pipeline_version:
             raise ConfigurationError("NORVII_INGESTION_PIPELINE_VERSION must not be empty")
+        semantic_timeout_seconds = cls._positive_integer(
+            environment, "NORVII_SEMANTIC_TIMEOUT_SECONDS", 30
+        )
+        embedding_timeout_seconds = cls._positive_integer(
+            environment, "NORVII_EMBEDDING_TIMEOUT_SECONDS", 30
+        )
+        if semantic_timeout_seconds + embedding_timeout_seconds >= lease_seconds:
+            raise ConfigurationError(
+                "semantic and embedding timeouts must fit within the ingestion lease duration"
+            )
         return cls(
             poll_interval=timedelta(seconds=poll_seconds),
             lease_duration=timedelta(seconds=lease_seconds),
@@ -84,9 +94,7 @@ class WorkerConfig:
                 "NORVII_EMBEDDING_MODEL", "text-embedding-3-small"
             ).strip(),
             embedding_dimensions=cls._embedding_dimensions(environment),
-            embedding_timeout_seconds=cls._positive_integer(
-                environment, "NORVII_EMBEDDING_TIMEOUT_SECONDS", 30
-            ),
+            embedding_timeout_seconds=embedding_timeout_seconds,
             embedding_batch_size=cls._positive_integer(
                 environment, "NORVII_EMBEDDING_BATCH_SIZE", 32
             ),
@@ -100,9 +108,7 @@ class WorkerConfig:
             semantic_model=environment.get(
                 "NORVII_SEMANTIC_MODEL", environment.get("NORVII_CHAT_MODEL", "gpt-5.6-luna")
             ).strip(),
-            semantic_timeout_seconds=cls._positive_integer(
-                environment, "NORVII_SEMANTIC_TIMEOUT_SECONDS", 30
-            ),
+            semantic_timeout_seconds=semantic_timeout_seconds,
             semantic_reasoning_effort=environment.get(
                 "NORVII_SEMANTIC_REASONING_EFFORT", "medium"
             ).strip(),

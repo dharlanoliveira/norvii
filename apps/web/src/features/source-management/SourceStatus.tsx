@@ -211,6 +211,16 @@ export function SourceStatus({
                               <dd>{attempt.failureCategory}</dd>
                             </div>
                           ) : null}
+                          {attempt.failureDetail ? (
+                            <div>
+                              <dt>
+                                {t(
+                                  "sourceManagement.lifecycle.failureDiagnostic",
+                                )}
+                              </dt>
+                              <dd>{attempt.failureDetail}</dd>
+                            </div>
+                          ) : null}
                           {attempt.acquiredByteCount !== null ? (
                             <div>
                               <dt>
