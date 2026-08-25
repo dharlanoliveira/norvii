@@ -5,7 +5,7 @@ import type {
   RetrievalStrategy,
 } from "../../api/chat";
 
-export const retrievalStrategies = ["vector", "graph", "hybrid"] as const;
+export const retrievalStrategies = ["vector", "hybrid"] as const;
 
 export type StrategyComparisonState =
   | { readonly status: "idle" }
@@ -78,7 +78,7 @@ export function applyStrategyComparisonEvent(
     case "error":
       return {
         ...result,
-        status: event.code === "graph_unavailable" ? "unavailable" : "failed",
+        status: "failed",
         answer: event.message,
         inspection: event.inspection,
       };

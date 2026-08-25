@@ -16,6 +16,28 @@ type store interface {
 	Initialize(context.Context, uuid.UUID, uuid.UUID, string, time.Time) (domain.Publication, error)
 	List(context.Context, uuid.UUID) ([]domain.Snapshot, error)
 	Publish(context.Context, domain.PublishCommand) (domain.Publication, error)
+	Stage(context.Context, domain.StageCommand) (domain.Publication, error)
+	Activate(context.Context, domain.ActivationCommand) (domain.Publication, error)
+}
+
+// Stage materializes an immutable candidate snapshot without changing retrieval state.
+func (service *Service) Stage(
+	ctx context.Context, corpusID, sourceID, documentID uuid.UUID,
+) (domain.Publication, error) {
+	return service.store.Stage(ctx, domain.StageCommand{
+		CorpusID: corpusID, SourceID: sourceID, DocumentID: documentID,
+		SnapshotID: service.newID(), Actor: "ingestion-worker", StagedAt: service.now(),
+	})
+}
+
+// Activate advances the active release only after a graph release is ready for the candidate snapshot.
+func (service *Service) Activate(
+	ctx context.Context, corpusID, snapshotID uuid.UUID, expectedReleaseVersion int,
+) (domain.Publication, error) {
+	return service.store.Activate(ctx, domain.ActivationCommand{
+		CorpusID: corpusID, SnapshotID: snapshotID,
+		ExpectedReleaseVersion: expectedReleaseVersion, ActivatedAt: service.now(),
+	})
 }
 
 // Service owns application-level IDs and timestamps for snapshot operations.

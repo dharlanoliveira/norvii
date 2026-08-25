@@ -500,7 +500,6 @@ class LocalEnvironmentManager:
             self._wait_for_api()
             self._wait_for_web()
             initial_states = self._wait_for_initial_sources()
-            snapshot_status = self._initialize_initial_snapshots(initial_states)
         except LocalEnvironmentError:
             self._stop_managed_processes(reversed(started_components))
             raise
@@ -509,7 +508,7 @@ class LocalEnvironmentManager:
         )
         print(
             f"Norvii is ready\nWeb: {self._web_url}\n"
-            f"Initial sources: {states}\nSnapshots: {snapshot_status}\n"
+            f"Initial sources: {states}\nSnapshots and graph releases: {self._release_status(initial_states)}\n"
             f"Logs: {self._layout.log_directory}"
         )
 
@@ -625,12 +624,12 @@ class LocalEnvironmentManager:
             time.sleep(0.25)
         raise ComponentCommandError("Ingestion", self._layout.log("ingestion"), self._layout.root)
 
-    def _initialize_initial_snapshots(self, states: dict[str, str]) -> str:
-        """Create initial releases only after both seeded sources are retrieval-ready."""
-        if not all(state == "ready" for state in states.values()):
-            return "pending (one or more initial sources are not ready)"
-        self._runner.run("api", self._make("persistence-initialize-snapshots"))
-        return "ready"
+    @staticmethod
+    def _release_status(states: dict[str, str]) -> str:
+        """Report the release lifecycle implied by terminal source states."""
+        if all(state == "ready" for state in states.values()):
+            return "ready"
+        return "pending (one or more initial sources are not ready)"
 
     def _stop_managed_processes(self, components: Iterable[str]) -> None:
         for component in components:

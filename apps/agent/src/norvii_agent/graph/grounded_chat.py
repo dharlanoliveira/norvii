@@ -33,6 +33,7 @@ class Evidence:
     source_title: str | None = None
     cosine_distance: float | None = None
     snapshot_id: UUID | None = None
+    contribution: str = "vector"
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,19 @@ class RetrievalInspection:
     top_k: int
     returned_count: int
     embedding_model: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalStage:
+    """One content-free stage of a planned retrieval execution."""
+
+    name: str
+    state: str
+    evidence_count: int
+    duration_milliseconds: int | None
+    reason_code: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +90,7 @@ class AnswerInspection:
     measurements: ExecutionMeasurements
     evidence: tuple[Evidence, ...]
     graph_path: tuple[GraphPathStep, ...] = ()
+    stages: tuple[RetrievalStage, ...] = ()
 
 
 class RetrievalPort(Protocol):
@@ -146,6 +161,7 @@ class _State(TypedDict, total=False):
     retrieval_inspection: RetrievalInspection
     retrieval_milliseconds: int | None
     graph_path: tuple[GraphPathStep, ...]
+    retrieval_stages: tuple[RetrievalStage, ...]
     generation_milliseconds: int | None
     input_tokens: int | None
     output_tokens: int | None
@@ -195,7 +211,7 @@ class GroundedChatGraph:
                 self._retriever.search(
                     request.corpus_id, request.snapshot_id, request.question, request.strategy
                 )
-            )[:8]
+            )
         except StrategyUnavailableError:
             return {"status": "abstained", "reason": f"{request.strategy}_unavailable"}
         elapsed = _elapsed_milliseconds(started)
@@ -209,6 +225,7 @@ class GroundedChatGraph:
             ),
             "retrieval_milliseconds": elapsed,
             "graph_path": tuple(getattr(self._retriever, "last_graph_path", ())),
+            "retrieval_stages": tuple(getattr(self._retriever, "last_stages", ())),
         }
 
     @staticmethod
@@ -266,6 +283,7 @@ class GroundedChatGraph:
             ),
             evidence=evidence,
             graph_path=tuple(state.get("graph_path", ())),
+            stages=tuple(state.get("retrieval_stages", ())),
         )
 
 

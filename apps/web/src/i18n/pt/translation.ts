@@ -153,6 +153,11 @@ export const portugueseTranslation = {
       purpose: "Qual é a finalidade deste documento?",
       scope: "A quem este documento se aplica?",
       rights: "Quais direitos e deveres ele estabelece?",
+      authorityReports: "Quais relatórios a Autoridade Nacional exige?",
+      authorityRequirements:
+        "O que este documento exige que a autoridade de proteção de dados faça?",
+      dataSubjectRights:
+        "Quais direitos este documento concede aos titulares de dados?",
     },
     placeholder: "Faça uma pergunta sobre as fontes publicadas...",
     questionLabel: "Pergunta de pesquisa",
@@ -161,12 +166,12 @@ export const portugueseTranslation = {
     you: "Você",
     assistant: "Norvii",
     thinking: "Pensando",
+    cancelled: "Resposta cancelada.",
     groundedOnly: "As respostas são limitadas a este corpus",
     language: "Interface: {{language}}",
     strategy: {
       label: "Estratégia de recuperação",
       vector: "Vetorial",
-      graph: "Grafo",
       hybrid: "Híbrida",
     },
     comparison: {
@@ -188,10 +193,33 @@ export const portugueseTranslation = {
     openCitation: "Abrir {{location}} em {{source}}",
     supportingPassages_one: "{{count}} passagem de apoio",
     supportingPassages_other: "{{count}} passagens de apoio",
-    showMoreLocations_one: "Ver mais {{count}} localização",
-    showMoreLocations_other: "Ver mais {{count}} localizações",
-    showFewerLocations: "Ver menos localizações",
     inspect: "Registro da pesquisa",
+    retrievalStages: "Etapas da recuperação",
+    retrievalStage: {
+      vector: "Recuperação vetorial",
+      planning: "Planejamento do grafo",
+      graph: "Contribuição do grafo",
+    },
+    retrievalStageState: {
+      completed: "Concluída",
+      no_evidence: "Nenhuma evidência encontrada",
+      skipped: "Ignorada",
+      unavailable: "Indisponível",
+      failed: "Falhou",
+    },
+    retrievalStageReason: {
+      not_relevant: "Não é relevante para esta pergunta",
+      graph_release_unavailable: "Nenhuma publicação do grafo está disponível",
+      graph_unavailable: "O grafo está indisponível",
+      planner_unavailable: "O planejador está indisponível",
+    },
+    retrievalStageEvidence_one: "{{count}} local de evidência",
+    retrievalStageEvidence_other: "{{count}} locais de evidência",
+    evidenceContribution: {
+      vector: "Evidência vetorial",
+      graph: "Evidência do grafo",
+      vector_and_graph: "Evidência vetorial e do grafo",
+    },
     inspectionEvidence: "Passagens de apoio",
     graphPath: "Caminho de evidências do grafo",
     relationships: {

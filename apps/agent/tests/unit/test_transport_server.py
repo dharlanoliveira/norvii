@@ -11,6 +11,7 @@ from norvii_agent.graph import (
     GroundedChatRequest,
     GroundedChatResult,
     RetrievalInspection,
+    RetrievalStage,
 )
 from norvii_agent.transport.server import AgentHTTPServer, _inspection
 
@@ -70,6 +71,7 @@ def test_terminal_inspection_serializes_measurements_and_evidence_metadata() -> 
         retrieval=RetrievalInspection("vector", 8, 1, "text-embedding-3-small"),
         measurements=ExecutionMeasurements(12, 34, None, 10, None),
         evidence=(),
+        stages=(RetrievalStage("vector", "completed", 1, 12),),
     )
 
     payload = _inspection(inspection)
@@ -89,3 +91,14 @@ def test_terminal_inspection_serializes_measurements_and_evidence_metadata() -> 
         "outputTokens": None,
     }
     assert payload["evidence"] == []
+    assert payload["stages"] == [
+        {
+            "name": "vector",
+            "state": "completed",
+            "evidenceCount": 1,
+            "durationMilliseconds": 12,
+            "reasonCode": None,
+            "inputTokens": None,
+            "outputTokens": None,
+        }
+    ]

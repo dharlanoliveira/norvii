@@ -16,8 +16,9 @@ document does not create feature branches or implementation commitments by itsel
 | 006 | Citation navigation and inspection | A user opens cited evidence and an evaluator inspects retrieval, latency, and token use | Web, API, contracts | 002, 005 |
 | 007 | Portuguese and English snapshots | A user switches between two isolated, reproducible curated legal corpora | Ingestion, API, Web | 004, 005 |
 | 008 | GraphRAG and hybrid retrieval | An evaluator compares vector, graph, and hybrid evidence paths | Ingestion, API, Web, contracts, infra | 006, 007 |
-| 009 | MCP research tools and skills | An evaluator invokes explicit research tools and reusable evidence workflows | API, contracts | 006, 008 |
-| 010 | Evaluation showcase | A contributor runs versioned quality and cost evaluations and views comparable results | Ingestion, API, Web | 007, 008, 009 |
+| [009](../../specs/009-planned-hybrid-retrieval/spec.md) | Planned hybrid retrieval | A researcher uses vector-first retrieval with graph augmentation planned only when it can add snapshot-scoped evidence | Agent, API, Web, contracts | 008 |
+| 010 | MCP research tools and skills | An evaluator invokes explicit research tools and reusable evidence workflows | API, contracts | 006, 009 |
+| 011 | Evaluation showcase | A contributor runs versioned quality and cost evaluations and views comparable results | Ingestion, API, Web | 007, 009, 010 |
 
 ## Slicing rules
 

@@ -28,6 +28,7 @@ from norvii_ingestion.domain.models import (
 from norvii_ingestion.enrichment.embedding import EmbeddingProviderError
 from norvii_ingestion.orchestration.processor import ArtifactExtractors, IngestionProcessor
 from norvii_ingestion.publication.postgres.repository import WorkRepositoryError
+from norvii_ingestion.release.coordinator import GraphReleaseCoordinatorError
 from norvii_ingestion.semantic.extraction import ExtractionProviderError
 
 
@@ -103,6 +104,16 @@ class RecordingRepository:
         self.publications.append((work, capture))
         return uuid4()
 
+    def complete(
+        self,
+        work: IngestionWork,
+        _capture: OriginCapture,
+        _command: PublicationCommand,
+        _document_id: UUID,
+        _now: datetime,
+    ) -> None:
+        assert work.claim.work_id.int != 0
+
     def fail(
         self,
         work: IngestionWork,
@@ -121,8 +132,20 @@ class FailingPublicationRepository(RecordingRepository):
         )
 
 
+class RecordingGraphReleaseCoordinator:
+    def __init__(self, failure: Exception | None = None) -> None:
+        self._failure = failure
+        self.publications: list[tuple[IngestionWork, UUID]] = []
+
+    def publish(self, work: IngestionWork, document_id: UUID) -> None:
+        if self._failure is not None:
+            raise self._failure
+        self.publications.append((work, document_id))
+
+
 def test_processor_acquires_extracts_and_publishes_url_work() -> None:
     repository = RecordingRepository()
+    coordinator = RecordingGraphReleaseCoordinator()
     processor = IngestionProcessor(
         repository=repository,
         acquirer=FakeAcquirer(),
@@ -131,12 +154,14 @@ def test_processor_acquires_extracts_and_publishes_url_work() -> None:
         clock=_now,
         embedding_provider=FakeEmbeddingProvider(),
         embedding_model="test-embedding",
+        graph_release_coordinator=coordinator,
     )
 
     processor.process(_work())
 
     assert len(repository.publications) == 1
     assert repository.failures == []
+    assert len(coordinator.publications) == 1
 
 
 def test_processor_categorizes_unsafe_url_without_exposing_its_detail() -> None:
@@ -149,6 +174,7 @@ def test_processor_categorizes_unsafe_url_without_exposing_its_detail() -> None:
         clock=_now,
         embedding_provider=FakeEmbeddingProvider(),
         embedding_model="test-embedding",
+        graph_release_coordinator=RecordingGraphReleaseCoordinator(),
     )
 
     processor.process(_work())
@@ -172,6 +198,7 @@ def test_processor_retains_only_allowlisted_acquisition_diagnostics() -> None:
         clock=_now,
         embedding_provider=FakeEmbeddingProvider(),
         embedding_model="test-embedding",
+        graph_release_coordinator=RecordingGraphReleaseCoordinator(),
     )
 
     processor.process(_work())
@@ -191,6 +218,7 @@ def test_processor_extracts_preserved_pdf_without_network_acquisition() -> None:
         clock=_now,
         embedding_provider=FakeEmbeddingProvider(),
         embedding_model="test-embedding",
+        graph_release_coordinator=RecordingGraphReleaseCoordinator(),
     )
 
     processor.process(_pdf_work())
@@ -210,6 +238,7 @@ def test_processor_preserves_the_ready_version_when_embedding_fails() -> None:
         clock=_now,
         embedding_provider=FailingEmbeddingProvider(),
         embedding_model="test-embedding",
+        graph_release_coordinator=RecordingGraphReleaseCoordinator(),
     )
 
     processor.process(_work())
@@ -230,6 +259,7 @@ def test_processor_retains_allowlisted_semantic_provider_diagnostic() -> None:
         clock=_now,
         embedding_provider=FakeEmbeddingProvider(),
         embedding_model="test-embedding",
+        graph_release_coordinator=RecordingGraphReleaseCoordinator(),
         semantic_extractor=FailingSemanticExtractor(),
     )
 
@@ -251,12 +281,35 @@ def test_processor_retains_allowlisted_repository_diagnostic() -> None:
         clock=_now,
         embedding_provider=FakeEmbeddingProvider(),
         embedding_model="test-embedding",
+        graph_release_coordinator=RecordingGraphReleaseCoordinator(),
     )
 
     processor.process(_work())
 
     assert repository.failures == [
         SafeFailure(FailureCategory.PUBLICATION_FAILED, "repository_sqlstate_23505")
+    ]
+
+
+def test_processor_fails_the_active_lease_when_graph_release_publication_fails() -> None:
+    repository = RecordingRepository()
+    processor = IngestionProcessor(
+        repository=repository,
+        acquirer=FakeAcquirer(),
+        extractors=ArtifactExtractors(html=FakeExtractor(), pdf=FakeExtractor()),
+        pipeline_version="corpus-ingestion-v3",
+        clock=_now,
+        embedding_provider=FakeEmbeddingProvider(),
+        embedding_model="test-embedding",
+        graph_release_coordinator=RecordingGraphReleaseCoordinator(
+            GraphReleaseCoordinatorError("graph_projection_failed")
+        ),
+    )
+
+    processor.process(_work())
+
+    assert repository.failures == [
+        SafeFailure(FailureCategory.PUBLICATION_FAILED, "graph_projection_failed")
     ]
 
 

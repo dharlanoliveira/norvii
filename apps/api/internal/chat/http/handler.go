@@ -67,7 +67,7 @@ func (handler *Handler) stream(writer http.ResponseWriter, request *http.Request
 	if payload.Strategy == "" {
 		payload.Strategy = "vector"
 	}
-	if payload.Strategy != "vector" && payload.Strategy != "graph" && payload.Strategy != "hybrid" {
+	if payload.Strategy != "vector" && payload.Strategy != "hybrid" {
 		httpserver.WriteError(writer, request, httpserver.Problem{
 			Status: http.StatusBadRequest, Code: "invalid_input", Message: "The retrieval strategy is invalid.",
 		})
@@ -146,9 +146,6 @@ func (handler *Handler) writeTerminalError(writer http.ResponseWriter, requestID
 	if errors.Is(err, chatdomain.ErrSnapshotUnavailable) {
 		code = "snapshot_unavailable"
 	}
-	if errors.Is(err, chatdomain.ErrGraphUnavailable) {
-		code = "graph_unavailable"
-	}
 	_ = writeEvent(writer, "error", map[string]any{
 		"type": "error", "requestId": requestID, "code": code,
 		"message":    "The grounded chat request could not be completed.",
@@ -173,6 +170,7 @@ type evidenceResponse struct {
 	Excerpt           string    `json:"excerpt"`
 	Rank              int       `json:"rank"`
 	CosineDistance    *float64  `json:"cosineDistance"`
+	Contribution      string    `json:"contribution"`
 }
 
 func evidenceResponses(evidence []chatdomain.Evidence) []evidenceResponse {
@@ -185,16 +183,37 @@ func evidenceResponses(evidence []chatdomain.Evidence) []evidenceResponse {
 			SourceTitle: item.SourceTitle, UnitLocator: item.UnitLocator,
 			StartOffset: item.StartOffset, EndOffset: item.EndOffset,
 			Excerpt: item.Excerpt, Rank: item.Rank, CosineDistance: item.CosineDistance,
+			Contribution: item.Contribution,
 		})
 	}
 	return responses
 }
 
 type inspectionEventResponse struct {
-	Outcome      string              `json:"outcome"`
-	Retrieval    *retrievalResponse  `json:"retrieval,omitempty"`
-	Measurements measurementResponse `json:"measurements"`
-	Evidence     []evidenceResponse  `json:"evidence,omitempty"`
+	Outcome      string                   `json:"outcome"`
+	Retrieval    *retrievalResponse       `json:"retrieval,omitempty"`
+	Measurements measurementResponse      `json:"measurements"`
+	Evidence     []evidenceResponse       `json:"evidence,omitempty"`
+	GraphPath    []graphPathResponse      `json:"graphPath,omitempty"`
+	Stages       []retrievalStageResponse `json:"stages,omitempty"`
+}
+
+type graphPathResponse struct {
+	RelationshipType string `json:"relationshipType"`
+	SubjectLabel     string `json:"subjectLabel"`
+	ObjectLabel      string `json:"objectLabel"`
+	EvidenceID       string `json:"evidenceId"`
+	EvidenceLocator  string `json:"evidenceLocator"`
+}
+
+type retrievalStageResponse struct {
+	Name                 string  `json:"name"`
+	State                string  `json:"state"`
+	EvidenceCount        int     `json:"evidenceCount"`
+	DurationMilliseconds *int64  `json:"durationMilliseconds"`
+	ReasonCode           *string `json:"reasonCode"`
+	InputTokens          *int64  `json:"inputTokens"`
+	OutputTokens         *int64  `json:"outputTokens"`
 }
 
 type retrievalResponse struct {
@@ -238,7 +257,35 @@ func inspectionResponse(inspection *chatdomain.Inspection, evidence []chatdomain
 	if outcome == "completed" {
 		response.Evidence = evidenceResponses(inspectionCopy.Evidence)
 	}
+	response.GraphPath = graphPathResponses(inspectionCopy.GraphPath)
+	response.Stages = stageResponses(inspectionCopy.Stages)
 	return response
+}
+
+func graphPathResponses(steps []chatdomain.GraphPathStep) []graphPathResponse {
+	responses := make([]graphPathResponse, 0, len(steps))
+	for _, step := range steps {
+		responses = append(responses, graphPathResponse{
+			RelationshipType: step.RelationshipType,
+			SubjectLabel:     step.SubjectLabel,
+			ObjectLabel:      step.ObjectLabel,
+			EvidenceID:       step.EvidenceID,
+			EvidenceLocator:  step.EvidenceLocator,
+		})
+	}
+	return responses
+}
+
+func stageResponses(stages []chatdomain.RetrievalStage) []retrievalStageResponse {
+	responses := make([]retrievalStageResponse, 0, len(stages))
+	for _, stage := range stages {
+		responses = append(responses, retrievalStageResponse{
+			Name: stage.Name, State: stage.State, EvidenceCount: stage.EvidenceCount,
+			DurationMilliseconds: stage.DurationMilliseconds, ReasonCode: stage.ReasonCode,
+			InputTokens: stage.InputTokens, OutputTokens: stage.OutputTokens,
+		})
+	}
+	return responses
 }
 
 func elapsedMilliseconds(startedAt time.Time) int64 {

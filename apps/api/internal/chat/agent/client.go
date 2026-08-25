@@ -152,13 +152,34 @@ type evidenceReference struct {
 	Excerpt           string    `json:"excerpt"`
 	Rank              int       `json:"rank"`
 	CosineDistance    *float64  `json:"cosineDistance"`
+	Contribution      string    `json:"contribution"`
 }
 
 type inspectionPayload struct {
-	Outcome      string               `json:"outcome"`
-	Retrieval    *retrievalInspection `json:"retrieval"`
-	Measurements measurementPayload   `json:"measurements"`
-	Evidence     []evidenceReference  `json:"evidence"`
+	Outcome      string                  `json:"outcome"`
+	Retrieval    *retrievalInspection    `json:"retrieval"`
+	Measurements measurementPayload      `json:"measurements"`
+	Evidence     []evidenceReference     `json:"evidence"`
+	GraphPath    []graphPathPayload      `json:"graphPath"`
+	Stages       []retrievalStagePayload `json:"stages"`
+}
+
+type graphPathPayload struct {
+	RelationshipType string `json:"relationshipType"`
+	SubjectLabel     string `json:"subjectLabel"`
+	ObjectLabel      string `json:"objectLabel"`
+	EvidenceID       string `json:"evidenceId"`
+	EvidenceLocator  string `json:"evidenceLocator"`
+}
+
+type retrievalStagePayload struct {
+	Name                 string  `json:"name"`
+	State                string  `json:"state"`
+	EvidenceCount        int     `json:"evidenceCount"`
+	DurationMilliseconds *int64  `json:"durationMilliseconds"`
+	ReasonCode           *string `json:"reasonCode"`
+	InputTokens          *int64  `json:"inputTokens"`
+	OutputTokens         *int64  `json:"outputTokens"`
 }
 
 type retrievalInspection struct {
@@ -186,6 +207,7 @@ func evidenceValues(references []evidenceReference) []chatdomain.Evidence {
 			SourceTitle: reference.SourceTitle, UnitLocator: reference.UnitLocator,
 			StartOffset: reference.StartOffset, EndOffset: reference.EndOffset,
 			Excerpt: reference.Excerpt, Rank: reference.Rank, CosineDistance: reference.CosineDistance,
+			Contribution: reference.Contribution,
 		})
 	}
 	return evidence
@@ -217,5 +239,33 @@ func inspectionValue(payload *inspectionPayload, evidence []chatdomain.Evidence,
 	if len(payload.Evidence) > 0 {
 		inspection.Evidence = evidenceValues(payload.Evidence)
 	}
+	inspection.GraphPath = graphPathValues(payload.GraphPath)
+	inspection.Stages = stageValues(payload.Stages)
 	return inspection
+}
+
+func graphPathValues(steps []graphPathPayload) []chatdomain.GraphPathStep {
+	values := make([]chatdomain.GraphPathStep, 0, len(steps))
+	for _, step := range steps {
+		values = append(values, chatdomain.GraphPathStep{
+			RelationshipType: step.RelationshipType,
+			SubjectLabel:     step.SubjectLabel,
+			ObjectLabel:      step.ObjectLabel,
+			EvidenceID:       step.EvidenceID,
+			EvidenceLocator:  step.EvidenceLocator,
+		})
+	}
+	return values
+}
+
+func stageValues(stages []retrievalStagePayload) []chatdomain.RetrievalStage {
+	values := make([]chatdomain.RetrievalStage, 0, len(stages))
+	for _, stage := range stages {
+		values = append(values, chatdomain.RetrievalStage{
+			Name: stage.Name, State: stage.State, EvidenceCount: stage.EvidenceCount,
+			DurationMilliseconds: stage.DurationMilliseconds, ReasonCode: stage.ReasonCode,
+			InputTokens: stage.InputTokens, OutputTokens: stage.OutputTokens,
+		})
+	}
+	return values
 }

@@ -129,7 +129,7 @@ func TestClientMapsInspectionMetadata(t *testing.T) {
 	sourceID := uuid.New()
 	documentID := uuid.New()
 	reference := `{"id":"ref-1","corpusId":"` + corpusID.String() + `","sourceId":"` + sourceID.String() + `","documentId":"` + documentID.String() + `","documentVersionId":"` + documentID.String() + `","unitLocator":"article-1","startOffset":1,"endOffset":8,"excerpt":"text","rank":1,"cosineDistance":0.18}`
-	body := "event: completed\ndata: {\"type\":\"completed\",\"answer\":\"Answer\",\"references\":[" + reference + "],\"inspection\":{\"outcome\":\"completed\",\"retrieval\":{\"strategy\":\"vector\",\"topK\":8,\"returnedCount\":1,\"embeddingModel\":null},\"measurements\":{\"retrievalMilliseconds\":12,\"generationMilliseconds\":34,\"totalMilliseconds\":50,\"inputTokens\":null,\"outputTokens\":7},\"evidence\":[" + reference + "]}}\n\n"
+	body := "event: completed\ndata: {\"type\":\"completed\",\"answer\":\"Answer\",\"references\":[" + reference + "],\"inspection\":{\"outcome\":\"completed\",\"retrieval\":{\"strategy\":\"vector\",\"topK\":8,\"returnedCount\":1,\"embeddingModel\":null},\"measurements\":{\"retrievalMilliseconds\":12,\"generationMilliseconds\":34,\"totalMilliseconds\":50,\"inputTokens\":null,\"outputTokens\":7},\"evidence\":[" + reference + "],\"graphPath\":[{\"relationshipType\":\"requires\",\"subjectLabel\":\"Authority\",\"objectLabel\":\"Impact report\",\"evidenceId\":\"ref-1\",\"evidenceLocator\":\"article-1\"}],\"stages\":[{\"name\":\"vector\",\"state\":\"completed\",\"evidenceCount\":1,\"durationMilliseconds\":12,\"reasonCode\":null,\"inputTokens\":null,\"outputTokens\":7}]}}\n\n"
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		_, _ = writer.Write([]byte(body))
 	}))
@@ -149,6 +149,12 @@ func TestClientMapsInspectionMetadata(t *testing.T) {
 	}
 	if result.Evidence[0].CosineDistance == nil || *result.Evidence[0].CosineDistance != 0.18 {
 		t.Fatalf("cosine distance = %#v, want 0.18", result.Evidence[0].CosineDistance)
+	}
+	if len(result.Inspection.Stages) != 1 || result.Inspection.Stages[0].Name != "vector" {
+		t.Fatalf("stages = %#v, want vector stage", result.Inspection.Stages)
+	}
+	if len(result.Inspection.GraphPath) != 1 || result.Inspection.GraphPath[0].RelationshipType != "requires" {
+		t.Fatalf("graph path = %#v, want requires path", result.Inspection.GraphPath)
 	}
 }
 

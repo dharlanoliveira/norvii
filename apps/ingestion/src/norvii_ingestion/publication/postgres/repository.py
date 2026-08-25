@@ -267,7 +267,7 @@ class PostgresWorkRepository:
         command: PublicationCommand,
         now: datetime,
     ) -> UUID:
-        """Atomically publish or reuse immutable artifacts and complete the lease."""
+        """Atomically publish or reuse immutable artifacts while preserving the active lease."""
         command.validate()
         if (
             command.work_id != work.claim.work_id
@@ -294,6 +294,24 @@ class PostgresWorkRepository:
                     self._insert_missing_semantic_extraction(
                         cursor, work, document_id, command, now
                     )
+        except psycopg.Error as error:
+            raise WorkRepositoryError(
+                "Publish ingestion artifacts failed.", _repository_error_detail(error)
+            ) from error
+        return document_id
+
+    def complete(
+        self,
+        work: IngestionWork,
+        capture: OriginCapture,
+        command: PublicationCommand,
+        document_id: UUID,
+        now: datetime,
+    ) -> None:
+        """Mark one leased ingestion attempt ready only after derived releases are available."""
+        try:
+            with self.connection.transaction(), self.connection.cursor() as cursor:
+                self._lock_lease(cursor, work, now)
                 self._complete_attempt(
                     cursor,
                     work,
@@ -301,9 +319,8 @@ class PostgresWorkRepository:
                 )
         except psycopg.Error as error:
             raise WorkRepositoryError(
-                "Publish ingestion artifacts failed.", _repository_error_detail(error)
+                "Complete ingestion attempt failed.", _repository_error_detail(error)
             ) from error
-        return document_id
 
     def close(self) -> None:
         """Release the canonical-store connection."""

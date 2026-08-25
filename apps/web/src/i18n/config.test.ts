@@ -20,4 +20,31 @@ describe("interface localization", () => {
       collectKeys(englishTranslation).sort(),
     );
   });
+
+  it("provides localized planned-hybrid research record labels", () => {
+    for (const translation of [englishTranslation, portugueseTranslation]) {
+      expect(typeof translation.chat.retrievalStage.vector).toBe("string");
+      expect(typeof translation.chat.retrievalStage.planning).toBe("string");
+      expect(typeof translation.chat.retrievalStage.graph).toBe("string");
+      expect(typeof translation.chat.retrievalStageReason.not_relevant).toBe(
+        "string",
+      );
+      expect(
+        typeof translation.chat.retrievalStageReason.graph_release_unavailable,
+      ).toBe("string");
+      expect(
+        typeof translation.chat.retrievalStageReason.graph_unavailable,
+      ).toBe("string");
+      expect(
+        typeof translation.chat.retrievalStageReason.planner_unavailable,
+      ).toBe("string");
+      expect(typeof translation.chat.evidenceContribution.vector).toBe(
+        "string",
+      );
+      expect(typeof translation.chat.evidenceContribution.graph).toBe("string");
+      expect(
+        typeof translation.chat.evidenceContribution.vector_and_graph,
+      ).toBe("string");
+    }
+  });
 });

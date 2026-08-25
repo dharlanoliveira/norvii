@@ -34,6 +34,32 @@ func TestPublishCreatesAReleaseForAReadyCandidate(t *testing.T) {
 	}
 }
 
+func TestStageThenActivateUsesDistinctSnapshotOperations(t *testing.T) {
+	corpusID, snapshotID := uuid.New(), uuid.New()
+	service := &fakeSnapshotService{publication: publication(corpusID)}
+	mux := http.NewServeMux()
+	NewHandler(service).Register(mux)
+
+	staged := serveSnapshotRequest(
+		mux,
+		http.MethodPost,
+		"/api/v1/corpora/"+corpusID.String()+"/snapshots/stage",
+		`{"sourceId":"`+uuid.NewString()+`","documentId":"`+uuid.NewString()+`"}`,
+	)
+	if staged.Code != http.StatusCreated || !service.staged {
+		t.Fatalf("stage response = %d/%s, want created stage", staged.Code, staged.Body.String())
+	}
+	activated := serveSnapshotRequest(
+		mux,
+		http.MethodPost,
+		"/api/v1/corpora/"+corpusID.String()+"/snapshots/"+snapshotID.String()+"/activate",
+		`{"expectedReleaseVersion":0}`,
+	)
+	if activated.Code != http.StatusCreated || service.activatedSnapshotID != snapshotID || service.expectedReleaseVersion != 0 {
+		t.Fatalf("activation response = %d/%s, want graph-ready activation", activated.Code, activated.Body.String())
+	}
+}
+
 func TestSnapshotRoutesMapSafePublicationFailures(t *testing.T) {
 	corpusID := uuid.New()
 	tests := []struct {
@@ -44,6 +70,7 @@ func TestSnapshotRoutesMapSafePublicationFailures(t *testing.T) {
 	}{
 		{name: "stale release", err: snapshotdomain.ErrStaleRelease, status: http.StatusConflict, code: "stale_state"},
 		{name: "candidate not ready", err: snapshotdomain.ErrCandidateNotReady, status: http.StatusUnprocessableEntity, code: "publication_failed"},
+		{name: "graph not ready", err: snapshotdomain.ErrGraphReleaseNotReady, status: http.StatusUnprocessableEntity, code: "graph_release_not_ready"},
 		{name: "missing snapshot", err: snapshotdomain.ErrNotFound, status: http.StatusNotFound, code: "not_found"},
 	}
 	for _, test := range tests {
@@ -130,6 +157,8 @@ type fakeSnapshotService struct {
 	publication            snapshotdomain.Publication
 	err                    error
 	expectedReleaseVersion int
+	staged                 bool
+	activatedSnapshotID    uuid.UUID
 }
 
 func (service *fakeSnapshotService) Get(context.Context, uuid.UUID, uuid.UUID) (snapshotdomain.Snapshot, error) {
@@ -147,6 +176,27 @@ func (service *fakeSnapshotService) Publish(
 	_ uuid.UUID,
 	expectedReleaseVersion int,
 ) (snapshotdomain.Publication, error) {
+	service.expectedReleaseVersion = expectedReleaseVersion
+	return service.publication, service.err
+}
+
+func (service *fakeSnapshotService) Stage(
+	_ context.Context,
+	_ uuid.UUID,
+	_ uuid.UUID,
+	_ uuid.UUID,
+) (snapshotdomain.Publication, error) {
+	service.staged = true
+	return service.publication, service.err
+}
+
+func (service *fakeSnapshotService) Activate(
+	_ context.Context,
+	_ uuid.UUID,
+	snapshotID uuid.UUID,
+	expectedReleaseVersion int,
+) (snapshotdomain.Publication, error) {
+	service.activatedSnapshotID = snapshotID
 	service.expectedReleaseVersion = expectedReleaseVersion
 	return service.publication, service.err
 }

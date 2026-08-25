@@ -40,6 +40,14 @@ type snapshotWriteRequest struct {
 	previousRelease domain.Release
 }
 
+type snapshotStageRequest struct {
+	corpusID   uuid.UUID
+	snapshotID uuid.UUID
+	actor      string
+	stagedAt   time.Time
+	members    []domain.Member
+}
+
 // NewRepository constructs a snapshot repository around caller-owned persistence.
 func NewRepository(database database) *Repository { return &Repository{database: database} }
 
@@ -137,6 +145,105 @@ func (repository *Repository) Publish(ctx context.Context, command domain.Publis
 		return domain.Publication{}, fmt.Errorf("commit snapshot publication: %w", err)
 	}
 	return publication, nil
+}
+
+// Stage creates an immutable candidate snapshot while leaving the active release unchanged.
+func (repository *Repository) Stage(ctx context.Context, command domain.StageCommand) (domain.Publication, error) {
+	if err := command.Validate(); err != nil {
+		return domain.Publication{}, err
+	}
+	transaction, err := repository.database.Begin(ctx)
+	if err != nil {
+		return domain.Publication{}, fmt.Errorf("begin snapshot staging: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(ctx) }()
+
+	activeRelease, err := repository.lockRelease(ctx, transaction, command.CorpusID)
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return domain.Publication{}, err
+	}
+	members := make([]domain.Member, 0, 1)
+	if err == nil {
+		members, err = repository.membersForSnapshot(ctx, transaction, activeRelease.SnapshotID)
+		if err != nil {
+			return domain.Publication{}, err
+		}
+	}
+	candidate, err := repository.candidateMember(ctx, transaction, command.CorpusID, command.SourceID, command.DocumentID)
+	if err != nil {
+		return domain.Publication{}, err
+	}
+	members = replaceMember(members, candidate)
+	snapshot, created, err := repository.writeStagedSnapshot(ctx, transaction, snapshotStageRequest{
+		corpusID: command.CorpusID, snapshotID: command.SnapshotID, actor: command.Actor,
+		stagedAt: command.StagedAt, members: members,
+	})
+	if err != nil {
+		return domain.Publication{}, err
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return domain.Publication{}, fmt.Errorf("commit snapshot staging: %w", err)
+	}
+	return domain.Publication{Snapshot: snapshot, Release: activeRelease, Created: created}, nil
+}
+
+// Activate promotes only a candidate snapshot with a completed graph release.
+func (repository *Repository) Activate(ctx context.Context, command domain.ActivationCommand) (domain.Publication, error) {
+	if err := command.Validate(); err != nil {
+		return domain.Publication{}, err
+	}
+	transaction, err := repository.database.Begin(ctx)
+	if err != nil {
+		return domain.Publication{}, fmt.Errorf("begin snapshot activation: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(ctx) }()
+
+	activeRelease, activeErr := repository.lockRelease(ctx, transaction, command.CorpusID)
+	if activeErr != nil && !errors.Is(activeErr, domain.ErrNotFound) {
+		return domain.Publication{}, activeErr
+	}
+	activeVersion := 0
+	if activeErr == nil {
+		activeVersion = activeRelease.Version
+	}
+	if activeVersion != command.ExpectedReleaseVersion {
+		return domain.Publication{}, domain.ErrStaleRelease
+	}
+	snapshot, err := repository.readSnapshot(ctx, transaction, command.CorpusID, command.SnapshotID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Publication{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.Publication{}, fmt.Errorf("read staged snapshot: %w", err)
+	}
+	if err := repository.requireReadyGraphRelease(ctx, transaction, command.CorpusID, command.SnapshotID); err != nil {
+		return domain.Publication{}, err
+	}
+	if activeErr == nil && activeRelease.SnapshotID == command.SnapshotID {
+		if err := transaction.Commit(ctx); err != nil {
+			return domain.Publication{}, fmt.Errorf("commit existing snapshot activation: %w", err)
+		}
+		return domain.Publication{Snapshot: snapshot, Release: activeRelease, Created: false}, nil
+	}
+	activatedAt := command.ActivatedAt.UTC()
+	release := domain.Release{CorpusID: command.CorpusID, SnapshotID: command.SnapshotID, Version: activeVersion + 1, ActivatedAt: activatedAt}
+	if activeErr != nil {
+		_, err = transaction.Exec(ctx, `
+			INSERT INTO corpus_snapshot_releases (corpus_id, snapshot_id, version, activated_at)
+			VALUES ($1, $2, $3, $4)`, release.CorpusID, release.SnapshotID, release.Version, release.ActivatedAt)
+	} else {
+		_, err = transaction.Exec(ctx, `
+			UPDATE corpus_snapshot_releases
+			SET snapshot_id = $2, version = $3, activated_at = $4
+			WHERE corpus_id = $1`, release.CorpusID, release.SnapshotID, release.Version, release.ActivatedAt)
+	}
+	if err != nil {
+		return domain.Publication{}, fmt.Errorf("activate graph-ready snapshot: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return domain.Publication{}, fmt.Errorf("commit snapshot activation: %w", err)
+	}
+	return domain.Publication{Snapshot: snapshot, Release: release, Created: true}, nil
 }
 
 // Initialize creates the first release from all ready documents, or returns its existing release.
@@ -257,6 +364,65 @@ func (repository *Repository) writeSnapshot(
 		Release:  release,
 		Created:  true,
 	}, nil
+}
+
+func (repository *Repository) writeStagedSnapshot(
+	ctx context.Context,
+	transaction pgx.Tx,
+	request snapshotStageRequest,
+) (domain.Snapshot, bool, error) {
+	if len(request.members) == 0 {
+		return domain.Snapshot{}, false, domain.ErrCandidateNotReady
+	}
+	manifest := manifestSHA256(request.members)
+	existing, err := repository.findByManifest(ctx, transaction, request.corpusID, manifest)
+	if err == nil {
+		return existing, false, nil
+	}
+	if !errors.Is(err, domain.ErrNotFound) {
+		return domain.Snapshot{}, false, err
+	}
+	stagedAt := request.stagedAt.UTC()
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO corpus_snapshots (id, corpus_id, manifest_sha256, created_by, created_at)
+		VALUES ($1, $2, $3, $4, $5)`, request.snapshotID, request.corpusID, manifest, request.actor, stagedAt); err != nil {
+		return domain.Snapshot{}, false, fmt.Errorf("insert staged corpus snapshot: %w", err)
+	}
+	for _, member := range request.members {
+		if _, err := transaction.Exec(ctx, `
+			INSERT INTO corpus_snapshot_documents (
+				snapshot_id, corpus_id, source_id, source_revision_id, document_id,
+				official_origin, captured_at, content_sha256
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			request.snapshotID, request.corpusID, member.SourceID, member.SourceRevisionID, member.DocumentID,
+			member.OfficialOrigin, member.CapturedAt.UTC(), member.ContentSHA256,
+		); err != nil {
+			return domain.Snapshot{}, false, fmt.Errorf("insert staged snapshot member: %w", err)
+		}
+	}
+	return domain.Snapshot{
+		ID: request.snapshotID, CorpusID: request.corpusID, ManifestSHA256: manifest,
+		CreatedBy: request.actor, CreatedAt: stagedAt, Members: request.members,
+	}, true, nil
+}
+
+func (repository *Repository) requireReadyGraphRelease(
+	ctx context.Context,
+	transaction pgx.Tx,
+	corpusID, snapshotID uuid.UUID,
+) error {
+	var ready bool
+	if err := transaction.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM graph_releases
+			WHERE corpus_id = $1 AND snapshot_id = $2 AND status = 'ready'
+		)`, corpusID, snapshotID).Scan(&ready); err != nil {
+		return fmt.Errorf("verify graph release readiness: %w", err)
+	}
+	if !ready {
+		return domain.ErrGraphReleaseNotReady
+	}
+	return nil
 }
 
 func (repository *Repository) findByManifest(ctx context.Context, queryer queryer, corpusID uuid.UUID, manifest string) (domain.Snapshot, error) {

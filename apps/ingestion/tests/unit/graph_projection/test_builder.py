@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Self, cast
 from uuid import uuid4
 
 import pytest
@@ -27,6 +27,55 @@ class RecordingGraphStore:
 
     def replace_release(self, release: GraphReleaseProjection) -> None:
         self.releases.append(release)
+
+
+class _ReadTransaction:
+    def __init__(self, connection: RecordingReadConnection) -> None:
+        self._connection = connection
+
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, *_arguments: object) -> None:
+        self._connection.completed_transactions += 1
+
+
+class _ReadCursor:
+    def __init__(self, connection: RecordingReadConnection) -> None:
+        self._connection = connection
+        self._result: tuple[tuple[object, ...], ...] = ()
+        self.rowcount = 1
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_arguments: object) -> None:
+        return None
+
+    def execute(self, query: str, _parameters: tuple[object, ...]) -> None:
+        if query.lstrip().startswith("SELECT"):
+            self._result = self._connection.select_results.pop(0)
+
+    def executemany(self, _query: str, _parameters: list[tuple[object, ...]]) -> None:
+        return None
+
+    def fetchall(self) -> tuple[tuple[object, ...], ...]:
+        return self._result
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self._result[0] if self._result else None
+
+
+class RecordingReadConnection:
+    def __init__(self, results: list[tuple[tuple[object, ...], ...]]) -> None:
+        self.select_results = results
+        self.completed_transactions = 0
+
+    def transaction(self) -> _ReadTransaction:
+        return _ReadTransaction(self)
+
+    def cursor(self) -> _ReadCursor:
+        return _ReadCursor(self)
 
 
 def test_builder_marks_a_release_failed_when_final_persistence_state_changes(
@@ -73,6 +122,61 @@ def test_builder_marks_a_release_failed_when_final_persistence_state_changes(
 
     assert len(graph.releases) == 1
     assert len(recorded_failures) == 1
+
+
+def test_builder_commits_snapshot_reads_before_recording_a_graph_release() -> None:
+    corpus_id = uuid4()
+    snapshot_id = uuid4()
+    entity = _EntityProjection(uuid4(), "Controller", "controller", "actor")
+    relationship = _RelationshipProjection(
+        id=uuid4(),
+        subject_entity_id=entity.id,
+        object_entity_id=entity.id,
+        evidence_unit_id=uuid4(),
+        source_id=uuid4(),
+        document_id=uuid4(),
+        source_revision_id=uuid4(),
+        pipeline_version="test-pipeline",
+        source_title="Official source",
+        evidence_locator="Article 1",
+        start_offset=0,
+        end_offset=10,
+        excerpt="Legal text",
+        relationship_type="governs",
+    )
+    connection = RecordingReadConnection(
+        [
+            ((entity.id, entity.label, entity.normalized_label, entity.entity_type),),
+            (
+                (
+                    relationship.id,
+                    relationship.subject_entity_id,
+                    relationship.object_entity_id,
+                    relationship.evidence_unit_id,
+                    relationship.source_id,
+                    relationship.document_id,
+                    relationship.source_revision_id,
+                    relationship.pipeline_version,
+                    relationship.source_title,
+                    relationship.evidence_locator,
+                    relationship.start_offset,
+                    relationship.end_offset,
+                    relationship.excerpt,
+                    relationship.relationship_type,
+                ),
+            ),
+            (),
+        ]
+    )
+    builder = GraphReleaseBuilder(
+        cast("psycopg.Connection[tuple[object, ...]]", connection),
+        cast("Neo4jStore", RecordingGraphStore()),
+    )
+
+    summary = builder.build(corpus_id, snapshot_id)
+
+    assert summary.reused is False
+    assert connection.completed_transactions == 4
 
 
 def _raise_state_change(

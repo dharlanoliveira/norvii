@@ -67,7 +67,7 @@ func main() {
 	snapshothttp.NewHandler(snapshotapplication.NewService(snapshotRepository, uuid.New, time.Now)).Register(application)
 	graphRepository := graphpostgres.NewRepository(pool)
 	graphhttp.NewHandler(graphapplication.NewService(graphRepository)).Register(application)
-	chathttp.NewHandler(chatapplication.NewService(snapshotRepository, graphRepository, chatagent.NewClient(configuration.Agent))).Register(application)
+	chathttp.NewHandler(chatapplication.NewService(snapshotRepository, chatagent.NewClient(configuration.Agent))).Register(application)
 	server := httpserver.New(configuration, application, uuid.New)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

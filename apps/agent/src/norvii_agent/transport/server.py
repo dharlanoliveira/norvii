@@ -68,7 +68,7 @@ class AgentRequestHandler(BaseHTTPRequestHandler):
             if interface_language not in {"en", "pt"}:
                 self.send_error(400, "invalid interface language")
                 return
-            if strategy not in {"vector", "graph", "hybrid"}:
+            if strategy not in {"vector", "hybrid"}:
                 self.send_error(400, "invalid retrieval strategy")
                 return
             if not question:
@@ -209,6 +209,7 @@ def _reference(evidence: Evidence) -> dict[str, object]:
         "excerpt": evidence.excerpt,
         "rank": evidence.rank,
         "cosineDistance": evidence.cosine_distance,
+        "contribution": evidence.contribution,
     }
 
 
@@ -232,6 +233,7 @@ def _inspection(inspection: AnswerInspection | None) -> dict[str, object]:
             },
             "evidence": [],
             "graphPath": [],
+            "stages": [],
         }
     measurements = inspection.measurements
     return {
@@ -259,6 +261,18 @@ def _inspection(inspection: AnswerInspection | None) -> dict[str, object]:
                 "evidenceLocator": step.evidence_locator,
             }
             for step in inspection.graph_path
+        ],
+        "stages": [
+            {
+                "name": stage.name,
+                "state": stage.state,
+                "evidenceCount": stage.evidence_count,
+                "durationMilliseconds": stage.duration_milliseconds,
+                "reasonCode": stage.reason_code,
+                "inputTokens": stage.input_tokens,
+                "outputTokens": stage.output_tokens,
+            }
+            for stage in inspection.stages
         ],
     }
 

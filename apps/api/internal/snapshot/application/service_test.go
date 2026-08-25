@@ -42,8 +42,35 @@ func TestInitializeDelegatesTheGeneratedSnapshotIdentity(t *testing.T) {
 	}
 }
 
+func TestStageAndActivateDelegateTheReleaseBoundary(t *testing.T) {
+	store := &fakeStore{}
+	firstSnapshotID, secondSnapshotID := uuid.New(), uuid.New()
+	generatedIDs := []uuid.UUID{firstSnapshotID, secondSnapshotID}
+	service := NewService(store, func() uuid.UUID {
+		id := generatedIDs[0]
+		generatedIDs = generatedIDs[1:]
+		return id
+	}, time.Now)
+	corpusID, sourceID, documentID := uuid.New(), uuid.New(), uuid.New()
+
+	if _, err := service.Stage(context.Background(), corpusID, sourceID, documentID); err != nil {
+		t.Fatalf("Stage() error = %v", err)
+	}
+	if store.stageCommand.SnapshotID != firstSnapshotID || store.stageCommand.Actor != "ingestion-worker" {
+		t.Fatalf("stage command = %+v, want generated ingestion candidate", store.stageCommand)
+	}
+	if _, err := service.Activate(context.Background(), corpusID, firstSnapshotID, 2); err != nil {
+		t.Fatalf("Activate() error = %v", err)
+	}
+	if store.activationCommand.SnapshotID != firstSnapshotID || store.activationCommand.ExpectedReleaseVersion != 2 {
+		t.Fatalf("activation command = %+v, want staged snapshot and version", store.activationCommand)
+	}
+}
+
 type fakeStore struct {
 	command               domain.PublishCommand
+	stageCommand          domain.StageCommand
+	activationCommand     domain.ActivationCommand
 	initializedCorpusID   uuid.UUID
 	initializedSnapshotID uuid.UUID
 }
@@ -76,5 +103,15 @@ func (store *fakeStore) Publish(
 	command domain.PublishCommand,
 ) (domain.Publication, error) {
 	store.command = command
+	return domain.Publication{}, nil
+}
+
+func (store *fakeStore) Stage(_ context.Context, command domain.StageCommand) (domain.Publication, error) {
+	store.stageCommand = command
+	return domain.Publication{}, nil
+}
+
+func (store *fakeStore) Activate(_ context.Context, command domain.ActivationCommand) (domain.Publication, error) {
+	store.activationCommand = command
 	return domain.Publication{}, nil
 }

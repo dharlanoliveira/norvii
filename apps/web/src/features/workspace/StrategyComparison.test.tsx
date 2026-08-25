@@ -11,7 +11,7 @@ import { renderAtRoute } from "../../test/render";
 import { StrategyComparison } from "./StrategyComparison";
 
 describe("strategy comparison", () => {
-  it("compares strategies and opens their cited evidence and graph path", async () => {
+  it("compares Vector and Hybrid and opens cited evidence and graph paths", async () => {
     const user = userEvent.setup();
     const onReferenceSelect = vi.fn();
     renderAtRoute(
@@ -29,7 +29,6 @@ describe("strategy comparison", () => {
     );
 
     expect(await screen.findByText("vector answer")).toBeVisible();
-    expect(screen.getByText("graph answer")).toBeVisible();
     expect(screen.getByText("hybrid answer")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "vector Article 1" }));
@@ -61,7 +60,7 @@ describe("strategy comparison", () => {
       screen.getByRole("button", { name: "Compare strategies" }),
     );
 
-    expect(await screen.findAllByText("Failed")).toHaveLength(3);
+    expect(await screen.findAllByText("Failed")).toHaveLength(2);
   });
 });
 

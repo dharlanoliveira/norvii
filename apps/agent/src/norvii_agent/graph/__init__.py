@@ -12,6 +12,7 @@ from .grounded_chat import (
     ModelUsage,
     RetrievalInspection,
     RetrievalPort,
+    RetrievalStage,
     StrategyUnavailableError,
 )
 
@@ -27,5 +28,6 @@ __all__ = [
     "ModelUsage",
     "RetrievalInspection",
     "RetrievalPort",
+    "RetrievalStage",
     "StrategyUnavailableError",
 ]

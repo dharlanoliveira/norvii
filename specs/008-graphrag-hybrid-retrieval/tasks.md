@@ -128,8 +128,8 @@ or hiding a failed graph release.
 **Purpose**: Make a successful reingestion complete the complete offline evidence-release lifecycle
 without exposing a new candidate snapshot before its graph release is ready.
 
-- [ ] T027 Add staged-snapshot creation and graph-ready activation application operations, HTTP contracts, and Go behavior tests under `apps/api/internal/snapshot/` per FR-003, FR-004, and FR-016.
-- [ ] T028 Add a cohesive Python release coordinator and HTTP client that stages a snapshot, builds the derived Neo4j projection, then activates only the matching ready snapshot; add deterministic failure and idempotency tests under `apps/ingestion/src/norvii_ingestion/` and `apps/ingestion/tests/` per FR-003, FR-004, FR-015, and SC-002.
+- [X] T027 Add staged-snapshot creation and graph-ready activation application operations, HTTP contracts, and Go behavior tests under `apps/api/internal/snapshot/` per FR-003, FR-004, and FR-016.
+- [X] T028 Add a cohesive Python release coordinator and HTTP client that stages a snapshot, builds the derived Neo4j projection, then activates only the matching ready snapshot; add deterministic failure and idempotency tests under `apps/ingestion/src/norvii_ingestion/` and `apps/ingestion/tests/` per FR-003, FR-004, FR-015, and SC-002.
 - [ ] T029 Ensure reused immutable documents obtain missing semantic artifacts idempotently before release coordination, with PostgreSQL repository regression coverage under `apps/ingestion/src/norvii_ingestion/publication/postgres/` and `apps/ingestion/tests/` per FR-016.
 - [ ] T030 Surface the release-stage state and safe actionable diagnostic in the source-status view, with TypeScript contract and component tests under `apps/web/src/` per FR-009, FR-014, and FR-015.
 - [ ] T031 Add an end-to-end seeded reingestion journey for both corpora that verifies a successful attempt activates a graph-ready snapshot and makes Vector, Graph, and Hybrid available without a separate command per SC-008.

@@ -14,7 +14,7 @@ SSE events.
 - OpenAI-compatible model adapters and provider-neutral configuration;
 - evidence-only prompting, citation-marker validation, and fail-closed abstention;
 - internal streaming events and redacted provider diagnostics.
-- snapshot-scoped vector, graph, and hybrid retrieval composition.
+- snapshot-scoped Vector and planned Hybrid retrieval composition.
 
 ## Does not own
 
@@ -34,12 +34,19 @@ Every request includes the active `snapshotId`. PostgreSQL retrieval joins immut
 snapshot membership before ranking chunks, so a reingested candidate cannot affect an
 answer until the API explicitly publishes a new release.
 
-Graph and hybrid requests additionally receive a ready graph-release ID from the API. Neo4j
-traversal is parameterized by corpus, snapshot, and release identity; every graph path returns
+Every request begins with vector retrieval. For Hybrid, the agent obtains a compact,
+snapshot-scoped graph capability catalog and asks the configured model for a bounded structured
+decision. The decision can select only published relationship types and canonical entity labels; it never
+contains Cypher or authorizes unbounded graph access. It selects canonical entity labels from the
+active graph catalog, so the question language does not need to match the graph-label language.
+Neo4j traversal remains parameterized by corpus and snapshot, and every graph path returns
 PostgreSQL-backed evidence locations rather than treating inferred relationships as legal
-authority. Hybrid results retain vector and graph contributions as separate structured inspection
-data. If the graph release is absent, failed, or insufficient, the agent emits a safe
-strategy-specific outcome without fallback.
+authority.
+
+Vector evidence remains the answer baseline. A graph miss, planner failure, unavailable graph
+release, or unavailable Neo4j connection is recorded as a safe stage result and does not discard
+valid vector evidence. Hybrid inspection data therefore identifies the Vector, planning, and
+graph stages separately, including their content-free measurements and evidence contributions.
 
 ## Verification
 

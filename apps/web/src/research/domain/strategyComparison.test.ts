@@ -8,20 +8,22 @@ import {
 } from "./strategyComparison";
 
 describe("strategy comparison", () => {
-  it("keeps a graph-unavailable result distinct from completed strategies", () => {
+  it("keeps a failed Hybrid result distinct from completed strategies", () => {
     const initial = beginStrategyComparison();
-    const graph = initial.results.find((result) => result.strategy === "graph");
-    if (graph === undefined) {
-      throw new Error("Graph comparison result is required.");
+    const hybrid = initial.results.find(
+      (result) => result.strategy === "hybrid",
+    );
+    if (hybrid === undefined) {
+      throw new Error("Hybrid comparison result is required.");
     }
 
     const updated = applyStrategyComparisonEvent(
-      graph,
+      hybrid,
       {
         type: "error",
         requestId: "request-1",
-        code: "graph_unavailable",
-        message: "The graph release is unavailable.",
+        code: "generation_failed",
+        message: "The request could not be completed.",
         telemetry: {
           outcome: "failed",
           evidenceCount: 0,
@@ -31,7 +33,7 @@ describe("strategy comparison", () => {
       "No answer.",
     );
 
-    expect(updated.status).toBe("unavailable");
+    expect(updated.status).toBe("failed");
     expect(finishStrategyComparison(initial).status).toBe("completed");
   });
 

@@ -18,6 +18,8 @@ var (
 	ErrStaleRelease = errors.New("snapshot release is stale")
 	// ErrNotFound intentionally covers snapshots outside the requested corpus.
 	ErrNotFound = errors.New("snapshot not found")
+	// ErrGraphReleaseNotReady prevents a snapshot from becoming active before its graph is usable.
+	ErrGraphReleaseNotReady = errors.New("snapshot graph release is not ready")
 )
 
 // Member identifies one immutable source revision selected by a snapshot.
@@ -64,6 +66,43 @@ type PublishCommand struct {
 	SnapshotID             uuid.UUID
 	Actor                  string
 	PublishedAt            time.Time
+}
+
+// StageCommand creates a candidate immutable snapshot without changing the active release.
+type StageCommand struct {
+	CorpusID   uuid.UUID
+	SourceID   uuid.UUID
+	DocumentID uuid.UUID
+	SnapshotID uuid.UUID
+	Actor      string
+	StagedAt   time.Time
+}
+
+// Validate rejects incomplete candidate snapshot creation input.
+func (command StageCommand) Validate() error {
+	if command.CorpusID == uuid.Nil || command.SourceID == uuid.Nil || command.DocumentID == uuid.Nil || command.SnapshotID == uuid.Nil {
+		return ErrInvalidInput
+	}
+	if strings.TrimSpace(command.Actor) == "" || command.StagedAt.IsZero() {
+		return ErrInvalidInput
+	}
+	return nil
+}
+
+// ActivationCommand promotes a graph-ready staged snapshot through an optimistic release boundary.
+type ActivationCommand struct {
+	CorpusID               uuid.UUID
+	SnapshotID             uuid.UUID
+	ExpectedReleaseVersion int
+	ActivatedAt            time.Time
+}
+
+// Validate rejects invalid snapshot activation input.
+func (command ActivationCommand) Validate() error {
+	if command.CorpusID == uuid.Nil || command.SnapshotID == uuid.Nil || command.ExpectedReleaseVersion < 0 || command.ActivatedAt.IsZero() {
+		return ErrInvalidInput
+	}
+	return nil
 }
 
 // Validate normalizes the application boundary before persistence.

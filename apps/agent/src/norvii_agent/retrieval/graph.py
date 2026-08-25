@@ -15,6 +15,7 @@ from norvii_agent.graph import (
     RetrievalInspection,
     StrategyUnavailableError,
 )
+from norvii_agent.retrieval.planning import GraphCapabilityCatalog, GraphRetrievalPlan
 
 if TYPE_CHECKING:
     from norvii_agent.config import AgentConfig
@@ -56,6 +57,62 @@ class Neo4jGraphRetriever:
             )
         except (Neo4jError, OSError, ValueError) as error:
             raise GraphRetrievalUnavailableError("graph projection query failed") from error
+        records = result.records
+        evidence = tuple(
+            _evidence(record.data(), index + 1, corpus_id, snapshot_id)
+            for index, record in enumerate(records)
+        )
+        self.last_retrieval = RetrievalInspection("graph", 8, len(evidence), None)
+        self.last_graph_path = tuple(_path_step(record.data()) for record in records)
+        return evidence
+
+    def capabilities(self, corpus_id: UUID, snapshot_id: UUID) -> GraphCapabilityCatalog | None:
+        """Return only the ready snapshot schema that can safely guide planning."""
+        driver = self._driver()
+        try:
+            result = driver.execute_query(
+                _GRAPH_CAPABILITIES,
+                corpus_id=str(corpus_id),
+                snapshot_id=str(snapshot_id),
+                database_=self.configuration.neo4j_database,
+                routing_=RoutingControl.READ,
+            )
+        except (Neo4jError, OSError, ValueError) as error:
+            raise GraphRetrievalUnavailableError("graph capability query failed") from error
+        if not result.records:
+            return None
+        row = result.records[0].data()
+        relationship_types = _string_values(row.get("relationship_types"))
+        entity_types = _string_values(row.get("entity_types"))
+        entity_labels = _string_values(row.get("entity_labels"), limit=128)
+        return (
+            GraphCapabilityCatalog(entity_types, relationship_types, entity_labels)
+            if relationship_types and entity_labels
+            else None
+        )
+
+    def search_plan(
+        self,
+        corpus_id: UUID,
+        snapshot_id: UUID,
+        plan: GraphRetrievalPlan,
+    ) -> tuple[Evidence, ...]:
+        """Run a constrained relationship lookup selected by the planner."""
+        if not plan.use_graph:
+            return ()
+        driver = self._driver()
+        try:
+            result = driver.execute_query(
+                _PLANNED_GRAPH_SEARCH,
+                corpus_id=str(corpus_id),
+                snapshot_id=str(snapshot_id),
+                relationship_types=list(plan.relationship_types),
+                entity_labels=list(plan.entity_labels),
+                database_=self.configuration.neo4j_database,
+                routing_=RoutingControl.READ,
+            )
+        except (Neo4jError, OSError, ValueError) as error:
+            raise GraphRetrievalUnavailableError("planned graph projection query failed") from error
         records = result.records
         evidence = tuple(
             _evidence(record.data(), index + 1, corpus_id, snapshot_id)
@@ -123,6 +180,43 @@ ORDER BY relationship.evidence_locator, relationship.evidence_id
 LIMIT 8
 """
 
+_GRAPH_CAPABILITIES = """
+MATCH (release:NorviiGraphRelease {
+  corpus_id: $corpus_id, snapshot_id: $snapshot_id, status: 'ready'
+})
+OPTIONAL MATCH (release)<-[:IN_GRAPH_RELEASE]-(entity:NorviiGraphEntity)
+OPTIONAL MATCH ()-[relationship:LEGAL_RELATIONSHIP {release_id: release.id}]->()
+RETURN collect(DISTINCT entity.entity_type)[..32] AS entity_types,
+       collect(DISTINCT relationship.relationship_type)[..32] AS relationship_types,
+       collect(DISTINCT entity.normalized_label)[..128] AS entity_labels
+"""
+
+_PLANNED_GRAPH_SEARCH = """
+MATCH (release:NorviiGraphRelease {
+  corpus_id: $corpus_id, snapshot_id: $snapshot_id, status: 'ready'
+})
+MATCH (release)<-[:IN_GRAPH_RELEASE]-(subject:NorviiGraphEntity)
+MATCH (subject)-[relationship:LEGAL_RELATIONSHIP {release_id: release.id}]->
+      (object:NorviiGraphEntity)
+WHERE relationship.relationship_type IN $relationship_types
+  AND (subject.normalized_label IN $entity_labels OR object.normalized_label IN $entity_labels)
+RETURN relationship.evidence_id AS evidence_id,
+       relationship.source_id AS source_id,
+       relationship.document_id AS document_id,
+       relationship.source_revision_id AS source_revision_id,
+       relationship.pipeline_version AS pipeline_version,
+       relationship.source_title AS source_title,
+       relationship.evidence_locator AS evidence_locator,
+       relationship.start_offset AS start_offset,
+       relationship.end_offset AS end_offset,
+       relationship.excerpt AS excerpt,
+       relationship.relationship_type AS relationship_type,
+       subject.label AS subject_label,
+       object.label AS object_label
+ORDER BY relationship.evidence_locator, relationship.evidence_id
+LIMIT 8
+"""
+
 
 _MIN_QUERY_TOKEN_LENGTH = 3
 _MAX_QUERY_TOKEN_COUNT = 12
@@ -169,3 +263,10 @@ def _integer_value(value: object, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise GraphRetrievalUnavailableError(f"graph {field} is invalid")
     return value
+
+
+def _string_values(value: object, *, limit: int = 32) -> tuple[str, ...]:
+    """Return bounded graph-schema labels without accepting malformed driver values."""
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, str) and item)[:limit]

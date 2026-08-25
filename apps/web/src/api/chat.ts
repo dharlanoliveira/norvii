@@ -16,6 +16,7 @@ export interface ChatReference {
   readonly pipelineVersion?: string | undefined;
   readonly sourceTitle?: string | undefined;
   readonly cosineDistance?: number | null | undefined;
+  readonly contribution?: "vector" | "graph" | "vector_and_graph" | undefined;
 }
 
 export interface ChatInspection {
@@ -37,9 +38,21 @@ export interface ChatInspection {
   };
   readonly evidence?: readonly ChatReference[] | undefined;
   readonly graphPath?: readonly GraphPathStep[] | undefined;
+  readonly stages?: readonly RetrievalStage[] | undefined;
 }
 
-export type RetrievalStrategy = "vector" | "graph" | "hybrid";
+export type RetrievalStrategy = "vector" | "hybrid";
+
+export interface RetrievalStage {
+  readonly name: "vector" | "planning" | "graph";
+  readonly state:
+    "completed" | "no_evidence" | "skipped" | "unavailable" | "failed";
+  readonly evidenceCount: number;
+  readonly durationMilliseconds: number | null;
+  readonly reasonCode: string | null;
+  readonly inputTokens: number | null;
+  readonly outputTokens: number | null;
+}
 
 export interface GraphPathStep {
   readonly relationshipType: string;
@@ -302,6 +315,7 @@ function referencesValue(value: unknown): readonly ChatReference[] {
         item.cosineDistance,
         "reference cosine distance",
       ),
+      contribution: contributionValue(item.contribution),
     };
   });
 }
@@ -326,6 +340,7 @@ function inspectionValue(value: unknown): ChatInspection | undefined {
       value.graphPath === undefined
         ? undefined
         : graphPathValue(value.graphPath),
+    stages: value.stages === undefined ? undefined : stagesValue(value.stages),
   };
 }
 
@@ -376,7 +391,66 @@ function graphPathValue(value: unknown): readonly GraphPathStep[] {
 }
 
 function isRetrievalStrategy(value: unknown): value is RetrievalStrategy {
-  return value === "vector" || value === "graph" || value === "hybrid";
+  return value === "vector" || value === "hybrid";
+}
+
+function stagesValue(value: unknown): readonly RetrievalStage[] {
+  if (!Array.isArray(value))
+    throw new TypeError("Chat retrieval stages must be an array.");
+  return value.map((item) => {
+    if (!isRecord(item))
+      throw new TypeError("Chat retrieval stage must be an object.");
+    const name = stringValue(item.name, "retrieval stage name");
+    const state = stringValue(item.state, "retrieval stage state");
+    if (!isStageName(name) || !isStageState(state)) {
+      throw new TypeError("Chat retrieval stage is invalid.");
+    }
+    return {
+      name,
+      state,
+      evidenceCount: nonNegativeNumberValue(
+        item.evidenceCount,
+        "retrieval stage evidence count",
+      ),
+      durationMilliseconds: measurementValue(
+        item.durationMilliseconds,
+        "retrieval stage duration",
+      ),
+      reasonCode: nullableStringValue(
+        item.reasonCode,
+        "retrieval stage reason",
+      ),
+      inputTokens: measurementValue(
+        item.inputTokens,
+        "retrieval stage input tokens",
+      ),
+      outputTokens: measurementValue(
+        item.outputTokens,
+        "retrieval stage output tokens",
+      ),
+    };
+  });
+}
+
+function isStageName(value: string): value is RetrievalStage["name"] {
+  return value === "vector" || value === "planning" || value === "graph";
+}
+
+function isStageState(value: string): value is RetrievalStage["state"] {
+  return [
+    "completed",
+    "no_evidence",
+    "skipped",
+    "unavailable",
+    "failed",
+  ].includes(value);
+}
+
+function contributionValue(value: unknown): ChatReference["contribution"] {
+  if (value === undefined) return undefined;
+  if (value === "vector" || value === "graph" || value === "vector_and_graph")
+    return value;
+  throw new TypeError("Chat reference contribution is invalid.");
 }
 
 function measurementsValue(value: unknown): ChatInspection["measurements"] {

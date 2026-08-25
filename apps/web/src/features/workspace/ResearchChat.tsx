@@ -21,10 +21,12 @@ import {
 } from "../../api/chat";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import { StrategyComparison } from "./StrategyComparison";
-import { useNorviiChatRuntime } from "./useNorviiChatRuntime";
+import {
+  type AssistantTerminalState,
+  useNorviiChatRuntime,
+} from "./useNorviiChatRuntime";
 
 const defaultChatProvider = createHttpChatProvider();
-const initiallyVisibleCitationLocations = 3;
 
 interface ResearchChatProps {
   readonly corpusId: string;
@@ -41,20 +43,20 @@ export function ResearchChat({
   const interfaceLanguage: "en" | "pt" = i18n.resolvedLanguage?.startsWith("pt")
     ? "pt"
     : "en";
-  const [strategy, setStrategy] = useState<RetrievalStrategy>("vector");
+  const [strategy, setStrategy] = useState<RetrievalStrategy>("hybrid");
   const {
     runtime,
-    error,
+    terminalStatesByMessageId,
     referencesByMessageId,
     inspectionsByMessageId,
     lastSubmittedQuestion,
+    lastSubmittedQuestionVersion,
   } = useNorviiChatRuntime({
     corpusId,
     provider,
     interfaceLanguage,
     abstainedAnswer: t("chat.abstained"),
     fallbackError: t("chat.failed"),
-    graphUnavailableError: t("chat.graphUnavailable"),
     strategy,
   });
 
@@ -76,18 +78,20 @@ export function ResearchChat({
                     onReferenceSelect={onReferenceSelect}
                     referencesByMessageId={referencesByMessageId}
                     inspectionsByMessageId={inspectionsByMessageId}
+                    terminalStatesByMessageId={terminalStatesByMessageId}
                   />
                 )
               }
             </ThreadPrimitive.Messages>
-            {error ? <ChatError message={error} /> : null}
-            <ChatViewportFooter
+            <ChatStrategyComparison
               corpusId={corpusId}
               interfaceLanguage={interfaceLanguage}
               lastSubmittedQuestion={lastSubmittedQuestion}
+              lastSubmittedQuestionVersion={lastSubmittedQuestionVersion}
               onReferenceSelect={onReferenceSelect}
               provider={provider}
             />
+            <ChatViewportFooter interfaceLanguage={interfaceLanguage} />
           </ThreadPrimitive.Viewport>
         </ThreadPrimitive.Root>
       </section>
@@ -103,11 +107,7 @@ function StrategySelector({
   readonly onChange: (strategy: RetrievalStrategy) => void;
 }) {
   const { t } = useTranslation();
-  const strategies: readonly RetrievalStrategy[] = [
-    "vector",
-    "graph",
-    "hybrid",
-  ];
+  const strategies: readonly RetrievalStrategy[] = ["vector", "hybrid"];
 
   return (
     <div
@@ -143,33 +143,50 @@ function ChatEmptyState() {
   );
 }
 
-function ChatViewportFooter({
+function ChatStrategyComparison({
   corpusId,
   interfaceLanguage,
   lastSubmittedQuestion,
+  lastSubmittedQuestionVersion,
   onReferenceSelect,
   provider,
 }: {
   readonly corpusId: string;
   readonly interfaceLanguage: "en" | "pt";
   readonly lastSubmittedQuestion: string | undefined;
+  readonly lastSubmittedQuestionVersion: number;
   readonly onReferenceSelect?: ((reference: ChatReference) => void) | undefined;
   readonly provider: ChatProvider;
 }) {
   const isEmpty = useAuiState((state) => state.thread.isEmpty);
+
+  if (isEmpty) {
+    return null;
+  }
+
+  return (
+    <StrategyComparison
+      corpusId={corpusId}
+      interfaceLanguage={interfaceLanguage}
+      key={lastSubmittedQuestionVersion}
+      onReferenceSelect={onReferenceSelect}
+      provider={provider}
+      question={lastSubmittedQuestion}
+    />
+  );
+}
+
+function ChatViewportFooter({
+  interfaceLanguage,
+}: {
+  readonly interfaceLanguage: "en" | "pt";
+}) {
+  const isEmpty = useAuiState((state) => state.thread.isEmpty);
+
   return (
     <ThreadPrimitive.ViewportFooter
       className={`chat-viewport__footer${isEmpty ? " chat-viewport__footer--empty" : ""}`}
     >
-      {!isEmpty ? (
-        <StrategyComparison
-          corpusId={corpusId}
-          interfaceLanguage={interfaceLanguage}
-          onReferenceSelect={onReferenceSelect}
-          provider={provider}
-          question={lastSubmittedQuestion}
-        />
-      ) : null}
       <ChatComposer interfaceLanguage={interfaceLanguage} />
       {isEmpty ? <ChatStarterQuestions /> : null}
     </ThreadPrimitive.ViewportFooter>
@@ -184,6 +201,9 @@ function ChatStarterQuestions() {
     t("chat.starterQuestions.purpose"),
     t("chat.starterQuestions.scope"),
     t("chat.starterQuestions.rights"),
+    t("chat.starterQuestions.authorityReports"),
+    t("chat.starterQuestions.authorityRequirements"),
+    t("chat.starterQuestions.dataSubjectRights"),
   ];
 
   return (
@@ -237,27 +257,44 @@ interface AssistantMessageProps {
   readonly referencesByMessageId: ReadonlyMap<string, readonly ChatReference[]>;
   readonly onReferenceSelect?: ((reference: ChatReference) => void) | undefined;
   readonly inspectionsByMessageId: ReadonlyMap<string, ChatInspection>;
+  readonly terminalStatesByMessageId: ReadonlyMap<
+    string,
+    AssistantTerminalState
+  >;
 }
 
 function AssistantMessage({
   referencesByMessageId,
   inspectionsByMessageId,
   onReferenceSelect,
+  terminalStatesByMessageId,
 }: AssistantMessageProps) {
   const { t } = useTranslation();
   const messageId = useAuiState((state) => state.message.id);
+  const wasCancelled = useAuiState(
+    (state) =>
+      state.message.status?.type === "incomplete" &&
+      state.message.status.reason === "cancelled",
+  );
   const references = referencesByMessageId.get(messageId) ?? [];
   const inspection = inspectionsByMessageId.get(messageId);
+  const terminalState = terminalStatesByMessageId.get(messageId);
   return (
     <MessagePrimitive.Root
       aria-label={t("chat.assistant")}
-      className="chat-message chat-message--assistant"
+      className={`chat-message chat-message--assistant${terminalState?.kind === "error" ? " chat-message--error" : ""}`}
       role="article"
     >
       <span className="message-author">{t("chat.assistant")}</span>
-      <MessagePrimitive.Parts
-        components={{ Text: AssistantMarkdown, Empty: AssistantPending }}
-      />
+      {wasCancelled || terminalState?.kind === "cancelled" ? (
+        <AssistantCancelled />
+      ) : terminalState?.kind === "error" ? (
+        <AssistantError message={terminalState.message} />
+      ) : (
+        <MessagePrimitive.Parts
+          components={{ Text: AssistantMarkdown, Empty: AssistantPending }}
+        />
+      )}
       {references.length > 0 ? (
         <CitationList
           onReferenceSelect={onReferenceSelect}
@@ -275,11 +312,14 @@ function AssistantMessage({
 }
 
 interface CitationLocationGroup {
+  readonly contribution: EvidenceContribution;
   readonly id: string;
   readonly ranks: readonly number[];
   readonly reference: ChatReference;
   readonly supportingPassageCount: number;
 }
+
+type EvidenceContribution = NonNullable<ChatReference["contribution"]>;
 
 function CitationList({
   references,
@@ -289,18 +329,13 @@ function CitationList({
   readonly onReferenceSelect?: ((reference: ChatReference) => void) | undefined;
 }) {
   const { t } = useTranslation();
-  const [showAllLocations, setShowAllLocations] = useState(false);
   const [selectedLocationId, setSelectedLocationId] = useState<string>();
   const citationGroups = groupCitationLocations(references);
-  const visibleGroups = showAllLocations
-    ? citationGroups
-    : citationGroups.slice(0, initiallyVisibleCitationLocations);
-  const hiddenLocationCount = citationGroups.length - visibleGroups.length;
 
   return (
     <section className="citation-list" aria-label={t("chat.citationLocations")}>
       <div className="citation-list__items">
-        {visibleGroups.map((group) => {
+        {citationGroups.map((group) => {
           const sourceTitle =
             group.reference.sourceTitle ?? group.reference.sourceId;
           const location = formatCitationLocation(
@@ -333,34 +368,20 @@ function CitationList({
                 </span>
                 <strong>{location}</strong>
               </span>
-              <span className="citation-chip__count">
-                {t("chat.supportingPassages", {
-                  count: group.supportingPassageCount,
-                })}
+              <span className="citation-chip__metadata">
+                <span className="citation-chip__contribution">
+                  {t(`chat.evidenceContribution.${group.contribution}`)}
+                </span>
+                <span className="citation-chip__count">
+                  {t("chat.supportingPassages", {
+                    count: group.supportingPassageCount,
+                  })}
+                </span>
               </span>
             </button>
           );
         })}
       </div>
-      {hiddenLocationCount > 0 ? (
-        <button
-          className="citation-list__reveal"
-          type="button"
-          onClick={() => setShowAllLocations(true)}
-        >
-          {t("chat.showMoreLocations", { count: hiddenLocationCount })}
-        </button>
-      ) : null}
-      {showAllLocations &&
-      citationGroups.length > initiallyVisibleCitationLocations ? (
-        <button
-          className="citation-list__reveal"
-          type="button"
-          onClick={() => setShowAllLocations(false)}
-        >
-          {t("chat.showFewerLocations")}
-        </button>
-      ) : null}
     </section>
   );
 }
@@ -378,6 +399,7 @@ function groupCitationLocations(
     const existingGroup = groups.get(groupId);
     if (existingGroup === undefined) {
       groups.set(groupId, {
+        contribution: reference.contribution ?? "vector",
         id: groupId,
         ranks: [reference.rank],
         reference,
@@ -387,6 +409,10 @@ function groupCitationLocations(
     }
     groups.set(groupId, {
       ...existingGroup,
+      contribution: combineEvidenceContribution(
+        existingGroup.contribution,
+        reference.contribution,
+      ),
       ranks: [...existingGroup.ranks, reference.rank],
       supportingPassageCount: existingGroup.supportingPassageCount + 1,
     });
@@ -394,6 +420,21 @@ function groupCitationLocations(
   return [...groups.values()].sort(
     (left, right) => left.reference.rank - right.reference.rank,
   );
+}
+
+function combineEvidenceContribution(
+  current: EvidenceContribution,
+  incoming: ChatReference["contribution"],
+): EvidenceContribution {
+  const normalizedIncoming = incoming ?? "vector";
+  if (
+    current === "vector_and_graph" ||
+    normalizedIncoming === "vector_and_graph" ||
+    current !== normalizedIncoming
+  ) {
+    return "vector_and_graph";
+  }
+  return current;
 }
 
 function citationLocatorKey(locator: string): string {
@@ -512,6 +553,27 @@ function AnswerInspection({
             value={formatMeasurement(inspection.measurements.outputTokens, t)}
           />
         </dl>
+        {inspection.stages?.length ? (
+          <ol
+            className="answer-inspection__stages"
+            aria-label={t("chat.retrievalStages")}
+          >
+            {inspection.stages.map((stage) => (
+              <li key={stage.name}>
+                <strong>{t(`chat.retrievalStage.${stage.name}`)}</strong>
+                <span>{t(`chat.retrievalStageState.${stage.state}`)}</span>
+                <small>
+                  {t("chat.retrievalStageEvidence", {
+                    count: stage.evidenceCount,
+                  })}
+                  {stage.reasonCode
+                    ? ` - ${t(`chat.retrievalStageReason.${stage.reasonCode}`)}`
+                    : ""}
+                </small>
+              </li>
+            ))}
+          </ol>
+        ) : null}
         <ol
           className="answer-inspection__evidence"
           aria-label={t("chat.inspectionEvidence")}
@@ -528,6 +590,9 @@ function AnswerInspection({
               </button>
               <small>
                 {t("chat.retrievalRank", { rank: reference.rank })}
+                {reference.contribution
+                  ? ` - ${t(`chat.evidenceContribution.${reference.contribution}`)}`
+                  : ""}
                 {reference.cosineDistance === null ||
                 reference.cosineDistance === undefined
                   ? ` - ${t("chat.unavailable")}`
@@ -621,13 +686,25 @@ function AssistantPending() {
   );
 }
 
-function ChatError({ message }: { readonly message: string }) {
+function AssistantError({ message }: { readonly message: string }) {
   const { t } = useTranslation();
   return (
-    <div className="chat-error" role="alert">
+    <div className="assistant-terminal assistant-terminal--error" role="alert">
       <strong>{t("chat.errorTitle")}</strong>
       <span>{message}</span>
     </div>
+  );
+}
+
+function AssistantCancelled() {
+  const { t } = useTranslation();
+  return (
+    <output
+      className="assistant-terminal assistant-terminal--cancelled"
+      role="status"
+    >
+      {t("chat.cancelled")}
+    </output>
   );
 }
 

@@ -19,6 +19,10 @@ func TestHandlerStreamsGroundedEventsInOrder(t *testing.T) {
 			ID: "evidence-1", CorpusID: corpusID, SourceID: uuid.New(), DocumentID: uuid.New(),
 			UnitLocator: "article-1", StartOffset: 0, EndOffset: 20, Excerpt: "Article 1", Rank: 1,
 		}},
+		Inspection: &chatdomain.Inspection{GraphPath: []chatdomain.GraphPathStep{{
+			RelationshipType: "requires", SubjectLabel: "Authority", ObjectLabel: "Impact report",
+			EvidenceID: "evidence-1", EvidenceLocator: "article-1",
+		}}},
 	}}
 	mux := http.NewServeMux()
 	NewHandler(service).Register(mux)
@@ -45,6 +49,9 @@ func TestHandlerStreamsGroundedEventsInOrder(t *testing.T) {
 	if !strings.Contains(body, `"inspection":{"outcome":"completed"`) ||
 		!strings.Contains(body, `"totalMilliseconds":`) {
 		t.Fatalf("completed event must expose inspection measurements: %s", body)
+	}
+	if !strings.Contains(body, `"graphPath":[{"relationshipType":"requires"`) {
+		t.Fatalf("completed event must expose the graph path: %s", body)
 	}
 }
 
@@ -98,6 +105,7 @@ func TestHandlerRejectsInvalidPayloads(t *testing.T) {
 		{name: "malformed JSON", body: "{", want: "invalid_question"},
 		{name: "unknown field", body: `{"question":"What applies?","unexpected":true}`, want: "invalid_question"},
 		{name: "invalid language", body: `{"question":"What applies?","interfaceLanguage":"fr"}`, want: "invalid_input"},
+		{name: "removed graph strategy", body: `{"question":"What applies?","strategy":"graph"}`, want: "invalid_input"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -124,7 +132,6 @@ func TestHandlerMapsTerminalFailures(t *testing.T) {
 		{name: "retrieval", err: chatdomain.ErrRetrievalFailed, want: "retrieval_failed"},
 		{name: "invalid question", err: chatdomain.ErrInvalidQuestion, want: "invalid_question"},
 		{name: "missing active snapshot", err: chatdomain.ErrSnapshotUnavailable, want: "snapshot_unavailable"},
-		{name: "missing graph release", err: chatdomain.ErrGraphUnavailable, want: "graph_unavailable"},
 		{name: "generation", err: chatdomain.ErrGenerationFailed, want: "generation_failed"},
 	}
 	for _, test := range tests {

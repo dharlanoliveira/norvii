@@ -69,6 +69,7 @@ def test_oldest_initial_work_is_leased_extracted_and_published_atomically() -> N
         )
 
         document_id = repository.publish(claimed, capture, command, now)
+        repository.complete(claimed, capture, command, document_id, now)
 
         with repository.connection.cursor() as cursor:
             cursor.execute(

@@ -24,6 +24,7 @@ from norvii_ingestion.enrichment.embedding import EmbeddingProviderError
 from norvii_ingestion.extraction.html import ExtractionError
 from norvii_ingestion.extraction.pdf import PdfExtractionError
 from norvii_ingestion.publication.postgres.repository import WorkRepositoryError
+from norvii_ingestion.release.coordinator import GraphReleaseCoordinatorError
 from norvii_ingestion.semantic.extraction import ExtractionProviderError
 
 if TYPE_CHECKING:
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from norvii_ingestion.domain.artifacts import DocumentArtifact
     from norvii_ingestion.domain.models import IngestionWork
     from norvii_ingestion.enrichment.embedding import EmbeddingProvider
+    from norvii_ingestion.release.coordinator import GraphReleaseCoordinator
     from norvii_ingestion.semantic.extraction import SemanticExtractor
 
 _FAILURE_MAPPINGS: tuple[tuple[type[Exception], FailureCategory], ...] = (
@@ -47,6 +49,7 @@ _FAILURE_MAPPINGS: tuple[tuple[type[Exception], FailureCategory], ...] = (
     (ExtractionProviderError, FailureCategory.EXTRACTION_FAILED),
     (EmbeddingProviderError, FailureCategory.PUBLICATION_FAILED),
     (WorkRepositoryError, FailureCategory.PUBLICATION_FAILED),
+    (GraphReleaseCoordinatorError, FailureCategory.PUBLICATION_FAILED),
 )
 
 
@@ -92,7 +95,18 @@ class PublicationRepository(Protocol):
         command: PublicationCommand,
         now: datetime,
     ) -> UUID:
-        """Atomically publish one successful artifact."""
+        """Atomically persist one successful artifact while retaining its active lease."""
+        ...
+
+    def complete(
+        self,
+        work: IngestionWork,
+        capture: OriginCapture,
+        command: PublicationCommand,
+        document_id: UUID,
+        now: datetime,
+    ) -> None:
+        """Complete a lease after all required derived releases are ready."""
         ...
 
     def fail(
@@ -118,6 +132,7 @@ class IngestionProcessor:
         clock: Callable[[], datetime],
         embedding_provider: EmbeddingProvider,
         embedding_model: str,
+        graph_release_coordinator: GraphReleaseCoordinator,
         semantic_extractor: SemanticExtractor | None = None,
     ) -> None:
         self._repository = repository
@@ -127,6 +142,7 @@ class IngestionProcessor:
         self._clock = clock
         self._embedding_provider = embedding_provider
         self._embedding_model = embedding_model
+        self._graph_release_coordinator = graph_release_coordinator
         self._semantic_extractor = semantic_extractor
 
     def process(self, work: IngestionWork) -> None:
@@ -159,20 +175,23 @@ class IngestionProcessor:
                 byte_size=len(content),
                 final_url=final_url,
             )
-            self._repository.publish(
+            command = PublicationCommand(
+                work_id=work.claim.work_id,
+                lease_token=work.claim.lease_token,
+                pipeline_version=self._pipeline_version,
+                origin_sha256=capture.content_sha256,
+                artifact=artifact,
+                retrieval_chunks=enriched_chunks,
+                semantic_extraction=semantic_extraction,
+            )
+            document_id = self._repository.publish(
                 work,
                 capture,
-                PublicationCommand(
-                    work_id=work.claim.work_id,
-                    lease_token=work.claim.lease_token,
-                    pipeline_version=self._pipeline_version,
-                    origin_sha256=capture.content_sha256,
-                    artifact=artifact,
-                    retrieval_chunks=enriched_chunks,
-                    semantic_extraction=semantic_extraction,
-                ),
+                command,
                 now,
             )
+            self._graph_release_coordinator.publish(work, document_id)
+            self._repository.complete(work, capture, command, document_id, self._clock())
         except Exception as error:  # noqa: BLE001 - boundary converts failures to safe categories
             self._repository.fail(work, _safe_failure(error), self._clock())
 
@@ -210,5 +229,7 @@ def _safe_failure_detail(error: Exception) -> str | None:
     if isinstance(error, EmbeddingProviderError):
         return error.detail
     if isinstance(error, WorkRepositoryError):
+        return error.detail
+    if isinstance(error, GraphReleaseCoordinatorError):
         return error.detail
     return None

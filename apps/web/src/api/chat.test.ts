@@ -180,6 +180,17 @@ describe("HTTP grounded chat provider", () => {
           returnedCount: 0,
           embeddingModel: null,
         },
+        stages: [
+          {
+            name: "planning",
+            state: "skipped",
+            evidenceCount: 0,
+            durationMilliseconds: 4,
+            reasonCode: "not_relevant",
+            inputTokens: 10,
+            outputTokens: 2,
+          },
+        ],
         measurements: {
           retrievalMilliseconds: null,
           generationMilliseconds: 1,
@@ -193,6 +204,9 @@ describe("HTTP grounded chat provider", () => {
     expect(
       event.type === "completed" && event.inspection?.measurements.inputTokens,
     ).toBeNull();
+    expect(
+      event.type === "completed" && event.inspection?.stages?.[0],
+    ).toMatchObject({ name: "planning", state: "skipped" });
     expect(() =>
       parseChatEvent({
         type: "completed",

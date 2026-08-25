@@ -14,7 +14,6 @@ var (
 	ErrRetrievalFailed      = errors.New("grounded evidence retrieval failed")
 	ErrGenerationFailed     = errors.New("grounded answer generation failed")
 	ErrSnapshotUnavailable  = errors.New("active corpus snapshot is unavailable")
-	ErrGraphUnavailable     = errors.New("graph release is unavailable")
 )
 
 // Request identifies one ephemeral question within one active corpus.
@@ -44,6 +43,7 @@ type Evidence struct {
 	Excerpt           string
 	Rank              int
 	CosineDistance    *float64
+	Contribution      string
 }
 
 // RetrievalInspection describes the bounded retrieval operation without exposing provider data.
@@ -63,12 +63,34 @@ type Measurements struct {
 	OutputTokens           *int64
 }
 
+// RetrievalStage records one public, content-free retrieval phase.
+type RetrievalStage struct {
+	Name                 string
+	State                string
+	EvidenceCount        int
+	DurationMilliseconds *int64
+	ReasonCode           *string
+	InputTokens          *int64
+	OutputTokens         *int64
+}
+
+// GraphPathStep identifies one published graph relationship and its immutable evidence location.
+type GraphPathStep struct {
+	RelationshipType string
+	SubjectLabel     string
+	ObjectLabel      string
+	EvidenceID       string
+	EvidenceLocator  string
+}
+
 // Inspection is an ephemeral, safe-to-display answer diagnostic.
 type Inspection struct {
 	Outcome      string
 	Retrieval    *RetrievalInspection
 	Measurements Measurements
 	Evidence     []Evidence
+	GraphPath    []GraphPathStep
+	Stages       []RetrievalStage
 }
 
 // Result is the validated terminal answer and its supporting evidence.

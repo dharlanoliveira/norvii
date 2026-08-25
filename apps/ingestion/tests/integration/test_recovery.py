@@ -280,25 +280,28 @@ def _publish(
         byte_size=len(content),
         final_url="https://example.org/recovery",
     )
-    return repository.publish(
+    command = PublicationCommand(
+        work_id=work.claim.work_id,
+        lease_token=work.claim.lease_token,
+        pipeline_version="corpus-ingestion-v1",
+        origin_sha256=capture.content_sha256,
+        artifact=artifact,
+        retrieval_chunks=tuple(
+            replace(chunk, embedding=(0.0,) * 1536, embedding_model="test-embedding")
+            for chunk in LegalChunker().chunk(artifact)
+        ),
+        semantic_extraction=_semantic_extraction(artifact, semantic_fixture)
+        if semantic_fixture is not SemanticFixtureKind.NONE
+        else None,
+    )
+    document_id = repository.publish(
         work,
         capture,
-        PublicationCommand(
-            work_id=work.claim.work_id,
-            lease_token=work.claim.lease_token,
-            pipeline_version="corpus-ingestion-v1",
-            origin_sha256=capture.content_sha256,
-            artifact=artifact,
-            retrieval_chunks=tuple(
-                replace(chunk, embedding=(0.0,) * 1536, embedding_model="test-embedding")
-                for chunk in LegalChunker().chunk(artifact)
-            ),
-            semantic_extraction=_semantic_extraction(artifact, semantic_fixture)
-            if semantic_fixture is not SemanticFixtureKind.NONE
-            else None,
-        ),
+        command,
         now,
     )
+    repository.complete(work, capture, command, document_id, now)
+    return document_id
 
 
 def _semantic_extraction(

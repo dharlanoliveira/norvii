@@ -145,6 +145,12 @@ export const englishTranslation = {
       purpose: "What is the purpose of this document?",
       scope: "Who does this document apply to?",
       rights: "What rights and duties does it establish?",
+      authorityReports:
+        "Which reports does the national data protection authority require?",
+      authorityRequirements:
+        "What does this document require the data protection authority to do?",
+      dataSubjectRights:
+        "Which rights does this document grant to data subjects?",
     },
     placeholder: "Ask a question about the published sources...",
     questionLabel: "Research question",
@@ -153,12 +159,12 @@ export const englishTranslation = {
     you: "You",
     assistant: "Norvii",
     thinking: "Thinking",
+    cancelled: "Response cancelled.",
     groundedOnly: "Answers are limited to this corpus",
     language: "Interface: {{language}}",
     strategy: {
       label: "Retrieval strategy",
       vector: "Vector",
-      graph: "Graph",
       hybrid: "Hybrid",
     },
     comparison: {
@@ -180,10 +186,33 @@ export const englishTranslation = {
     openCitation: "Open {{location}} in {{source}}",
     supportingPassages_one: "{{count}} supporting passage",
     supportingPassages_other: "{{count}} supporting passages",
-    showMoreLocations_one: "View {{count}} more location",
-    showMoreLocations_other: "View {{count}} more locations",
-    showFewerLocations: "Show fewer locations",
     inspect: "Research record",
+    retrievalStages: "Retrieval stages",
+    retrievalStage: {
+      vector: "Vector retrieval",
+      planning: "Graph planning",
+      graph: "Graph contribution",
+    },
+    retrievalStageState: {
+      completed: "Completed",
+      no_evidence: "No evidence found",
+      skipped: "Skipped",
+      unavailable: "Unavailable",
+      failed: "Failed",
+    },
+    retrievalStageReason: {
+      not_relevant: "Not relevant to this question",
+      graph_release_unavailable: "No graph release is available",
+      graph_unavailable: "Graph is unavailable",
+      planner_unavailable: "Planner is unavailable",
+    },
+    retrievalStageEvidence_one: "{{count}} evidence location",
+    retrievalStageEvidence_other: "{{count}} evidence locations",
+    evidenceContribution: {
+      vector: "Vector evidence",
+      graph: "Graph evidence",
+      vector_and_graph: "Vector and graph evidence",
+    },
     inspectionEvidence: "Supporting passages",
     graphPath: "Graph evidence path",
     relationships: {

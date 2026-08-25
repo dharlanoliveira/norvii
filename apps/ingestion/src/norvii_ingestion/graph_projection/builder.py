@@ -157,7 +157,7 @@ class GraphReleaseBuilder:
         self, corpus_id: UUID, snapshot_id: UUID
     ) -> tuple[tuple[_EntityProjection, ...], tuple[_RelationshipProjection, ...]]:
         try:
-            with self._connection.cursor() as cursor:
+            with self._connection.transaction(), self._connection.cursor() as cursor:
                 cursor.execute(_ENTITY_QUERY, (corpus_id, snapshot_id))
                 entities = tuple(_entity(row) for row in cursor.fetchall())
                 cursor.execute(_RELATIONSHIP_QUERY, (corpus_id, snapshot_id))
@@ -174,7 +174,7 @@ class GraphReleaseBuilder:
         return entities, relationships
 
     def _ready_release(self, summary: GraphReleaseSummary) -> bool:
-        with self._connection.cursor() as cursor:
+        with self._connection.transaction(), self._connection.cursor() as cursor:
             cursor.execute(
                 """
                 SELECT status FROM graph_releases

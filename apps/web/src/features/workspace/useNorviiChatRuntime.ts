@@ -20,17 +20,29 @@ interface UseNorviiChatRuntimeOptions {
   readonly interfaceLanguage: CorpusLanguage;
   readonly abstainedAnswer: string;
   readonly fallbackError: string;
-  readonly graphUnavailableError: string;
   readonly strategy: RetrievalStrategy;
 }
 
 interface NorviiChatRuntime {
   readonly runtime: AssistantRuntime;
-  readonly error: string | undefined;
+  readonly terminalStatesByMessageId: ReadonlyMap<
+    string,
+    AssistantTerminalState
+  >;
   readonly referencesByMessageId: ReadonlyMap<string, readonly ChatReference[]>;
   readonly inspectionsByMessageId: ReadonlyMap<string, ChatInspection>;
   readonly lastSubmittedQuestion: string | undefined;
+  readonly lastSubmittedQuestionVersion: number;
 }
+
+export type AssistantTerminalState =
+  | {
+      readonly kind: "cancelled";
+    }
+  | {
+      readonly kind: "error";
+      readonly message: string;
+    };
 
 export function useNorviiChatRuntime({
   corpusId,
@@ -38,10 +50,11 @@ export function useNorviiChatRuntime({
   interfaceLanguage,
   abstainedAnswer,
   fallbackError,
-  graphUnavailableError,
   strategy,
 }: UseNorviiChatRuntimeOptions): NorviiChatRuntime {
-  const [error, setError] = useState<string>();
+  const [terminalStatesByMessageId, setTerminalStatesByMessageId] = useState<
+    ReadonlyMap<string, AssistantTerminalState>
+  >(() => new Map());
   const [referencesByMessageId, setReferencesByMessageId] = useState<
     ReadonlyMap<string, readonly ChatReference[]>
   >(() => new Map());
@@ -49,6 +62,20 @@ export function useNorviiChatRuntime({
     ReadonlyMap<string, ChatInspection>
   >(() => new Map());
   const [lastSubmittedQuestion, setLastSubmittedQuestion] = useState<string>();
+  const [lastSubmittedQuestionVersion, setLastSubmittedQuestionVersion] =
+    useState(0);
+
+  const storeTerminalState = useCallback(
+    (messageId: string | undefined, terminalState: AssistantTerminalState) => {
+      if (messageId === undefined) return;
+      setTerminalStatesByMessageId((current) => {
+        const next = new Map(current);
+        next.set(messageId, terminalState);
+        return next;
+      });
+    },
+    [],
+  );
 
   const storeReferences = useCallback(
     (messageId: string | undefined, references: readonly ChatReference[]) => {
@@ -78,13 +105,17 @@ export function useNorviiChatRuntime({
   const adapter = useMemo<ChatModelAdapter>(
     () => ({
       async *run(options) {
-        setError(undefined);
         const question = latestQuestion(options.messages);
         if (question === "") {
-          setError(fallbackError);
+          storeTerminalState(options.unstable_assistantMessageId, {
+            kind: "error",
+            message: fallbackError,
+          });
+          yield textResult(fallbackError);
           return;
         }
         setLastSubmittedQuestion(question);
+        setLastSubmittedQuestionVersion((current) => current + 1);
 
         const assistantMessageId = options.unstable_assistantMessageId;
         const stream = new ChatStreamQueue();
@@ -126,37 +157,46 @@ export function useNorviiChatRuntime({
                 yield textResult(abstainedAnswer);
                 return;
               case "cancelled":
+                storeTerminalState(assistantMessageId, { kind: "cancelled" });
+                yield textResult("");
                 return;
-              case "error":
-                setError(
-                  event.code === "graph_unavailable"
-                    ? graphUnavailableError
-                    : event.message,
-                );
+              case "error": {
+                const message = event.message;
+                storeTerminalState(assistantMessageId, {
+                  kind: "error",
+                  message,
+                });
+                yield textResult(message);
                 return;
+              }
             }
           }
         } catch (reason: unknown) {
-          if (!options.abortSignal.aborted) {
-            setError(reason instanceof Error ? reason.message : fallbackError);
-          }
+          if (options.abortSignal.aborted) return;
+          const message =
+            reason instanceof Error ? reason.message : fallbackError;
+          storeTerminalState(assistantMessageId, { kind: "error", message });
+          yield textResult(message);
           return;
         }
 
-        if (!options.abortSignal.aborted) {
-          setError(fallbackError);
-        }
+        if (options.abortSignal.aborted) return;
+        storeTerminalState(assistantMessageId, {
+          kind: "error",
+          message: fallbackError,
+        });
+        yield textResult(fallbackError);
       },
     }),
     [
       abstainedAnswer,
       corpusId,
       fallbackError,
-      graphUnavailableError,
       interfaceLanguage,
       provider,
       storeReferences,
       storeInspection,
+      storeTerminalState,
       strategy,
     ],
   );
@@ -164,10 +204,11 @@ export function useNorviiChatRuntime({
 
   return {
     runtime,
-    error,
+    terminalStatesByMessageId,
     referencesByMessageId,
     inspectionsByMessageId,
     lastSubmittedQuestion,
+    lastSubmittedQuestionVersion,
   };
 }
 
