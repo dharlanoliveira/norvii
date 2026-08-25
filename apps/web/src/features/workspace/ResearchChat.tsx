@@ -61,20 +61,7 @@ export function ResearchChat({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <section className="research-chat" aria-label={t("chat.regionLabel")}>
-        <label className="chat-strategy">
-          <span>{t("chat.strategy.label")}</span>
-          <select
-            aria-label={t("chat.strategy.label")}
-            value={strategy}
-            onChange={(event) =>
-              setStrategy(event.target.value as RetrievalStrategy)
-            }
-          >
-            <option value="vector">{t("chat.strategy.vector")}</option>
-            <option value="graph">{t("chat.strategy.graph")}</option>
-            <option value="hybrid">{t("chat.strategy.hybrid")}</option>
-          </select>
-        </label>
+        <StrategySelector strategy={strategy} onChange={setStrategy} />
         <ThreadPrimitive.Root className="chat-thread">
           <ThreadPrimitive.Viewport className="chat-viewport" turnAnchor="top">
             <AuiIf condition={(state) => state.thread.isEmpty}>
@@ -105,6 +92,44 @@ export function ResearchChat({
         </ThreadPrimitive.Root>
       </section>
     </AssistantRuntimeProvider>
+  );
+}
+
+function StrategySelector({
+  strategy,
+  onChange,
+}: {
+  readonly strategy: RetrievalStrategy;
+  readonly onChange: (strategy: RetrievalStrategy) => void;
+}) {
+  const { t } = useTranslation();
+  const strategies: readonly RetrievalStrategy[] = [
+    "vector",
+    "graph",
+    "hybrid",
+  ];
+
+  return (
+    <div
+      aria-label={t("chat.strategy.label")}
+      className="chat-strategy"
+      role="radiogroup"
+    >
+      <span>{t("chat.strategy.label")}</span>
+      <div className="chat-strategy__choices">
+        {strategies.map((option) => (
+          <button
+            aria-checked={strategy === option}
+            key={option}
+            role="radio"
+            type="button"
+            onClick={() => onChange(option)}
+          >
+            {t(`chat.strategy.${option}`)}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

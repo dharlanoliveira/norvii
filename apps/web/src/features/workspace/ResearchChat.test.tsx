@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ChatProvider } from "../../api/chat";
+import type { ChatProvider, RetrievalStrategy } from "../../api/chat";
 import {
   expectNoAccessibilityViolations,
   renderAtRoute,
@@ -74,6 +74,45 @@ describe("research chat", () => {
 
     expect(await screen.findByText("Completed.")).toBeVisible();
     expect(questions).toEqual(["First line\nSecond line"]);
+  });
+
+  it("uses the selected retrieval strategy for the next question", async () => {
+    const strategies: RetrievalStrategy[] = [];
+    const provider: ChatProvider = {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        strategy,
+        _signal,
+        onEvent,
+      ) => {
+        strategies.push(strategy);
+        onEvent({
+          type: "completed",
+          requestId: "request-strategy",
+          answer: "Completed.",
+          references: [],
+          telemetry: {
+            outcome: "completed",
+            evidenceCount: 0,
+            durationMilliseconds: 1,
+          },
+        });
+        return Promise.resolve();
+      },
+    };
+    const user = userEvent.setup();
+    renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
+
+    await user.click(screen.getByRole("radio", { name: "Hybrid" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Research question" }),
+      "What applies?",
+    );
+    await user.keyboard("{Enter}");
+
+    expect(strategies).toEqual(["hybrid"]);
   });
 
   it("submits a starter question through the normal chat runtime", async () => {

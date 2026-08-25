@@ -1064,14 +1064,35 @@
   font-weight: 700;
 }
 
-.chat-strategy select {
-  min-height: 30px;
+.chat-strategy__choices {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 4px 22px 4px 10px;
-  color: var(--teal-deep);
-  background: var(--white);
+  background: rgb(255 254 250 / 70%);
+}
+
+.chat-strategy__choices button {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--ink-soft);
+  background: transparent;
   font: inherit;
+  cursor: pointer;
+}
+
+.chat-strategy__choices button[aria-checked="true"] {
+  color: var(--teal-deep);
+  background: var(--paper-raised);
+  box-shadow: 0 1px 4px rgb(48 38 25 / 10%);
+}
+
+.chat-strategy__choices button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
 }
 
 .chat-message--assistant + .chat-message--user {
