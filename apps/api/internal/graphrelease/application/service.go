@@ -9,20 +9,20 @@ import (
 	"github.com/google/uuid"
 )
 
-type store interface {
+type releaseGetter interface {
 	Get(context.Context, uuid.UUID, uuid.UUID) (domain.Release, error)
 }
 
 // Service exposes one corpus- and snapshot-scoped graph-release lookup.
-type Service struct{ store store }
+type Service struct{ releaseGetter releaseGetter }
 
 // NewService constructs a graph-release inspection service.
-func NewService(store store) *Service { return &Service{store: store} }
+func NewService(releaseGetter releaseGetter) *Service { return &Service{releaseGetter: releaseGetter} }
 
 // Get returns an inspectable release record.
 func (service *Service) Get(ctx context.Context, corpusID, snapshotID uuid.UUID) (domain.Release, error) {
-	return service.store.Get(ctx, corpusID, snapshotID)
+	return service.releaseGetter.Get(ctx, corpusID, snapshotID)
 }
 
 // RepositoryStore verifies the concrete persistence adapter satisfies the public port.
-var _ store = (*postgres.Repository)(nil)
+var _ releaseGetter = (*postgres.Repository)(nil)

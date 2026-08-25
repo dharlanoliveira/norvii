@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid5
@@ -124,7 +124,15 @@ class GraphReleaseBuilder:
             reused=False,
         )
         if self._ready_release(summary):
-            return replace(summary, reused=True)
+            return GraphReleaseSummary(
+                release_id=summary.release_id,
+                corpus_id=summary.corpus_id,
+                snapshot_id=summary.snapshot_id,
+                manifest_sha256=summary.manifest_sha256,
+                entity_count=summary.entity_count,
+                relationship_count=summary.relationship_count,
+                reused=True,
+            )
         self._record_building(summary)
         try:
             self._neo4j.replace_release(

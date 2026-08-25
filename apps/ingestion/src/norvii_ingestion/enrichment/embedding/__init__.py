@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 _MALFORMED_RESPONSE = "embedding provider response is malformed"
+_REQUEST_FAILED = "embedding provider request failed"
 
 
 class EmbeddingProviderError(RuntimeError):
@@ -74,7 +75,7 @@ class OpenAICompatibleEmbeddingProvider:
                 decoded = json.loads(response.read())
         except HTTPError as error:
             raise EmbeddingProviderError(
-                "embedding provider request failed", f"provider_http_status_{error.code}"
+                _REQUEST_FAILED, f"provider_http_status_{error.code}"
             ) from error
         except URLError as error:
             detail = (
@@ -82,11 +83,9 @@ class OpenAICompatibleEmbeddingProvider:
                 if isinstance(error.reason, TimeoutError)
                 else "provider_transport"
             )
-            raise EmbeddingProviderError("embedding provider request failed", detail) from error
+            raise EmbeddingProviderError(_REQUEST_FAILED, detail) from error
         except TimeoutError as error:
-            raise EmbeddingProviderError(
-                "embedding provider request failed", "provider_timeout"
-            ) from error
+            raise EmbeddingProviderError(_REQUEST_FAILED, "provider_timeout") from error
         except json.JSONDecodeError as error:
             raise EmbeddingProviderError(
                 "embedding provider response is malformed", "provider_response_invalid"

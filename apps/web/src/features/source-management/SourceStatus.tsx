@@ -6,13 +6,14 @@ import {
   Info,
   RefreshCw,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
   ActiveSnapshotResponse,
   GraphReleaseResponse,
   SnapshotResponse,
+  ProcessingAttemptResponse,
   SourceResponse,
 } from "../../api/contract";
 import { ResearchRequestError } from "../../api/researchProvider";
@@ -22,6 +23,9 @@ type SourceStatusAction = (
   source: SourceResponse,
   signal: AbortSignal,
 ) => Promise<void>;
+
+type ActionOutcome = "idle" | "saving" | "failed" | "stale";
+type PublicationState = "active" | "candidate" | undefined;
 
 interface SourceStatusProps {
   readonly source: SourceResponse;
@@ -33,6 +37,25 @@ interface SourceStatusProps {
     snapshotId: string,
     signal: AbortSignal,
   ) => Promise<GraphReleaseResponse>;
+  readonly onPublish: SourceStatusAction;
+  readonly onRetry: SourceStatusAction;
+  readonly onReprocess: SourceStatusAction;
+}
+
+interface SourceLifecycleActionsProps {
+  readonly source: SourceResponse;
+  readonly activeSnapshot?: ActiveSnapshotResponse | null | undefined;
+  readonly outcome: ActionOutcome;
+  readonly publicationState: PublicationState;
+  readonly canPublish: boolean;
+  readonly onLoadSnapshotHistory: (
+    signal: AbortSignal,
+  ) => Promise<readonly SnapshotResponse[]>;
+  readonly onLoadGraphRelease: (
+    snapshotId: string,
+    signal: AbortSignal,
+  ) => Promise<GraphReleaseResponse>;
+  readonly onRun: (action: SourceStatusAction) => void;
   readonly onPublish: SourceStatusAction;
   readonly onRetry: SourceStatusAction;
   readonly onReprocess: SourceStatusAction;
@@ -50,36 +73,17 @@ export function SourceStatus({
   onReprocess,
 }: SourceStatusProps) {
   const { t } = useTranslation();
-  const [outcome, setOutcome] = useState<
-    "idle" | "saving" | "failed" | "stale"
-  >("idle");
-  const visibleAttempts = source.attempts.slice(0, ATTEMPT_HISTORY_LIMIT);
+  const [outcome, setOutcome] = useState<ActionOutcome>("idle");
+  const publicationState = publicationStateFor(source);
+  const canPublish = canPublishSource(source, activeSnapshot);
 
   const run = (action: SourceStatusAction): void => {
     const controller = new AbortController();
     setOutcome("saving");
     void action(source, controller.signal)
       .then(() => setOutcome("idle"))
-      .catch((error: unknown) =>
-        setOutcome(
-          error instanceof ResearchRequestError && error.code === "stale_state"
-            ? "stale"
-            : "failed",
-        ),
-      );
+      .catch((error: unknown) => setOutcome(actionOutcomeFor(error)));
   };
-  const canPublish =
-    source.processingStatus === "ready" &&
-    source.latestReadyDocumentId !== null &&
-    activeSnapshot !== null &&
-    activeSnapshot !== undefined &&
-    source.latestReadyDocumentId !== source.activeSnapshotDocumentId;
-  const publicationState =
-    source.processingStatus !== "ready" || source.latestReadyDocumentId === null
-      ? undefined
-      : source.latestReadyDocumentId === source.activeSnapshotDocumentId
-        ? "active"
-        : "candidate";
 
   return (
     <section
@@ -87,264 +91,346 @@ export function SourceStatus({
       aria-label={t("sourceManagement.lifecycle.label")}
     >
       <header className="source-status__bar">
-        <div className="source-status__identity">
-          <h2>{source.title}</h2>
-          <span
-            className="source-status__badge"
-            data-status={source.processingStatus}
-          >
-            {t(`sourceStatus.${source.processingStatus}`)}
-          </span>
-          {publicationState === undefined ? null : (
-            <span className="source-status__publication-state">
-              {t(`sourceManagement.snapshot.${publicationState}`)}
-            </span>
-          )}
-        </div>
-        <div
-          className="source-status__actions"
-          role="toolbar"
-          aria-label={t("viewer.sourceActions")}
-        >
-          <details className="source-status__details">
-            <summary>
-              <Info aria-hidden="true" size={15} />
-              {t("viewer.metadata")}
-              <ChevronDown aria-hidden="true" size={14} />
-            </summary>
-            <div className="source-status__details-panel">
-              <dl className="source-status__metadata">
-                {source.origin.submittedUrl ? (
-                  <div>
-                    <dt>{t("sourceManagement.lifecycle.submittedUrl")}</dt>
-                    <dd>{source.origin.submittedUrl}</dd>
-                  </div>
-                ) : null}
-                {source.origin.originalFilename ? (
-                  <div>
-                    <dt>{t("sourceManagement.lifecycle.originalFilename")}</dt>
-                    <dd>{source.origin.originalFilename}</dd>
-                  </div>
-                ) : null}
-                {source.origin.mediaType ? (
-                  <div>
-                    <dt>{t("viewer.mediaType")}</dt>
-                    <dd>{source.origin.mediaType}</dd>
-                  </div>
-                ) : null}
-                {source.origin.byteSize !== null ? (
-                  <div>
-                    <dt>{t("viewer.byteSize")}</dt>
-                    <dd>{source.origin.byteSize.toLocaleString()}</dd>
-                  </div>
-                ) : null}
-                {source.origin.sha256 ? (
-                  <div>
-                    <dt>{t("viewer.originHash")}</dt>
-                    <dd>{source.origin.sha256}</dd>
-                  </div>
-                ) : null}
-              </dl>
-              {visibleAttempts.length > 0 ? (
-                <section
-                  className="source-status__history"
-                  aria-label={t("sourceManagement.lifecycle.attemptHistory")}
-                >
-                  <h3>
-                    <History aria-hidden="true" size={16} />
-                    {t("sourceManagement.lifecycle.attemptHistory")}
-                  </h3>
-                  <div className="source-status__attempt-list">
-                    {visibleAttempts.map((attempt) => (
-                      <article
-                        className="source-status__attempt"
-                        key={`${attempt.startedAt}-${String(attempt.number)}`}
-                      >
-                        <header>
-                          <h4>
-                            {t("sourceManagement.lifecycle.attemptNumber", {
-                              number: attempt.number,
-                            })}
-                          </h4>
-                          <span data-status={attempt.status}>
-                            {t(
-                              `sourceManagement.lifecycle.attemptStates.${attempt.status}`,
-                            )}
-                          </span>
-                        </header>
-                        <dl>
-                          <div>
-                            <dt>
-                              {t("sourceManagement.lifecycle.pipelineVersion")}
-                            </dt>
-                            <dd>{attempt.pipelineVersion}</dd>
-                          </div>
-                          <div>
-                            <dt>{t("sourceManagement.lifecycle.startedAt")}</dt>
-                            <dd>
-                              <time dateTime={attempt.startedAt}>
-                                {new Date(attempt.startedAt).toLocaleString()}
-                              </time>
-                            </dd>
-                          </div>
-                          {attempt.finishedAt ? (
-                            <div>
-                              <dt>
-                                {t("sourceManagement.lifecycle.finishedAt")}
-                              </dt>
-                              <dd>
-                                <time dateTime={attempt.finishedAt}>
-                                  {new Date(
-                                    attempt.finishedAt,
-                                  ).toLocaleString()}
-                                </time>
-                              </dd>
-                            </div>
-                          ) : null}
-                          {attempt.failureCategory ? (
-                            <div>
-                              <dt>
-                                {t(
-                                  "sourceManagement.lifecycle.failureCategory",
-                                )}
-                              </dt>
-                              <dd>{attempt.failureCategory}</dd>
-                            </div>
-                          ) : null}
-                          {attempt.failureDetail ? (
-                            <div>
-                              <dt>
-                                {t(
-                                  "sourceManagement.lifecycle.failureDiagnostic",
-                                )}
-                              </dt>
-                              <dd>{attempt.failureDetail}</dd>
-                            </div>
-                          ) : null}
-                          {attempt.acquiredByteCount !== null ? (
-                            <div>
-                              <dt>
-                                {t("sourceManagement.lifecycle.acquiredBytes")}
-                              </dt>
-                              <dd>
-                                {attempt.acquiredByteCount.toLocaleString()}
-                              </dd>
-                            </div>
-                          ) : null}
-                          {attempt.normalizedCharacterCount !== null ? (
-                            <div>
-                              <dt>
-                                {t(
-                                  "sourceManagement.lifecycle.normalizedCharacters",
-                                )}
-                              </dt>
-                              <dd>
-                                {attempt.normalizedCharacterCount.toLocaleString()}
-                              </dd>
-                            </div>
-                          ) : null}
-                          {attempt.unitCount !== null ? (
-                            <div>
-                              <dt>
-                                {t("sourceManagement.lifecycle.unitCount")}
-                              </dt>
-                              <dd>{attempt.unitCount.toLocaleString()}</dd>
-                            </div>
-                          ) : null}
-                          {attempt.durationMilliseconds !== null ? (
-                            <div>
-                              <dt>
-                                {t("sourceManagement.lifecycle.duration")}
-                              </dt>
-                              <dd>
-                                {attempt.durationMilliseconds.toLocaleString()}
-                              </dd>
-                            </div>
-                          ) : null}
-                        </dl>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-            </div>
-          </details>
-          <SnapshotHistory
-            key={activeSnapshot?.id ?? "no-active-snapshot"}
-            activeSnapshot={activeSnapshot}
-            loadGraphRelease={onLoadGraphRelease}
-            loadSnapshots={onLoadSnapshotHistory}
-          />
-          {source.processingStatus === "failed" ? (
-            <button
-              className="source-status__action"
-              type="button"
-              disabled={outcome === "saving"}
-              onClick={() => run(onRetry)}
-            >
-              <RefreshCw aria-hidden="true" size={14} />
-              {t("sourceManagement.lifecycle.retry")}
-            </button>
-          ) : null}
-          {source.processingStatus === "ready" &&
-          publicationState !== "active" ? (
-            <button
-              className="source-status__action"
-              type="button"
-              disabled={outcome === "saving" || !canPublish}
-              title={
-                canPublish
-                  ? undefined
-                  : t("sourceManagement.snapshot.publishUnavailable")
-              }
-              onClick={() => run(onPublish)}
-            >
-              {t("sourceManagement.snapshot.publish")}
-            </button>
-          ) : null}
-          {source.processingStatus === "ready" ? (
-            <button
-              className="source-status__action"
-              type="button"
-              disabled={outcome === "saving"}
-              onClick={() => {
-                if (
-                  globalThis.confirm(
-                    t("sourceManagement.lifecycle.confirmReprocess", {
-                      title: source.title,
-                    }),
-                  )
-                ) {
-                  run(onReprocess);
-                }
-              }}
-            >
-              <RefreshCw aria-hidden="true" size={14} />
-              {t("sourceManagement.lifecycle.reprocess")}
-            </button>
-          ) : null}
-          {source.kind === "pdf" ? (
-            <a
-              className="source-status__action source-status__action--primary"
-              href={`/api/v1/corpora/${encodeURIComponent(source.corpusId)}/sources/${encodeURIComponent(source.id)}/origin/pdf`}
-              download
-            >
-              <FileText aria-hidden="true" size={14} />
-              {t("viewer.downloadPdf")}
-            </a>
-          ) : (
-            <a
-              className="source-status__action source-status__action--primary"
-              href={`/api/v1/corpora/${encodeURIComponent(source.corpusId)}/sources/${encodeURIComponent(source.id)}/origin`}
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              <ExternalLink aria-hidden="true" size={14} />
-              {t("viewer.openOfficial")}
-            </a>
-          )}
-        </div>
+        <SourceIdentity source={source} publicationState={publicationState} />
+        <SourceLifecycleActions
+          activeSnapshot={activeSnapshot}
+          canPublish={canPublish}
+          onLoadGraphRelease={onLoadGraphRelease}
+          onLoadSnapshotHistory={onLoadSnapshotHistory}
+          onPublish={onPublish}
+          onReprocess={onReprocess}
+          onRetry={onRetry}
+          onRun={run}
+          outcome={outcome}
+          publicationState={publicationState}
+          source={source}
+        />
       </header>
+      <SourceStatusNotices outcome={outcome} source={source} />
+    </section>
+  );
+}
+
+function SourceIdentity({
+  source,
+  publicationState,
+}: {
+  readonly source: SourceResponse;
+  readonly publicationState: PublicationState;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="source-status__identity">
+      <h2>{source.title}</h2>
+      <span
+        className="source-status__badge"
+        data-status={source.processingStatus}
+      >
+        {t(`sourceStatus.${source.processingStatus}`)}
+      </span>
+      {publicationState === undefined ? null : (
+        <span className="source-status__publication-state">
+          {t(`sourceManagement.snapshot.${publicationState}`)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SourceLifecycleActions({
+  source,
+  activeSnapshot,
+  outcome,
+  publicationState,
+  canPublish,
+  onLoadSnapshotHistory,
+  onLoadGraphRelease,
+  onRun,
+  onPublish,
+  onRetry,
+  onReprocess,
+}: SourceLifecycleActionsProps) {
+  const { t } = useTranslation();
+  const isSaving = outcome === "saving";
+  return (
+    <div
+      className="source-status__actions"
+      role="toolbar"
+      aria-label={t("viewer.sourceActions")}
+    >
+      <SourceDetails source={source} />
+      <SnapshotHistory
+        key={activeSnapshot?.id ?? "no-active-snapshot"}
+        activeSnapshot={activeSnapshot}
+        loadGraphRelease={onLoadGraphRelease}
+        loadSnapshots={onLoadSnapshotHistory}
+      />
+      {source.processingStatus === "failed" ? (
+        <button
+          className="source-status__action"
+          type="button"
+          disabled={isSaving}
+          onClick={() => onRun(onRetry)}
+        >
+          <RefreshCw aria-hidden="true" size={14} />
+          {t("sourceManagement.lifecycle.retry")}
+        </button>
+      ) : null}
+      {source.processingStatus === "ready" && publicationState !== "active" ? (
+        <button
+          className="source-status__action"
+          type="button"
+          disabled={isSaving || !canPublish}
+          title={
+            canPublish
+              ? undefined
+              : t("sourceManagement.snapshot.publishUnavailable")
+          }
+          onClick={() => onRun(onPublish)}
+        >
+          {t("sourceManagement.snapshot.publish")}
+        </button>
+      ) : null}
+      {source.processingStatus === "ready" ? (
+        <ReprocessSourceAction
+          disabled={isSaving}
+          source={source}
+          onReprocess={onReprocess}
+          onRun={onRun}
+        />
+      ) : null}
+      <SourceOriginAction source={source} />
+    </div>
+  );
+}
+
+function SourceDetails({ source }: { readonly source: SourceResponse }) {
+  const { t } = useTranslation();
+  return (
+    <details className="source-status__details">
+      <summary>
+        <Info aria-hidden="true" size={15} />
+        {t("viewer.metadata")}
+        <ChevronDown aria-hidden="true" size={14} />
+      </summary>
+      <div className="source-status__details-panel">
+        <SourceMetadata source={source} />
+        <AttemptHistory
+          attempts={source.attempts.slice(0, ATTEMPT_HISTORY_LIMIT)}
+        />
+      </div>
+    </details>
+  );
+}
+
+function SourceMetadata({ source }: { readonly source: SourceResponse }) {
+  const { t } = useTranslation();
+  const entries = sourceMetadata(source, t);
+  return (
+    <dl className="source-status__metadata">
+      {entries.map(({ label, value }) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function AttemptHistory({
+  attempts,
+}: {
+  readonly attempts: readonly ProcessingAttemptResponse[];
+}) {
+  const { t } = useTranslation();
+  if (attempts.length === 0) return null;
+  return (
+    <section
+      className="source-status__history"
+      aria-label={t("sourceManagement.lifecycle.attemptHistory")}
+    >
+      <h3>
+        <History aria-hidden="true" size={16} />
+        {t("sourceManagement.lifecycle.attemptHistory")}
+      </h3>
+      <div className="source-status__attempt-list">
+        {attempts.map((attempt) => (
+          <AttemptHistoryItem
+            attempt={attempt}
+            key={`${attempt.startedAt}-${String(attempt.number)}`}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AttemptHistoryItem({
+  attempt,
+}: {
+  readonly attempt: ProcessingAttemptResponse;
+}) {
+  const { t } = useTranslation();
+  return (
+    <article className="source-status__attempt">
+      <header>
+        <h4>
+          {t("sourceManagement.lifecycle.attemptNumber", {
+            number: attempt.number,
+          })}
+        </h4>
+        <span data-status={attempt.status}>
+          {t(`sourceManagement.lifecycle.attemptStates.${attempt.status}`)}
+        </span>
+      </header>
+      <dl>
+        <AttemptDetail
+          label={t("sourceManagement.lifecycle.pipelineVersion")}
+          value={attempt.pipelineVersion}
+        />
+        <AttemptDetail
+          label={t("sourceManagement.lifecycle.startedAt")}
+          value={
+            <time dateTime={attempt.startedAt}>
+              {formatDate(attempt.startedAt)}
+            </time>
+          }
+        />
+        {attempt.finishedAt ? (
+          <AttemptDetail
+            label={t("sourceManagement.lifecycle.finishedAt")}
+            value={
+              <time dateTime={attempt.finishedAt}>
+                {formatDate(attempt.finishedAt)}
+              </time>
+            }
+          />
+        ) : null}
+        {attempt.failureCategory ? (
+          <AttemptDetail
+            label={t("sourceManagement.lifecycle.failureCategory")}
+            value={attempt.failureCategory}
+          />
+        ) : null}
+        {attempt.failureDetail ? (
+          <AttemptDetail
+            label={t("sourceManagement.lifecycle.failureDiagnostic")}
+            value={attempt.failureDetail}
+          />
+        ) : null}
+        {attempt.acquiredByteCount !== null ? (
+          <AttemptDetail
+            label={t("sourceManagement.lifecycle.acquiredBytes")}
+            value={attempt.acquiredByteCount.toLocaleString()}
+          />
+        ) : null}
+        {attempt.normalizedCharacterCount !== null ? (
+          <AttemptDetail
+            label={t("sourceManagement.lifecycle.normalizedCharacters")}
+            value={attempt.normalizedCharacterCount.toLocaleString()}
+          />
+        ) : null}
+        {attempt.unitCount !== null ? (
+          <AttemptDetail
+            label={t("sourceManagement.lifecycle.unitCount")}
+            value={attempt.unitCount.toLocaleString()}
+          />
+        ) : null}
+        {attempt.durationMilliseconds !== null ? (
+          <AttemptDetail
+            label={t("sourceManagement.lifecycle.duration")}
+            value={attempt.durationMilliseconds.toLocaleString()}
+          />
+        ) : null}
+      </dl>
+    </article>
+  );
+}
+
+function AttemptDetail({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: ReactNode;
+}) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function ReprocessSourceAction({
+  source,
+  disabled,
+  onReprocess,
+  onRun,
+}: {
+  readonly source: SourceResponse;
+  readonly disabled: boolean;
+  readonly onReprocess: SourceStatusAction;
+  readonly onRun: (action: SourceStatusAction) => void;
+}) {
+  const { t } = useTranslation();
+  const confirmReprocess = (): void => {
+    const confirmed = globalThis.confirm(
+      t("sourceManagement.lifecycle.confirmReprocess", { title: source.title }),
+    );
+    if (confirmed) onRun(onReprocess);
+  };
+  return (
+    <button
+      className="source-status__action"
+      type="button"
+      disabled={disabled}
+      onClick={confirmReprocess}
+    >
+      <RefreshCw aria-hidden="true" size={14} />
+      {t("sourceManagement.lifecycle.reprocess")}
+    </button>
+  );
+}
+
+function SourceOriginAction({ source }: { readonly source: SourceResponse }) {
+  const { t } = useTranslation();
+  if (source.kind === "pdf") {
+    return (
+      <a
+        className="source-status__action source-status__action--primary"
+        href={sourceOriginPath(source, "/pdf")}
+        download
+      >
+        <FileText aria-hidden="true" size={14} />
+        {t("viewer.downloadPdf")}
+      </a>
+    );
+  }
+  return (
+    <a
+      className="source-status__action source-status__action--primary"
+      href={sourceOriginPath(source)}
+      target="_blank"
+      rel="noreferrer noopener"
+    >
+      <ExternalLink aria-hidden="true" size={14} />
+      {t("viewer.openOfficial")}
+    </a>
+  );
+}
+
+function SourceStatusNotices({
+  source,
+  outcome,
+}: {
+  readonly source: SourceResponse;
+  readonly outcome: ActionOutcome;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
       {source.failureCategory ? (
         <p className="source-status__notice">
           {t("sourceManagement.lifecycle.safeFailure")}
@@ -361,6 +447,68 @@ export function SourceStatus({
           {t("sourceManagement.lifecycle.failed")}
         </p>
       ) : null}
-    </section>
+    </>
   );
+}
+
+function actionOutcomeFor(error: unknown): ActionOutcome {
+  if (error instanceof ResearchRequestError && error.code === "stale_state") {
+    return "stale";
+  }
+  return "failed";
+}
+
+function canPublishSource(
+  source: SourceResponse,
+  activeSnapshot: ActiveSnapshotResponse | null | undefined,
+): boolean {
+  return (
+    source.processingStatus === "ready" &&
+    source.latestReadyDocumentId !== null &&
+    activeSnapshot !== null &&
+    activeSnapshot !== undefined &&
+    source.latestReadyDocumentId !== source.activeSnapshotDocumentId
+  );
+}
+
+function publicationStateFor(source: SourceResponse): PublicationState {
+  if (
+    source.processingStatus !== "ready" ||
+    source.latestReadyDocumentId === null
+  ) {
+    return undefined;
+  }
+  return source.latestReadyDocumentId === source.activeSnapshotDocumentId
+    ? "active"
+    : "candidate";
+}
+
+function sourceMetadata(
+  source: SourceResponse,
+  t: ReturnType<typeof useTranslation>["t"],
+): readonly { readonly label: string; readonly value: string }[] {
+  const entries = [
+    [t("sourceManagement.lifecycle.submittedUrl"), source.origin.submittedUrl],
+    [
+      t("sourceManagement.lifecycle.originalFilename"),
+      source.origin.originalFilename,
+    ],
+    [t("viewer.mediaType"), source.origin.mediaType],
+    [
+      t("viewer.byteSize"),
+      source.origin.byteSize === null
+        ? null
+        : source.origin.byteSize.toLocaleString(),
+    ],
+    [t("viewer.originHash"), source.origin.sha256],
+  ] as const;
+  return entries.flatMap(([label, value]) => (value ? [{ label, value }] : []));
+}
+
+function sourceOriginPath(source: SourceResponse, suffix = ""): string {
+  return `/api/v1/corpora/${encodeURIComponent(source.corpusId)}/sources/${encodeURIComponent(source.id)}/origin${suffix}`;
+}
+
+function formatDate(value: string): string {
+  return new Date(value).toLocaleString();
 }

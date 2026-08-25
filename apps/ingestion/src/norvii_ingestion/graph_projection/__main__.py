@@ -9,7 +9,6 @@ from uuid import UUID
 
 from norvii_ingestion.graph_projection import GraphProjectionBuildError, GraphReleaseBuilder
 from norvii_ingestion.publication.persistence.config import (
-    ConfigurationError,
     EnvironmentConfigurationLoader,
 )
 from norvii_ingestion.publication.persistence.neo4j import Neo4jStore
@@ -33,7 +32,7 @@ def main() -> int:
         summary = GraphReleaseBuilder(repository.connection, graph).build(
             arguments.corpus_id, arguments.snapshot_id
         )
-    except (ConfigurationError, GraphProjectionBuildError, ValueError) as error:
+    except (GraphProjectionBuildError, ValueError) as error:
         print(f"Graph release build failed: {error}", file=sys.stderr)
         return 1
     finally:

@@ -13,15 +13,15 @@ import (
 	"github.com/google/uuid"
 )
 
-type service interface {
+type releaseGetter interface {
 	Get(context.Context, uuid.UUID, uuid.UUID) (graphdomain.Release, error)
 }
 
 // Handler maps graph-release inspection to one corpus-scoped endpoint.
-type Handler struct{ service service }
+type Handler struct{ releaseGetter releaseGetter }
 
 // NewHandler constructs a graph-release handler.
-func NewHandler(service service) *Handler { return &Handler{service: service} }
+func NewHandler(releaseGetter releaseGetter) *Handler { return &Handler{releaseGetter: releaseGetter} }
 
 // Register adds the immutable snapshot graph-release route.
 func (handler *Handler) Register(mux *http.ServeMux) {
@@ -49,7 +49,7 @@ func (handler *Handler) get(writer http.ResponseWriter, request *http.Request) {
 		httpserver.WriteError(writer, request, httpserver.Problem{Status: http.StatusBadRequest, Code: "invalid_input", Message: "The graph release identifier is invalid."})
 		return
 	}
-	release, err := handler.service.Get(request.Context(), corpusID, snapshotID)
+	release, err := handler.releaseGetter.Get(request.Context(), corpusID, snapshotID)
 	if errors.Is(err, graphdomain.ErrNotFound) {
 		httpserver.WriteError(writer, request, httpserver.Problem{Status: http.StatusNotFound, Code: "not_found", Message: "The graph release was not found."})
 		return
@@ -67,4 +67,4 @@ func (handler *Handler) get(writer http.ResponseWriter, request *http.Request) {
 	})
 }
 
-var _ service = (*graphapplication.Service)(nil)
+var _ releaseGetter = (*graphapplication.Service)(nil)

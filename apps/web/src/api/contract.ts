@@ -376,7 +376,7 @@ function parseActiveSnapshot(value: unknown): ActiveSnapshotResponse | null {
 function parseSnapshotResponse(value: unknown): SnapshotResponse {
   const snapshot = record(value, "corpus snapshot");
   if (!Array.isArray(snapshot.members)) {
-    throw new Error("Corpus snapshot members must be an array.");
+    throw new TypeError("Corpus snapshot members must be an array.");
   }
   return {
     id: uuidValue(snapshot.id, "snapshot ID"),
@@ -609,7 +609,7 @@ function stringValue(value: unknown, label: string): string {
 
 function booleanValue(value: unknown, label: string): boolean {
   if (typeof value !== "boolean") {
-    throw new Error(`${label} must be a boolean.`);
+    throw new TypeError(`${label} must be a boolean.`);
   }
   return value;
 }

@@ -26,6 +26,16 @@ interface StrategyComparisonProps {
   readonly onReferenceSelect?: ((reference: ChatReference) => void) | undefined;
 }
 
+interface StrategyComparisonRequest {
+  readonly corpusId: string;
+  readonly question: string;
+  readonly interfaceLanguage: CorpusLanguage;
+  readonly provider: ChatProvider;
+  readonly abstainedAnswer: string;
+  readonly update: (result: StrategyComparisonResult) => void;
+  readonly signal: AbortSignal;
+}
+
 export function StrategyComparison({
   corpusId,
   interfaceLanguage,
@@ -56,18 +66,20 @@ export function StrategyComparison({
       activeControllers.current.add(controller);
       return { controller, result };
     });
+    const comparison = {
+      corpusId,
+      question,
+      interfaceLanguage,
+      provider,
+      abstainedAnswer: t("chat.abstained"),
+      update: updateComparisonResult(setState),
+    };
     void Promise.all(
       requests.map(({ controller, result }) =>
-        compareStrategy(
-          result.strategy,
-          corpusId,
-          question,
-          interfaceLanguage,
-          provider,
-          t("chat.abstained"),
-          updateComparisonResult(setState),
-          controller.signal,
-        ),
+        compareStrategy(result.strategy, {
+          ...comparison,
+          signal: controller.signal,
+        }),
       ),
     ).then(() => {
       requests.forEach(({ controller }) =>
@@ -137,30 +149,28 @@ function updateComparisonResult(
 
 async function compareStrategy(
   strategy: RetrievalStrategy,
-  corpusId: string,
-  question: string,
-  interfaceLanguage: CorpusLanguage,
-  provider: ChatProvider,
-  abstainedAnswer: string,
-  update: (result: StrategyComparisonResult) => void,
-  signal: AbortSignal,
+  request: StrategyComparisonRequest,
 ): Promise<void> {
   let result = newStrategyComparisonResult(strategy);
   try {
-    await provider.streamQuestion(
-      corpusId,
-      question,
-      interfaceLanguage,
+    await request.provider.streamQuestion(
+      request.corpusId,
+      request.question,
+      request.interfaceLanguage,
       strategy,
-      signal,
+      request.signal,
       (event) => {
-        result = applyStrategyComparisonEvent(result, event, abstainedAnswer);
-        update(result);
+        result = applyStrategyComparisonEvent(
+          result,
+          event,
+          request.abstainedAnswer,
+        );
+        request.update(result);
       },
     );
   } catch {
     result = failStrategyComparison(result);
-    update(result);
+    request.update(result);
   }
 }
 

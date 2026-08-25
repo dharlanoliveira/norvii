@@ -31,6 +31,15 @@ type Repository struct {
 	database database
 }
 
+type snapshotWriteRequest struct {
+	corpusID        uuid.UUID
+	snapshotID      uuid.UUID
+	actor           string
+	publishedAt     time.Time
+	members         []domain.Member
+	previousRelease domain.Release
+}
+
 // NewRepository constructs a snapshot repository around caller-owned persistence.
 func NewRepository(database database) *Repository { return &Repository{database: database} }
 
@@ -113,7 +122,14 @@ func (repository *Repository) Publish(ctx context.Context, command domain.Publis
 		return domain.Publication{}, err
 	}
 	members = replaceMember(members, candidate)
-	publication, err := repository.writeSnapshot(ctx, transaction, command.CorpusID, command.SnapshotID, command.Actor, command.PublishedAt, members, release)
+	publication, err := repository.writeSnapshot(ctx, transaction, snapshotWriteRequest{
+		corpusID:        command.CorpusID,
+		snapshotID:      command.SnapshotID,
+		actor:           command.Actor,
+		publishedAt:     command.PublishedAt,
+		members:         members,
+		previousRelease: release,
+	})
 	if err != nil {
 		return domain.Publication{}, err
 	}
@@ -151,7 +167,14 @@ func (repository *Repository) Initialize(
 	if err != nil {
 		return domain.Publication{}, err
 	}
-	publication, err := repository.writeSnapshot(ctx, transaction, corpusID, snapshotID, actor, now, members, domain.Release{CorpusID: corpusID})
+	publication, err := repository.writeSnapshot(ctx, transaction, snapshotWriteRequest{
+		corpusID:        corpusID,
+		snapshotID:      snapshotID,
+		actor:           actor,
+		publishedAt:     now,
+		members:         members,
+		previousRelease: domain.Release{CorpusID: corpusID},
+	})
 	if err != nil {
 		return domain.Publication{}, err
 	}
@@ -179,62 +202,58 @@ func (repository *Repository) lockRelease(ctx context.Context, transaction pgx.T
 func (repository *Repository) writeSnapshot(
 	ctx context.Context,
 	transaction pgx.Tx,
-	corpusID, snapshotID uuid.UUID,
-	actor string,
-	now time.Time,
-	members []domain.Member,
-	previous domain.Release,
+	request snapshotWriteRequest,
 ) (domain.Publication, error) {
-	if len(members) == 0 {
+	if len(request.members) == 0 {
 		return domain.Publication{}, domain.ErrCandidateNotReady
 	}
-	manifest := manifestSHA256(members)
-	existing, err := repository.findByManifest(ctx, transaction, corpusID, manifest)
+	manifest := manifestSHA256(request.members)
+	existing, err := repository.findByManifest(ctx, transaction, request.corpusID, manifest)
 	if err == nil {
-		if previous.SnapshotID != existing.ID {
+		if request.previousRelease.SnapshotID != existing.ID {
 			return domain.Publication{}, domain.ErrStaleRelease
 		}
-		return domain.Publication{Snapshot: existing, Release: previous, Created: false}, nil
+		return domain.Publication{Snapshot: existing, Release: request.previousRelease, Created: false}, nil
 	}
 	if !errors.Is(err, domain.ErrNotFound) {
 		return domain.Publication{}, err
 	}
-	now = now.UTC()
+	publishedAt := request.publishedAt.UTC()
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO corpus_snapshots (id, corpus_id, manifest_sha256, created_by, created_at)
-		VALUES ($1, $2, $3, $4, $5)`, snapshotID, corpusID, manifest, actor, now); err != nil {
+		VALUES ($1, $2, $3, $4, $5)`, request.snapshotID, request.corpusID, manifest, request.actor, publishedAt); err != nil {
 		return domain.Publication{}, fmt.Errorf("insert corpus snapshot: %w", err)
 	}
-	for _, member := range members {
+	for _, member := range request.members {
 		if _, err := transaction.Exec(ctx, `
 			INSERT INTO corpus_snapshot_documents (
 				snapshot_id, corpus_id, source_id, source_revision_id, document_id,
 				official_origin, captured_at, content_sha256
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-			snapshotID, corpusID, member.SourceID, member.SourceRevisionID, member.DocumentID,
+			request.snapshotID, request.corpusID, member.SourceID, member.SourceRevisionID, member.DocumentID,
 			member.OfficialOrigin, member.CapturedAt.UTC(), member.ContentSHA256,
 		); err != nil {
 			return domain.Publication{}, fmt.Errorf("insert snapshot member: %w", err)
 		}
 	}
-	release := domain.Release{CorpusID: corpusID, SnapshotID: snapshotID, Version: 1, ActivatedAt: now}
-	if previous.SnapshotID == uuid.Nil {
+	release := domain.Release{CorpusID: request.corpusID, SnapshotID: request.snapshotID, Version: 1, ActivatedAt: publishedAt}
+	if request.previousRelease.SnapshotID == uuid.Nil {
 		if _, err := transaction.Exec(ctx, `
 			INSERT INTO corpus_snapshot_releases (corpus_id, snapshot_id, version, activated_at)
-			VALUES ($1, $2, $3, $4)`, corpusID, snapshotID, release.Version, now); err != nil {
+			VALUES ($1, $2, $3, $4)`, request.corpusID, request.snapshotID, release.Version, publishedAt); err != nil {
 			return domain.Publication{}, fmt.Errorf("insert snapshot release: %w", err)
 		}
 	} else {
-		release.Version = previous.Version + 1
+		release.Version = request.previousRelease.Version + 1
 		if _, err := transaction.Exec(ctx, `
 			UPDATE corpus_snapshot_releases
 			SET snapshot_id = $2, version = $3, activated_at = $4
-			WHERE corpus_id = $1`, corpusID, snapshotID, release.Version, now); err != nil {
+			WHERE corpus_id = $1`, request.corpusID, request.snapshotID, release.Version, publishedAt); err != nil {
 			return domain.Publication{}, fmt.Errorf("activate corpus snapshot: %w", err)
 		}
 	}
 	return domain.Publication{
-		Snapshot: domain.Snapshot{ID: snapshotID, CorpusID: corpusID, ManifestSHA256: manifest, CreatedBy: actor, CreatedAt: now, Members: members},
+		Snapshot: domain.Snapshot{ID: request.snapshotID, CorpusID: request.corpusID, ManifestSHA256: manifest, CreatedBy: request.actor, CreatedAt: publishedAt, Members: request.members},
 		Release:  release,
 		Created:  true,
 	}, nil

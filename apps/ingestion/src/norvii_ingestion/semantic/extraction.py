@@ -34,6 +34,8 @@ _MAX_REQUESTS_PER_DOCUMENT = 8
 _MAX_UNIT_CHARACTERS = 4_000
 _MAX_LABEL_CHARACTERS = 240
 _NORMALIZED_LABEL = re.compile(r"[^a-z0-9]+")
+_REQUEST_FAILED = "semantic extraction provider request failed"
+_MALFORMED_RESPONSE = "semantic extraction response is malformed"
 
 
 class ExtractionProviderError(RuntimeError):
@@ -199,25 +201,19 @@ class OpenAICompatibleSemanticExtractor:
                 decoded = json.loads(response.read())
         except HTTPError as error:
             detail = f"provider_http_status_{error.code}"
-            raise ExtractionProviderError(
-                "semantic extraction provider request failed", detail
-            ) from error
+            raise ExtractionProviderError(_REQUEST_FAILED, detail) from error
         except URLError as error:
             detail = (
                 "provider_timeout"
                 if isinstance(error.reason, TimeoutError)
                 else "provider_transport"
             )
-            raise ExtractionProviderError(
-                "semantic extraction provider request failed", detail
-            ) from error
+            raise ExtractionProviderError(_REQUEST_FAILED, detail) from error
         except TimeoutError as error:
-            raise ExtractionProviderError(
-                "semantic extraction provider request failed", "provider_timeout"
-            ) from error
+            raise ExtractionProviderError(_REQUEST_FAILED, "provider_timeout") from error
         except json.JSONDecodeError as error:
             raise ExtractionProviderError(
-                "semantic extraction provider response is malformed", "provider_response_invalid"
+                _MALFORMED_RESPONSE, "provider_response_invalid"
             ) from error
         return _completion_content(decoded)
 
@@ -263,13 +259,25 @@ def _structural_closure(
 ) -> tuple[DocumentUnit, ...]:
     """Include selected legal locations and their parents as deterministic graph anchors."""
     units_by_id = {unit.id: unit for unit in all_units}
+    selected_ids = _selected_and_ancestor_ids(selected, units_by_id)
+    return tuple(unit for unit in all_units if unit.id in selected_ids)
+
+
+def _selected_and_ancestor_ids(
+    selected: Sequence[DocumentUnit], units_by_id: dict[UUID, DocumentUnit]
+) -> set[UUID]:
     selected_ids = {unit.id for unit in selected}
     for unit in selected:
-        parent_id = unit.parent_id
-        while parent_id is not None:
-            selected_ids.add(parent_id)
-            parent_id = units_by_id[parent_id].parent_id
-    return tuple(unit for unit in all_units if unit.id in selected_ids)
+        selected_ids.update(_ancestor_ids(unit.parent_id, units_by_id))
+    return selected_ids
+
+
+def _ancestor_ids(parent_id: UUID | None, units_by_id: dict[UUID, DocumentUnit]) -> set[UUID]:
+    ancestors: set[UUID] = set()
+    while parent_id is not None:
+        ancestors.add(parent_id)
+        parent_id = units_by_id[parent_id].parent_id
+    return ancestors
 
 
 def _structural_relationships(units: Sequence[DocumentUnit]) -> tuple[SemanticRelationship, ...]:
@@ -311,29 +319,21 @@ def _selection_bytes(units: Sequence[DocumentUnit], artifact: DocumentArtifact) 
 
 def _completion_content(payload: object) -> object:
     if not isinstance(payload, dict):
-        raise ExtractionProviderError(
-            "semantic extraction response is malformed", "provider_response_schema_invalid"
-        )
+        raise ExtractionProviderError(_MALFORMED_RESPONSE, "provider_response_schema_invalid")
     try:
         content = _message_content(payload)
         return {"content": json.loads(content), "usage": payload.get("usage")}
     except json.JSONDecodeError as error:
-        raise ExtractionProviderError(
-            "semantic extraction response is malformed", "provider_response_invalid"
-        ) from error
+        raise ExtractionProviderError(_MALFORMED_RESPONSE, "provider_response_invalid") from error
 
 
 def _message_content(payload: dict[object, object]) -> str:
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-        raise ExtractionProviderError(
-            "semantic extraction response is malformed", "provider_response_schema_invalid"
-        )
+        raise ExtractionProviderError(_MALFORMED_RESPONSE, "provider_response_schema_invalid")
     message = choices[0].get("message")
     if not isinstance(message, dict) or not isinstance(message.get("content"), str):
-        raise ExtractionProviderError(
-            "semantic extraction response is malformed", "provider_response_schema_invalid"
-        )
+        raise ExtractionProviderError(_MALFORMED_RESPONSE, "provider_response_schema_invalid")
     return cast("str", message["content"])
 
 
@@ -345,9 +345,7 @@ def _validated_batch(
     tuple[int | None, int | None],
 ]:
     if not isinstance(payload, dict) or not isinstance(payload.get("content"), dict):
-        raise ExtractionProviderError(
-            "semantic extraction response is malformed", "provider_response_schema_invalid"
-        )
+        raise ExtractionProviderError(_MALFORMED_RESPONSE, "provider_response_schema_invalid")
     content = payload["content"]
     unit_by_id = {str(unit.id): unit for unit in units}
     entities = _entities(content.get("entities"), unit_by_id)
