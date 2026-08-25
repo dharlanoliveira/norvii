@@ -39,11 +39,14 @@ func TestCorpusIngestionSchemaIsCanonicalSeededAndRepeatable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Apply() error = %v", err)
 	}
-	if firstStatus.CurrentVersion != 8 || secondStatus.CurrentVersion != 8 {
+	expectedVersion := latestEmbeddedMigrationVersion(t)
+	if firstStatus.CurrentVersion != expectedVersion || secondStatus.CurrentVersion != expectedVersion {
 		t.Fatalf(
-			"migration versions = %d and %d, want 8 and 8",
+			"migration versions = %d and %d, want %d and %d",
 			firstStatus.CurrentVersion,
 			secondStatus.CurrentVersion,
+			expectedVersion,
+			expectedVersion,
 		)
 	}
 
