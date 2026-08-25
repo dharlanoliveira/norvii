@@ -9,7 +9,7 @@ import {
   useAuiState,
 } from "@assistant-ui/react";
 import { ChevronDown, Info, Send, Square } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -279,6 +279,7 @@ function AssistantMessage({
   const references = referencesByMessageId.get(messageId) ?? [];
   const inspection = inspectionsByMessageId.get(messageId);
   const terminalState = terminalStatesByMessageId.get(messageId);
+  const content = assistantMessageContent(wasCancelled, terminalState);
   return (
     <MessagePrimitive.Root
       aria-label={t("chat.assistant")}
@@ -286,15 +287,7 @@ function AssistantMessage({
       role="article"
     >
       <span className="message-author">{t("chat.assistant")}</span>
-      {wasCancelled || terminalState?.kind === "cancelled" ? (
-        <AssistantCancelled />
-      ) : terminalState?.kind === "error" ? (
-        <AssistantError message={terminalState.message} />
-      ) : (
-        <MessagePrimitive.Parts
-          components={{ Text: AssistantMarkdown, Empty: AssistantPending }}
-        />
-      )}
+      {content}
       {references.length > 0 ? (
         <CitationList
           onReferenceSelect={onReferenceSelect}
@@ -308,6 +301,23 @@ function AssistantMessage({
         />
       ) : null}
     </MessagePrimitive.Root>
+  );
+}
+
+function assistantMessageContent(
+  wasCancelled: boolean,
+  terminalState: AssistantTerminalState | undefined,
+): ReactNode {
+  if (wasCancelled || terminalState?.kind === "cancelled") {
+    return <AssistantCancelled />;
+  }
+  if (terminalState?.kind === "error") {
+    return <AssistantError message={terminalState.message} />;
+  }
+  return (
+    <MessagePrimitive.Parts
+      components={{ Text: AssistantMarkdown, Empty: AssistantPending }}
+    />
   );
 }
 
@@ -424,13 +434,12 @@ function groupCitationLocations(
 
 function combineEvidenceContribution(
   current: EvidenceContribution,
-  incoming: ChatReference["contribution"],
+  incoming: ChatReference["contribution"] = "vector",
 ): EvidenceContribution {
-  const normalizedIncoming = incoming ?? "vector";
   if (
     current === "vector_and_graph" ||
-    normalizedIncoming === "vector_and_graph" ||
-    current !== normalizedIncoming
+    incoming === "vector_and_graph" ||
+    current !== incoming
   ) {
     return "vector_and_graph";
   }
@@ -558,48 +567,60 @@ function AnswerInspection({
             className="answer-inspection__stages"
             aria-label={t("chat.retrievalStages")}
           >
-            {inspection.stages.map((stage) => (
-              <li key={stage.name}>
-                <strong>{t(`chat.retrievalStage.${stage.name}`)}</strong>
-                <span>{t(`chat.retrievalStageState.${stage.state}`)}</span>
-                <small>
-                  {t("chat.retrievalStageEvidence", {
-                    count: stage.evidenceCount,
-                  })}
-                  {stage.reasonCode
-                    ? ` - ${t(`chat.retrievalStageReason.${stage.reasonCode}`)}`
-                    : ""}
-                </small>
-              </li>
-            ))}
+            {inspection.stages.map((stage) => {
+              const reason =
+                stage.reasonCode === null
+                  ? undefined
+                  : t(`chat.retrievalStageReason.${stage.reasonCode}`);
+              return (
+                <li key={stage.name}>
+                  <strong>{t(`chat.retrievalStage.${stage.name}`)}</strong>
+                  <span>{t(`chat.retrievalStageState.${stage.state}`)}</span>
+                  <small>
+                    {t("chat.retrievalStageEvidence", {
+                      count: stage.evidenceCount,
+                    })}
+                    {reason === undefined ? "" : ` - ${reason}`}
+                  </small>
+                </li>
+              );
+            })}
           </ol>
         ) : null}
         <ol
           className="answer-inspection__evidence"
           aria-label={t("chat.inspectionEvidence")}
         >
-          {evidence.map((reference) => (
-            <li key={reference.id}>
-              <button
-                type="button"
-                onClick={() => onReferenceSelect?.(reference)}
-                disabled={reference.documentVersionId === undefined}
-              >
-                <strong>{reference.sourceTitle ?? reference.sourceId}</strong>
-                <span>{reference.unitLocator}</span>
-              </button>
-              <small>
-                {t("chat.retrievalRank", { rank: reference.rank })}
-                {reference.contribution
-                  ? ` - ${t(`chat.evidenceContribution.${reference.contribution}`)}`
-                  : ""}
-                {reference.cosineDistance === null ||
-                reference.cosineDistance === undefined
-                  ? ` - ${t("chat.unavailable")}`
-                  : ` - ${t("chat.cosineDistance", { value: reference.cosineDistance.toFixed(4) })}`}
-              </small>
-            </li>
-          ))}
+          {evidence.map((reference) => {
+            const contribution =
+              reference.contribution === undefined
+                ? undefined
+                : t(`chat.evidenceContribution.${reference.contribution}`);
+            const distance =
+              reference.cosineDistance === null ||
+              reference.cosineDistance === undefined
+                ? t("chat.unavailable")
+                : t("chat.cosineDistance", {
+                    value: reference.cosineDistance.toFixed(4),
+                  });
+            return (
+              <li key={reference.id}>
+                <button
+                  type="button"
+                  onClick={() => onReferenceSelect?.(reference)}
+                  disabled={reference.documentVersionId === undefined}
+                >
+                  <strong>{reference.sourceTitle ?? reference.sourceId}</strong>
+                  <span>{reference.unitLocator}</span>
+                </button>
+                <small>
+                  {t("chat.retrievalRank", { rank: reference.rank })}
+                  {contribution === undefined ? "" : ` - ${contribution}`}
+                  {` - ${distance}`}
+                </small>
+              </li>
+            );
+          })}
         </ol>
         {inspection.graphPath?.length ? (
           <ol
@@ -699,10 +720,7 @@ function AssistantError({ message }: { readonly message: string }) {
 function AssistantCancelled() {
   const { t } = useTranslation();
   return (
-    <output
-      className="assistant-terminal assistant-terminal--cancelled"
-      role="status"
-    >
+    <output className="assistant-terminal assistant-terminal--cancelled">
       {t("chat.cancelled")}
     </output>
   );
