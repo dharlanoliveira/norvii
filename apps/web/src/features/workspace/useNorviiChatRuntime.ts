@@ -20,6 +20,7 @@ interface UseNorviiChatRuntimeOptions {
   readonly interfaceLanguage: CorpusLanguage;
   readonly abstainedAnswer: string;
   readonly fallbackError: string;
+  readonly graphUnavailableError: string;
   readonly strategy: RetrievalStrategy;
 }
 
@@ -37,6 +38,7 @@ export function useNorviiChatRuntime({
   interfaceLanguage,
   abstainedAnswer,
   fallbackError,
+  graphUnavailableError,
   strategy,
 }: UseNorviiChatRuntimeOptions): NorviiChatRuntime {
   const [error, setError] = useState<string>();
@@ -126,7 +128,11 @@ export function useNorviiChatRuntime({
               case "cancelled":
                 return;
               case "error":
-                setError(event.message);
+                setError(
+                  event.code === "graph_unavailable"
+                    ? graphUnavailableError
+                    : event.message,
+                );
                 return;
             }
           }
@@ -146,6 +152,7 @@ export function useNorviiChatRuntime({
       abstainedAnswer,
       corpusId,
       fallbackError,
+      graphUnavailableError,
       interfaceLanguage,
       provider,
       storeReferences,

@@ -517,6 +517,8 @@
 }
 
 .research-chat {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
   --chat-reading-width: min(calc(100% - 64px), 760px);
   --chat-query-inset: 18px;
@@ -1055,7 +1057,8 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin: 12px 0 0 calc((100% - var(--chat-reading-width)) / 2);
+  width: var(--chat-reading-width);
+  margin: 12px auto 0;
   color: var(--ink-muted);
   font-size: 10px;
   font-weight: 700;

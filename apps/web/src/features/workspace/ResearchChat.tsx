@@ -54,6 +54,7 @@ export function ResearchChat({
     interfaceLanguage,
     abstainedAnswer: t("chat.abstained"),
     fallbackError: t("chat.failed"),
+    graphUnavailableError: t("chat.graphUnavailable"),
     strategy,
   });
 

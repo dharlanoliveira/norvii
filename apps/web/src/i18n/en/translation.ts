@@ -213,6 +213,8 @@ export const englishTranslation = {
     },
     abstained:
       "I could not find enough published evidence in this corpus to answer safely.",
+    graphUnavailable:
+      "Graph and hybrid retrieval are unavailable for this snapshot because no graph release is ready. Use Vector or publish a graph release.",
     errorTitle: "The grounded response could not be completed.",
     failed: "The chat stream could not be completed.",
   },

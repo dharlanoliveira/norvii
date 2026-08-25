@@ -221,6 +221,8 @@ export const portugueseTranslation = {
     },
     abstained:
       "Não encontrei evidências publicadas suficientes neste corpus para responder com segurança.",
+    graphUnavailable:
+      "A recuperação por grafo e híbrida está indisponível para este snapshot porque não há uma versão de grafo pronta. Use a estratégia Vetorial ou publique uma versão de grafo.",
     errorTitle: "Não foi possível concluir a resposta fundamentada.",
     failed: "Não foi possível concluir o fluxo do chat.",
   },

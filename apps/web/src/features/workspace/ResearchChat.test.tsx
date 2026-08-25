@@ -465,6 +465,45 @@ describe("research chat", () => {
     );
   });
 
+  it("explains when the selected snapshot has no graph release", async () => {
+    const provider: ChatProvider = {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
+        onEvent({
+          type: "error",
+          requestId: "request-graph",
+          code: "graph_unavailable",
+          message: "The grounded chat request could not be completed.",
+          telemetry: {
+            outcome: "failed",
+            evidenceCount: 0,
+            durationMilliseconds: 1,
+          },
+        });
+        return Promise.resolve();
+      },
+    };
+    renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
+
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Research question" }),
+      { target: { value: "What applies?" } },
+    );
+    fireEvent.submit(
+      screen.getByRole("textbox", { name: "Research question" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Graph and hybrid retrieval are unavailable for this snapshot",
+    );
+  });
+
   it("compares independent retrieval strategies without masking an unavailable graph", async () => {
     const strategies: string[] = [];
     const provider: ChatProvider = {
