@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from norvii_ingestion.enrichment.models import RetrievalChunk
+    from norvii_ingestion.semantic import SemanticExtraction
 
 _EMBEDDING_DIMENSIONS = 1536
 
@@ -167,14 +168,22 @@ class PublicationCommand:
     origin_sha256: Sha256
     artifact: DocumentArtifact
     retrieval_chunks: tuple[RetrievalChunk, ...] = ()
+    semantic_extraction: SemanticExtraction | None = None
 
     def validate(self) -> None:
         """Validate publication identity, provenance, and the complete artifact."""
+        self._validate_identity()
+        self._validate_retrieval_chunks()
+        self._validate_semantic_extraction()
+
+    def _validate_identity(self) -> None:
         if self.work_id.int == 0 or self.lease_token.int == 0:
             raise ValueError("publication work and lease identifiers are required")
         if not self.pipeline_version.strip():
             raise ValueError("publication pipeline version is required")
         self.artifact.validate()
+
+    def _validate_retrieval_chunks(self) -> None:
         if not self.retrieval_chunks:
             raise ValueError("publication must contain retrieval chunks")
         for chunk in self.retrieval_chunks:
@@ -182,6 +191,26 @@ class PublicationCommand:
                 raise ValueError("retrieval chunks must contain embeddings")
             if len(chunk.embedding) != _EMBEDDING_DIMENSIONS:
                 raise ValueError("retrieval chunk embedding dimensions are invalid")
+
+    def _validate_semantic_extraction(self) -> None:
+        if self.semantic_extraction is not None:
+            if not self.semantic_extraction.extraction_version.strip():
+                raise ValueError("semantic extraction version is required")
+            known_units = {unit.id for unit in self.artifact.units}
+            known_entities = {entity.id for entity in self.semantic_extraction.entities}
+            if any(
+                entity.evidence_unit_id not in known_units
+                for entity in self.semantic_extraction.entities
+            ):
+                raise ValueError("semantic entity references an unknown document unit")
+            for relationship in self.semantic_extraction.relationships:
+                if relationship.evidence_unit_id not in known_units:
+                    raise ValueError("semantic relationship references an unknown document unit")
+                if (
+                    relationship.subject_entity_id not in known_entities
+                    or relationship.object_entity_id not in known_entities
+                ):
+                    raise ValueError("semantic relationship references an unknown entity")
 
 
 def _hash_text(text: str) -> Sha256:

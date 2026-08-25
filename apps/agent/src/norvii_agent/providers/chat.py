@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 from urllib import error, request
 from urllib.parse import urlparse
 
-from norvii_agent.graph import ModelUsage
+from norvii_agent.graph import ModelUsage, StrategyUnavailableError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -28,7 +28,7 @@ class _StreamResponse(Protocol):
         ...
 
 
-class ProviderUnavailableError(RuntimeError):
+class ProviderUnavailableError(StrategyUnavailableError):
     """Signal that no model endpoint is configured or reachable."""
 
 

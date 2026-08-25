@@ -28,6 +28,7 @@ describe("HTTP grounded chat provider", () => {
       "00000000-0000-0000-0000-000000000002",
       "What applies?",
       "pt",
+      "vector",
       new AbortController().signal,
       (event) => events.push(event.type),
     );
@@ -40,6 +41,7 @@ describe("HTTP grounded chat provider", () => {
     expect(JSON.parse(requestBody as string)).toEqual({
       question: "What applies?",
       interfaceLanguage: "pt",
+      strategy: "vector",
     });
   });
 
@@ -138,6 +140,7 @@ describe("HTTP grounded chat provider", () => {
         "corpus-1",
         "question",
         "en",
+        "vector",
         new AbortController().signal,
         () => undefined,
       ),
@@ -151,6 +154,7 @@ describe("HTTP grounded chat provider", () => {
         "corpus-1",
         "question",
         "en",
+        "vector",
         new AbortController().signal,
         () => undefined,
       ),
@@ -176,6 +180,17 @@ describe("HTTP grounded chat provider", () => {
           returnedCount: 0,
           embeddingModel: null,
         },
+        stages: [
+          {
+            name: "planning",
+            state: "skipped",
+            evidenceCount: 0,
+            durationMilliseconds: 4,
+            reasonCode: "not_relevant",
+            inputTokens: 10,
+            outputTokens: 2,
+          },
+        ],
         measurements: {
           retrievalMilliseconds: null,
           generationMilliseconds: 1,
@@ -189,6 +204,9 @@ describe("HTTP grounded chat provider", () => {
     expect(
       event.type === "completed" && event.inspection?.measurements.inputTokens,
     ).toBeNull();
+    expect(
+      event.type === "completed" && event.inspection?.stages?.[0],
+    ).toMatchObject({ name: "planning", state: "skipped" });
     expect(() =>
       parseChatEvent({
         type: "completed",
@@ -212,5 +230,64 @@ describe("HTTP grounded chat provider", () => {
         },
       }),
     ).toThrow("retrieval duration must not be negative");
+  });
+
+  it("validates graph-backed evidence and graph path provenance", () => {
+    const event = parseChatEvent({
+      type: "completed",
+      requestId: "request-1",
+      answer: "The authority must issue guidance. [1]",
+      references: [
+        {
+          id: "reference-1",
+          corpusId: "corpus-1",
+          sourceId: "source-1",
+          documentId: "document-1",
+          unitLocator: "article-55",
+          startOffset: 0,
+          endOffset: 10,
+          excerpt: "Authority duties.",
+          rank: 1,
+          contribution: "vector_and_graph",
+        },
+      ],
+      telemetry: {
+        outcome: "completed",
+        evidenceCount: 1,
+        durationMilliseconds: 12,
+      },
+      inspection: {
+        outcome: "completed",
+        measurements: {
+          retrievalMilliseconds: 5,
+          generationMilliseconds: 7,
+          totalMilliseconds: 12,
+          inputTokens: 4,
+          outputTokens: 6,
+        },
+        graphPath: [
+          {
+            relationshipType: "requires",
+            subjectLabel: "data protection authority",
+            objectLabel: "issue guidance",
+            evidenceId: "reference-1",
+            evidenceLocator: "article-55",
+          },
+        ],
+      },
+    });
+
+    if (event.type !== "completed")
+      throw new Error("Expected completion event.");
+    expect(event.references[0]?.contribution).toBe("vector_and_graph");
+    expect(event.inspection?.graphPath).toEqual([
+      {
+        relationshipType: "requires",
+        subjectLabel: "data protection authority",
+        objectLabel: "issue guidance",
+        evidenceId: "reference-1",
+        evidenceLocator: "article-55",
+      },
+    ]);
   });
 });

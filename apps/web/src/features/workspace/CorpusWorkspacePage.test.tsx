@@ -25,7 +25,14 @@ describe("authoritative corpus workspace", () => {
     });
     const provider = createHttpResearchProvider({ fetch: fetchResponse });
     const chatProvider: ChatProvider = {
-      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         onEvent({
           type: "completed",
           requestId: "request-1",
@@ -325,7 +332,192 @@ describe("authoritative corpus workspace", () => {
       ),
     ).toBe(true);
   });
+
+  it("keeps the source visible when its current document cannot be loaded", async () => {
+    const fetchResponse = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = requestUrl(input);
+      if (url.endsWith("/sources"))
+        return Promise.resolve(jsonResponse([source()]));
+      if (url.endsWith("/document")) {
+        return Promise.resolve(new Response(null, { status: 503 }));
+      }
+      return Promise.resolve(jsonResponse(corpus()));
+    });
+    const user = userEvent.setup();
+
+    renderWorkspace(fetchResponse);
+
+    await user.click(
+      await screen.findByRole("treeitem", {
+        name: "Official English GDPR text (Ready)",
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The persisted document could not be loaded.",
+    );
+    expect(
+      screen.getByRole("heading", { name: "Official English GDPR text" }),
+    ).toBeVisible();
+  });
+
+  it("explains when a chat citation cannot resolve to a corpus source", async () => {
+    const user = userEvent.setup();
+    const chatProvider: ChatProvider = {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
+        onEvent({
+          type: "completed",
+          requestId: "request-1",
+          answer: "A cited answer.",
+          references: [
+            {
+              id: "missing-reference",
+              corpusId: "10000000-0000-4000-8000-000000000002",
+              sourceId: "missing-source",
+              documentId: "missing-document",
+              documentVersionId: "missing-version",
+              sourceTitle: "Unavailable source",
+              unitLocator: "Article 1",
+              startOffset: 0,
+              endOffset: 1,
+              excerpt: "Unavailable.",
+              rank: 1,
+            },
+          ],
+          telemetry: {
+            outcome: "completed",
+            evidenceCount: 1,
+            durationMilliseconds: 1,
+          },
+        });
+        return Promise.resolve();
+      },
+    };
+    const fetchResponse = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = requestUrl(input);
+      return Promise.resolve(
+        jsonResponse(url.endsWith("/sources") ? [source()] : corpus()),
+      );
+    });
+
+    renderWorkspace(fetchResponse, chatProvider);
+
+    await user.type(
+      await screen.findByRole("textbox", { name: "Research question" }),
+      "Which article applies?",
+    );
+    await user.click(screen.getByRole("button", { name: "Send question" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Open Article 1 in Unavailable source",
+      }),
+    );
+    await user.click(screen.getByRole("tab", { name: "Source" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The cited location is unavailable.",
+    );
+  });
+
+  it("rejects an immutable document that does not contain the cited location", async () => {
+    const user = userEvent.setup();
+    const chatProvider: ChatProvider = {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
+        onEvent({
+          type: "completed",
+          requestId: "request-1",
+          answer: "A cited answer.",
+          references: [
+            {
+              id: "reference-1",
+              corpusId: "10000000-0000-4000-8000-000000000002",
+              sourceId: "20000000-0000-4000-8000-000000000002",
+              documentId: "50000000-0000-4000-8000-000000000001",
+              documentVersionId: "50000000-0000-4000-8000-000000000001",
+              sourceTitle: "Official English GDPR text",
+              unitLocator: "Article 1",
+              startOffset: 0,
+              endOffset: 1,
+              excerpt: "Scope.",
+              rank: 1,
+            },
+          ],
+          telemetry: {
+            outcome: "completed",
+            evidenceCount: 1,
+            durationMilliseconds: 1,
+          },
+        });
+        return Promise.resolve();
+      },
+    };
+    const fetchResponse = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = requestUrl(input);
+      if (url.endsWith("/sources"))
+        return Promise.resolve(jsonResponse([source()]));
+      if (url.includes("/documents/")) {
+        return Promise.resolve(
+          jsonResponse({
+            ...document(),
+            id: "50000000-0000-4000-8000-000000000099",
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse(corpus()));
+    });
+
+    renderWorkspace(fetchResponse, chatProvider);
+
+    await user.type(
+      await screen.findByRole("textbox", { name: "Research question" }),
+      "Which article applies?",
+    );
+    await user.click(screen.getByRole("button", { name: "Send question" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Open Article 1 in Official English GDPR text",
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The cited location is unavailable.",
+    );
+  });
 });
+
+function renderWorkspace(
+  fetchResponse: typeof fetch,
+  chatProvider?: ChatProvider,
+) {
+  renderAtRoute(
+    <Routes>
+      <Route
+        path="corpora/:corpusId"
+        element={
+          <CorpusWorkspacePage
+            provider={createHttpResearchProvider({ fetch: fetchResponse })}
+            chatProvider={chatProvider}
+          />
+        }
+      />
+    </Routes>,
+    "/corpora/10000000-0000-4000-8000-000000000002",
+  );
+}
 
 function corpus() {
   return {

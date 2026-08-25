@@ -69,6 +69,7 @@ def test_oldest_initial_work_is_leased_extracted_and_published_atomically() -> N
         )
 
         document_id = repository.publish(claimed, capture, command, now)
+        repository.complete(claimed, capture, command, document_id, now)
 
         with repository.connection.cursor() as cursor:
             cursor.execute(
@@ -108,6 +109,9 @@ def test_oldest_initial_work_is_leased_extracted_and_published_atomically() -> N
 def _restore_initial_state(connection: psycopg.Connection[tuple[object, ...]]) -> None:
     connection.rollback()
     with connection.transaction(), connection.cursor() as cursor:
+        cursor.execute("DELETE FROM corpus_snapshot_releases")
+        cursor.execute("DELETE FROM corpus_snapshot_documents")
+        cursor.execute("DELETE FROM corpus_snapshots")
         cursor.execute("UPDATE sources SET latest_ready_document_id = NULL")
         cursor.execute("DELETE FROM retrieval_chunks")
         cursor.execute("DELETE FROM document_units")

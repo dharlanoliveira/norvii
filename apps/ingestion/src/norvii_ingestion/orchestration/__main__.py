@@ -15,6 +15,7 @@ from norvii_ingestion.config import WorkerConfig
 from norvii_ingestion.enrichment.embedding import OpenAICompatibleEmbeddingProvider
 from norvii_ingestion.extraction.html import HtmlExtractor
 from norvii_ingestion.extraction.pdf import PdfExtractor
+from norvii_ingestion.graph_projection import GraphReleaseBuilder
 from norvii_ingestion.orchestration.composition import (
     PostgresWorkSource,
     StructuredEventLogger,
@@ -24,10 +25,14 @@ from norvii_ingestion.orchestration.worker import Worker
 from norvii_ingestion.publication.persistence.config import (
     EnvironmentConfigurationLoader,
 )
+from norvii_ingestion.publication.persistence.errors import PersistenceConnectionError
+from norvii_ingestion.publication.persistence.neo4j import Neo4jStore
 from norvii_ingestion.publication.postgres.repository import (
     PostgresWorkRepository,
     WorkRepositoryError,
 )
+from norvii_ingestion.release import GraphReleaseCoordinator, SnapshotReleaseHttpClient
+from norvii_ingestion.semantic import OpenAICompatibleSemanticExtractor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +43,8 @@ if TYPE_CHECKING:
 def main() -> int:
     """Compose and run the PostgreSQL-backed worker until SIGINT or SIGTERM."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    repository: PostgresWorkRepository | None = None
+    graph: Neo4jStore | None = None
     try:
         worker_config = WorkerConfig.from_environment(os.environ)
         persistence_config = EnvironmentConfigurationLoader(os.environ).load()
@@ -45,7 +52,11 @@ def main() -> int:
             persistence_config.postgres,
             persistence_config.timeout_seconds,
         )
-    except (ValueError, WorkRepositoryError):
+        graph = Neo4jStore.connect(
+            persistence_config.neo4j,
+            persistence_config.timeout_seconds,
+        )
+    except (PersistenceConnectionError, ValueError, WorkRepositoryError):
         return _startup_failure()
 
     stop = Event()
@@ -75,6 +86,21 @@ def main() -> int:
                 batch_size=worker_config.embedding_batch_size,
             ),
             embedding_model=worker_config.embedding_model,
+            graph_release_coordinator=GraphReleaseCoordinator(
+                SnapshotReleaseHttpClient(
+                    persistence_config.snapshot_api_base_url,
+                    persistence_config.timeout_seconds,
+                ),
+                GraphReleaseBuilder(repository.connection, graph),
+            ),
+            semantic_extractor=OpenAICompatibleSemanticExtractor(
+                endpoint=worker_config.semantic_endpoint,
+                api_key=worker_config.semantic_api_key,
+                model=worker_config.semantic_model,
+                timeout_seconds=worker_config.semantic_timeout_seconds,
+                reasoning_effort=worker_config.semantic_reasoning_effort,
+                extraction_version=worker_config.semantic_extraction_version,
+            ),
         ),
         logger=StructuredEventLogger(_LOGGER),
     )
@@ -83,7 +109,10 @@ def main() -> int:
     except WorkRepositoryError:
         return _storage_failure()
     finally:
-        repository.close()
+        if graph is not None:
+            graph.close()
+        if repository is not None:
+            repository.close()
     return 0
 
 

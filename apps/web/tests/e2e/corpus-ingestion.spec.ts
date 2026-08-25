@@ -96,7 +96,9 @@ test("opens immutable citation evidence and preserves its answer inspection", as
     "open",
     "",
   );
-  await expect(page.getByText("vector")).toBeVisible();
+  await expect(
+    page.getByRole("definition").filter({ hasText: "vector" }),
+  ).toBeVisible();
   await expect(
     page
       .getByRole("list", { name: "Supporting passages" })

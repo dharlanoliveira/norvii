@@ -14,12 +14,19 @@ import (
 	cataloghttp "github.com/dharlanoliveira/norvii/apps/api/internal/catalog/http"
 	catalogpostgres "github.com/dharlanoliveira/norvii/apps/api/internal/catalog/postgres"
 	chatagent "github.com/dharlanoliveira/norvii/apps/api/internal/chat/agent"
+	chatapplication "github.com/dharlanoliveira/norvii/apps/api/internal/chat/application"
 	chathttp "github.com/dharlanoliveira/norvii/apps/api/internal/chat/http"
 	documenthttp "github.com/dharlanoliveira/norvii/apps/api/internal/document/http"
 	documentpostgres "github.com/dharlanoliveira/norvii/apps/api/internal/document/postgres"
+	graphapplication "github.com/dharlanoliveira/norvii/apps/api/internal/graphrelease/application"
+	graphhttp "github.com/dharlanoliveira/norvii/apps/api/internal/graphrelease/http"
+	graphpostgres "github.com/dharlanoliveira/norvii/apps/api/internal/graphrelease/postgres"
 	"github.com/dharlanoliveira/norvii/apps/api/internal/platform/config"
 	"github.com/dharlanoliveira/norvii/apps/api/internal/platform/httpserver"
 	"github.com/dharlanoliveira/norvii/apps/api/internal/platform/persistence"
+	snapshotapplication "github.com/dharlanoliveira/norvii/apps/api/internal/snapshot/application"
+	snapshothttp "github.com/dharlanoliveira/norvii/apps/api/internal/snapshot/http"
+	snapshotpostgres "github.com/dharlanoliveira/norvii/apps/api/internal/snapshot/postgres"
 	sourceapplication "github.com/dharlanoliveira/norvii/apps/api/internal/source/application"
 	sourcehttp "github.com/dharlanoliveira/norvii/apps/api/internal/source/http"
 	sourcepostgres "github.com/dharlanoliveira/norvii/apps/api/internal/source/postgres"
@@ -56,7 +63,11 @@ func main() {
 	sourceService := sourceapplication.NewService(sourceRepository, uuid.New, time.Now)
 	sourcehttp.NewHandler(sourceRepository, sourceService).Register(application)
 	documenthttp.NewHandler(documentpostgres.NewRepository(pool)).Register(application)
-	chathttp.NewHandler(chatagent.NewClient(configuration.Agent)).Register(application)
+	snapshotRepository := snapshotpostgres.NewRepository(pool)
+	snapshothttp.NewHandler(snapshotapplication.NewService(snapshotRepository, uuid.New, time.Now)).Register(application)
+	graphRepository := graphpostgres.NewRepository(pool)
+	graphhttp.NewHandler(graphapplication.NewService(graphRepository)).Register(application)
+	chathttp.NewHandler(chatapplication.NewService(snapshotRepository, chatagent.NewClient(configuration.Agent))).Register(application)
 	server := httpserver.New(configuration, application, uuid.New)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

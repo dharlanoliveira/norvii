@@ -96,6 +96,13 @@ func TestListWritesVersionedCorpusProjection(t *testing.T) {
 			Status: domain.StatusEnabled, Version: 1, CreatedAt: now, UpdatedAt: now,
 		},
 		SourceCount: 1,
+		ActiveSnapshot: &catalogpostgres.ActiveSnapshot{
+			ID:             uuid.MustParse("70000000-0000-4000-8000-000000000001"),
+			ManifestSHA256: strings.Repeat("a", 64),
+			CreatedAt:      now,
+			ActivatedAt:    now,
+			ReleaseVersion: 1,
+		},
 	}}}
 	mux := http.NewServeMux()
 	NewHandler(reader).Register(mux)
@@ -106,7 +113,8 @@ func TestListWritesVersionedCorpusProjection(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", recorder.Code)
 	}
-	if !strings.Contains(recorder.Body.String(), `"sourceCount":1`) {
+	if !strings.Contains(recorder.Body.String(), `"sourceCount":1`) ||
+		!strings.Contains(recorder.Body.String(), `"activeSnapshot":{`) {
 		t.Fatalf("response = %s, want source count", recorder.Body.String())
 	}
 }

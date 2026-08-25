@@ -1,6 +1,9 @@
 import type {
   CorpusResponse,
   DocumentResponse,
+  GraphReleaseResponse,
+  SnapshotPublicationResponse,
+  SnapshotResponse,
   SourceResponse,
 } from "../../api/contract";
 
@@ -14,6 +17,15 @@ export interface ResearchProvider {
     corpusId: string,
     signal: AbortSignal,
   ): Promise<readonly SourceResponse[]>;
+  listSnapshots(
+    corpusId: string,
+    signal: AbortSignal,
+  ): Promise<readonly SnapshotResponse[]>;
+  getGraphRelease(
+    corpusId: string,
+    snapshotId: string,
+    signal: AbortSignal,
+  ): Promise<GraphReleaseResponse>;
   getDocument(
     corpusId: string,
     sourceId: string,
@@ -48,6 +60,13 @@ export interface ResearchProvider {
     version: number,
     signal: AbortSignal,
   ): Promise<SourceResponse>;
+  publishSnapshot(
+    corpusId: string,
+    sourceId: string,
+    documentId: string,
+    expectedReleaseVersion: number,
+    signal: AbortSignal,
+  ): Promise<SnapshotPublicationResponse>;
   createCorpus(
     draft: CorpusDraft,
     signal: AbortSignal,

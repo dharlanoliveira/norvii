@@ -64,6 +64,31 @@ retry is safe. Partial canonical output MUST not become visible to online retrie
 Graph publication happens after canonical PostgreSQL publication, records a
 checkpoint, and MUST be safe to retry or rebuild.
 
+Ingestion publishes candidate revisions, units, chunks, and embeddings only. It never
+changes `corpus_snapshot_releases`; a maintainer publishes a validated candidate into
+an immutable active snapshot through the Go API.
+
+## Semantic extraction and graph releases
+
+Semantic extraction runs during explicit ingestion and records bounded, evidence-backed entities
+and relationships against one immutable document version. Provider requests are bounded by the
+configured unit and request limits; the extraction provider is never invoked by chat or graph
+retrieval.
+
+After a maintainer publishes a snapshot, build its Neo4j projection explicitly:
+
+```bash
+python infra/scripts/run-with-environment.py infra/.env \
+  uv run --directory apps/ingestion norvii-build-graph-release \
+  --corpus-id <corpus-id> --snapshot-id <snapshot-id>
+```
+
+The builder reads only canonical PostgreSQL semantic records that belong to the named published
+snapshot. It writes an idempotent derived Neo4j release and records its manifest, status, counts,
+and safe failure category in PostgreSQL. Repeating the command for unchanged inputs reuses the
+same release identity. The builder never changes source content, snapshot activation, or
+canonical extraction artifacts.
+
 ## Verification model
 
 - unit tests for each stage and legal-structure invariant;

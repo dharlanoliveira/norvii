@@ -6,11 +6,13 @@ from .embedding import (
     EmbeddingProviderError,
     OpenAICompatibleEmbeddingProvider,
 )
+from .planning import OpenAICompatibleGraphPlanner
 
 __all__ = [
     "EmbeddingProvider",
     "EmbeddingProviderError",
     "OpenAICompatibleChatModel",
     "OpenAICompatibleEmbeddingProvider",
+    "OpenAICompatibleGraphPlanner",
     "ProviderUnavailableError",
 ]

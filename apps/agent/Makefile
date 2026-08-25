@@ -1,4 +1,4 @@
-.PHONY: ci format-check lint type-check test build
+.PHONY: ci format-check lint type-check test test-integration build
 
 format-check:
 	uv run ruff format --check .
@@ -11,6 +11,9 @@ type-check:
 
 test:
 	uv run pytest
+
+test-integration:
+	uv run pytest -m integration
 
 build:
 	uv build

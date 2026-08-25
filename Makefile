@@ -1,5 +1,6 @@
 .PHONY: bootstrap local-start local-status local-stop persistence persistence-config \
 	persistence-health persistence-integration persistence-migrate persistence-migration-status \
+	persistence-initialize-snapshots \
 	persistence-reset persistence-stop persistence-up persistence-verify \
 	persistence-verify-api persistence-verify-ingestion
 
@@ -38,6 +39,9 @@ persistence-health:
 
 persistence-migrate:
 	@$(PERSISTENCE_RUN) $(MAKE) -C apps/api migrate
+
+persistence-initialize-snapshots:
+	@$(PERSISTENCE_RUN) $(MAKE) -C apps/api initialize-snapshots
 
 persistence-migration-status:
 	@$(PERSISTENCE_RUN) $(MAKE) -C apps/api migration-status

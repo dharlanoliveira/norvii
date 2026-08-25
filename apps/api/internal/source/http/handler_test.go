@@ -102,11 +102,13 @@ func (reader *fakeReader) GetURLOrigin(
 
 func TestListWritesOnlyCorpusOwnedSources(t *testing.T) {
 	corpusID := uuid.MustParse("10000000-0000-4000-8000-000000000002")
+	activeDocumentID := uuid.New()
 	now := time.Date(2026, time.August, 17, 12, 0, 0, 0, time.UTC)
 	mux := http.NewServeMux()
 	NewHandler(&fakeReader{record: sourcepostgres.Record{
 		ID: uuid.New(), CorpusID: corpusID, Title: "Official text", Kind: domain.KindURL,
-		ProcessingStatus: domain.StatusPending, Version: 1, CreatedAt: now, UpdatedAt: now,
+		ProcessingStatus: domain.StatusPending, ActiveSnapshotDocumentID: &activeDocumentID,
+		Version: 1, CreatedAt: now, UpdatedAt: now,
 	}}).Register(mux)
 	recorder := httptest.NewRecorder()
 
@@ -114,7 +116,8 @@ func TestListWritesOnlyCorpusOwnedSources(t *testing.T) {
 		http.MethodGet, "/api/v1/corpora/"+corpusID.String()+"/sources", nil,
 	))
 
-	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"kind":"url"`) {
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"kind":"url"`) ||
+		!strings.Contains(recorder.Body.String(), `"activeSnapshotDocumentId":"`+activeDocumentID.String()+`"`) {
 		t.Fatalf("response status/body = %d/%s", recorder.Code, recorder.Body.String())
 	}
 }
@@ -122,6 +125,7 @@ func TestListWritesOnlyCorpusOwnedSources(t *testing.T) {
 func TestGetWritesOriginAndLatestSafeAttempt(t *testing.T) {
 	corpusID, sourceID := uuid.New(), uuid.New()
 	submittedURL := "https://example.org/law"
+	failureDetail := "provider_response_invalid"
 	now := time.Date(2026, time.August, 17, 12, 0, 0, 0, time.UTC)
 	mux := http.NewServeMux()
 	NewHandler(&fakeReader{record: sourcepostgres.Record{
@@ -130,6 +134,7 @@ func TestGetWritesOriginAndLatestSafeAttempt(t *testing.T) {
 		Origin: sourcepostgres.Origin{SubmittedURL: &submittedURL},
 		LatestAttempt: &sourcepostgres.Attempt{
 			Number: 1, PipelineVersion: "corpus-ingestion-v1", Status: "failed", StartedAt: now,
+			FailureDetail: &failureDetail,
 		},
 		Attempts: []sourcepostgres.Attempt{
 			{Number: 2, PipelineVersion: "corpus-ingestion-v1", Status: "failed", StartedAt: now},
@@ -149,7 +154,9 @@ func TestGetWritesOriginAndLatestSafeAttempt(t *testing.T) {
 
 	body := recorder.Body.String()
 	if recorder.Code != http.StatusOK || !strings.Contains(body, `"submittedUrl":"https://example.org/law"`) ||
-		!strings.Contains(body, `"attempts":[`) || strings.Count(body, `"pipelineVersion"`) != 3 {
+		!strings.Contains(body, `"attempts":[`) ||
+		!strings.Contains(body, `"failureDetail":"provider_response_invalid"`) ||
+		strings.Count(body, `"pipelineVersion"`) != 3 {
 		t.Fatalf("response = %d/%s, want safe source detail", recorder.Code, body)
 	}
 }

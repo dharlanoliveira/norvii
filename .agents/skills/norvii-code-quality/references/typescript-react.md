@@ -32,6 +32,14 @@
 - Use a complexity checkpoint before handoff for changed React pages, hooks, and event handlers: review each conditional branch for a distinct responsibility, and split independent decision trees before static analysis reports cognitive complexity.
 - If SonarCloud or another configured analyzer reports cognitive complexity, fix the design and add user-visible tests for the extracted behavior. Do not disable the rule, raise the threshold, or replace the finding with superficial wrappers.
 
+## Static-analysis-safe React expression patterns
+
+- Do not use nested ternaries in JSX or view-model construction. Select a named value with a short `if`/`else` decision or extract a focused rendering function when the states have domain meaning.
+- Do not reassign function parameters. Use a default parameter when the fallback is part of the contract, otherwise create a clearly named local value.
+- Do not nest template literals. Compute dynamic localization keys and formatted values in named locals before composing the final text.
+- Prefer native semantic behavior over redundant ARIA. Do not add an explicit `role` when the element already exposes that implicit role; add ARIA only when it supplies information that native semantics cannot.
+- Before handoff, review changed TypeScript and React files for configured Sonar-style findings: nested conditional expressions, parameter reassignment, nested interpolation, and redundant accessibility roles. Correct the expression or component structure rather than suppressing the finding.
+
 ## Network and streaming
 
 - Validate responses and streaming parts at the client boundary.

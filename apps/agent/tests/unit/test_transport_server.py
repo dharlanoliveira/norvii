@@ -11,6 +11,7 @@ from norvii_agent.graph import (
     GroundedChatRequest,
     GroundedChatResult,
     RetrievalInspection,
+    RetrievalStage,
 )
 from norvii_agent.transport.server import AgentHTTPServer, _inspection
 
@@ -39,7 +40,13 @@ def test_chat_stream_reads_only_the_declared_request_body_length() -> None:
     connection = HTTPConnection("127.0.0.1", int(server.server_address[1]), timeout=1)
 
     try:
-        request_body = json.dumps({"question": "What applies?", "interfaceLanguage": "en"})
+        request_body = json.dumps(
+            {
+                "question": "What applies?",
+                "interfaceLanguage": "en",
+                "snapshotId": "50000000-0000-4000-8000-000000000001",
+            }
+        )
         connection.request(
             "POST",
             "/v1/corpora/10000000-0000-4000-8000-000000000001/chat/stream",
@@ -64,6 +71,7 @@ def test_terminal_inspection_serializes_measurements_and_evidence_metadata() -> 
         retrieval=RetrievalInspection("vector", 8, 1, "text-embedding-3-small"),
         measurements=ExecutionMeasurements(12, 34, None, 10, None),
         evidence=(),
+        stages=(RetrievalStage("vector", "completed", 1, 12),),
     )
 
     payload = _inspection(inspection)
@@ -83,3 +91,14 @@ def test_terminal_inspection_serializes_measurements_and_evidence_metadata() -> 
         "outputTokens": None,
     }
     assert payload["evidence"] == []
+    assert payload["stages"] == [
+        {
+            "name": "vector",
+            "state": "completed",
+            "evidenceCount": 1,
+            "durationMilliseconds": 12,
+            "reasonCode": None,
+            "inputTokens": None,
+            "outputTokens": None,
+        }
+    ]

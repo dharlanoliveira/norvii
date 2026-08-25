@@ -57,7 +57,9 @@ repository-root `.log/` directory:
 
 The command waits for authenticated database health, the agent and API `/healthz`
 responses, the web server, and both stable initial sources to reach `ready` or safe `failed`
-before reporting readiness. The initial-ingestion wait is bounded by
+before reporting readiness. A source becomes `ready` only after the worker stages its immutable
+snapshot, builds its Neo4j graph release, and activates that graph-ready snapshot. The
+initial-ingestion wait is bounded by
 `NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS`. Repeating bootstrap reapplies idempotent
 migrations and reuses verified process identities instead of creating duplicates.
 The worker claims pending work in PostgreSQL and turns URL or PDF sources into
@@ -123,6 +125,34 @@ Initialization is idempotent. Migration `001_enable_vector.sql` enables pgvector
 immutable revisions, documents, and addressable units. It also inserts exactly one
 English GDPR corpus and one Portuguese LGPD corpus with official URL sources.
 
+The ingestion worker stages and activates immutable active releases automatically after its
+embeddings and semantic graph artifacts are ready. The historical command remains available only
+for recovery of an existing canonical database:
+
+```bash
+make persistence-initialize-snapshots
+```
+
+The command is idempotent. Normal ingestion does not require it: a reingestion activates its
+candidate only after the matching graph release is ready.
+
+`make bootstrap` relies on this automatic ingestion lifecycle. A successful bootstrap therefore
+leaves Vector, Graph, and Hybrid retrieval available for both curated corpora. The standalone
+command below remains useful when rebuilding a specific historical snapshot.
+
+To rebuild the derived GraphRAG projection for a historical snapshot, use the corpus and snapshot
+identifiers shown in the snapshot history:
+
+```bash
+python infra/scripts/run-with-environment.py infra/.env \
+  uv run --directory apps/ingestion norvii-build-graph-release \
+  --corpus-id <corpus-id> --snapshot-id <snapshot-id>
+```
+
+The command reads canonical semantic extraction records from PostgreSQL and rebuilds one immutable
+Neo4j release. It never changes the active snapshot. Normal ingestion automatically creates and
+activates its graph-ready release; this command is a recovery and reproducibility operation.
+
 Verify Go and Python through their production database drivers:
 
 ```bash
@@ -170,8 +200,9 @@ when local data may be discarded.
 
 Open `http://127.0.0.1:5173` after bootstrap. The API health endpoint is
 `http://127.0.0.1:8080/healthz` with default configuration. Use the catalog UI to
-create or edit corpora, add HTTPS or PDF sources, observe lifecycle status, retry
-failures, and browse ready documents. Chat remains explicitly unavailable.
+create or edit corpora, add HTTPS or PDF sources, observe lifecycle status, retry failures, and
+browse ready documents. A successful ingestion activates a graph-ready snapshot, so graph and
+hybrid retrieval become available without an extra operator command.
 
 Inspect canonical records with read-only commands:
 
@@ -181,9 +212,11 @@ docker compose --env-file infra/.env -f infra/compose.yaml exec postgres \
 ```
 
 Useful tables include `corpora`, `sources`, `url_origins`, `pdf_origins`,
-`ingestion_work`, `ingestion_attempts`, `source_revisions`, `documents`, and
-`document_units`. Neo4j remains empty of product graph data in this feature; inspect
-it at `http://127.0.0.1:7474` or with `cypher-shell` inside the container.
+`ingestion_work`, `ingestion_attempts`, `source_revisions`, `documents`,
+`corpus_snapshots`, `corpus_snapshot_documents`, `corpus_snapshot_releases`,
+`semantic_extraction_runs`, `semantic_entities`, `semantic_relationships`, and
+`graph_releases`. Neo4j contains product graph data after successful ingestion; inspect it at
+`http://127.0.0.1:7474` or with `cypher-shell` inside the container.
 
 For a failed component, inspect its dedicated `.log/<component>.log` file first.
 API errors include a request identifier but exclude credentials and document bodies.

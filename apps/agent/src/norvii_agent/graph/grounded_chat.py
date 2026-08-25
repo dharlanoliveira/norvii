@@ -32,6 +32,8 @@ class Evidence:
     pipeline_version: str | None = None
     source_title: str | None = None
     cosine_distance: float | None = None
+    snapshot_id: UUID | None = None
+    contribution: str = "vector"
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +44,30 @@ class RetrievalInspection:
     top_k: int
     returned_count: int
     embedding_model: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalStage:
+    """One content-free stage of a planned retrieval execution."""
+
+    name: str
+    state: str
+    evidence_count: int
+    duration_milliseconds: int | None
+    reason_code: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GraphPathStep:
+    """One evidence-backed relationship traversed during graph retrieval."""
+
+    relationship_type: str
+    subject_label: str
+    object_label: str
+    evidence_id: str
+    evidence_locator: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,14 +89,22 @@ class AnswerInspection:
     retrieval: RetrievalInspection
     measurements: ExecutionMeasurements
     evidence: tuple[Evidence, ...]
+    graph_path: tuple[GraphPathStep, ...] = ()
+    stages: tuple[RetrievalStage, ...] = ()
 
 
 class RetrievalPort(Protocol):
     """Retrieve evidence inside one corpus boundary."""
 
-    def search(self, corpus_id: UUID, question: str) -> Sequence[Evidence]:
+    def search(
+        self, corpus_id: UUID, snapshot_id: UUID, question: str, strategy: str = "vector"
+    ) -> Sequence[Evidence]:
         """Return evidence owned by the requested corpus."""
         ...
+
+
+class StrategyUnavailableError(RuntimeError):
+    """Signal that a declared retrieval strategy cannot safely answer."""
 
 
 class ChatModelPort(Protocol):
@@ -102,6 +136,8 @@ class GroundedChatRequest:
     corpus_id: UUID
     question: str
     interface_language: str = "en"
+    snapshot_id: UUID | None = None
+    strategy: str = "vector"
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +160,8 @@ class _State(TypedDict, total=False):
     emit: Callable[[str], None]
     retrieval_inspection: RetrievalInspection
     retrieval_milliseconds: int | None
+    graph_path: tuple[GraphPathStep, ...]
+    retrieval_stages: tuple[RetrievalStage, ...]
     generation_milliseconds: int | None
     input_tokens: int | None
     output_tokens: int | None
@@ -141,7 +179,9 @@ class GroundedChatGraph:
         builder.add_node("generate", self._generate)
         builder.add_node("validate", self._validate)
         builder.add_edge(START, "retrieve")
-        builder.add_edge("retrieve", "generate")
+        builder.add_conditional_edges(
+            "retrieve", self._after_retrieve, {"generate": "generate", "end": END}
+        )
         builder.add_edge("generate", "validate")
         builder.add_edge("validate", END)
         self._compiled = builder.compile()
@@ -164,18 +204,34 @@ class GroundedChatGraph:
     def _retrieve(self, state: _State) -> _State:
         request = state["request"]
         started = perf_counter()
-        evidence = tuple(self._retriever.search(request.corpus_id, request.question))[:8]
+        if request.snapshot_id is None:
+            raise ValueError("snapshot identifier is required")
+        try:
+            evidence = tuple(
+                self._retriever.search(
+                    request.corpus_id, request.snapshot_id, request.question, request.strategy
+                )
+            )
+        except StrategyUnavailableError:
+            return {"status": "abstained", "reason": f"{request.strategy}_unavailable"}
         elapsed = _elapsed_milliseconds(started)
         metadata = getattr(self._retriever, "last_retrieval", None)
         if not isinstance(metadata, RetrievalInspection):
-            metadata = RetrievalInspection("vector", 8, len(evidence), None)
+            metadata = RetrievalInspection(request.strategy, 8, len(evidence), None)
         return {
             "evidence": evidence,
             "retrieval_inspection": RetrievalInspection(
                 metadata.strategy, metadata.top_k, len(evidence), metadata.embedding_model
             ),
             "retrieval_milliseconds": elapsed,
+            "graph_path": tuple(getattr(self._retriever, "last_graph_path", ())),
+            "retrieval_stages": tuple(getattr(self._retriever, "last_stages", ())),
         }
+
+    @staticmethod
+    def _after_retrieve(state: _State) -> str:
+        """Avoid calling the model when a requested graph strategy is unavailable."""
+        return "end" if state.get("status") == "abstained" else "generate"
 
     def _generate(self, state: _State) -> _State:
         request = state["request"]
@@ -226,6 +282,8 @@ class GroundedChatGraph:
                 output_tokens=state.get("output_tokens"),
             ),
             evidence=evidence,
+            graph_path=tuple(state.get("graph_path", ())),
+            stages=tuple(state.get("retrieval_stages", ())),
         )
 
 

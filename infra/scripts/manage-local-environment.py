@@ -508,7 +508,8 @@ class LocalEnvironmentManager:
         )
         print(
             f"Norvii is ready\nWeb: {self._web_url}\n"
-            f"Initial sources: {states}\nLogs: {self._layout.log_directory}"
+            f"Initial sources: {states}\nSnapshots and graph releases: {self._release_status(initial_states)}\n"
+            f"Logs: {self._layout.log_directory}"
         )
 
     def status(self) -> None:
@@ -622,6 +623,13 @@ class LocalEnvironmentManager:
                 return states
             time.sleep(0.25)
         raise ComponentCommandError("Ingestion", self._layout.log("ingestion"), self._layout.root)
+
+    @staticmethod
+    def _release_status(states: dict[str, str]) -> str:
+        """Report the release lifecycle implied by terminal source states."""
+        if all(state == "ready" for state in states.values()):
+            return "ready"
+        return "pending (one or more initial sources are not ready)"
 
     def _stop_managed_processes(self, components: Iterable[str]) -> None:
         for component in components:

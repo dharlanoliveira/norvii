@@ -74,6 +74,7 @@ def test_search_uses_one_question_vector_and_only_ready_latest_chunks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     corpus_id = UUID("10000000-0000-4000-8000-000000000001")
+    snapshot_id = UUID("50000000-0000-4000-8000-000000000001")
     source_id = UUID("20000000-0000-4000-8000-000000000001")
     document_id = UUID("30000000-0000-4000-8000-000000000001")
     cursor = FakeCursor(
@@ -101,7 +102,7 @@ def test_search_uses_one_question_vector_and_only_ready_latest_chunks(
     embeddings = FakeEmbeddingProvider()
 
     evidence = PostgresRetriever(configuration(), embeddings).search(
-        corpus_id, "What does the regulation protect?"
+        corpus_id, snapshot_id, "What does the regulation protect?"
     )
 
     assert embeddings.texts == ("What does the regulation protect?",)
@@ -116,6 +117,8 @@ def test_search_uses_one_question_vector_and_only_ready_latest_chunks(
     assert "s.title, c.ordinal" in cursor.query
     assert "ORDER BY cosine_distance, ordinal, id" in cursor.query
     assert "c.enrichment_status = 'ready'" in cursor.query
-    assert "latest_ready_document_id = c.document_id" in cursor.query
+    assert "sd.snapshot_id = %s" in cursor.query
+    assert "corpus_snapshot_documents sd" in cursor.query
     assert "to_tsvector" not in cursor.query
-    assert cursor.parameters == ("[0.1,0.2]", corpus_id)
+    assert cursor.parameters == ("[0.1,0.2]", corpus_id, snapshot_id)
+    assert evidence[0].snapshot_id == snapshot_id

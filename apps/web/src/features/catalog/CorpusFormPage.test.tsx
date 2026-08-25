@@ -164,8 +164,17 @@ class FormProvider implements ResearchProvider {
   reprocessSource(): Promise<SourceResponse> {
     return Promise.reject(new Error("not used"));
   }
+  publishSnapshot(): Promise<never> {
+    return Promise.reject(new Error("not used"));
+  }
   listSources(): Promise<readonly SourceResponse[]> {
     return Promise.resolve([]);
+  }
+  listSnapshots(): Promise<never[]> {
+    return Promise.resolve([]);
+  }
+  getGraphRelease(): Promise<never> {
+    return Promise.reject(new Error("not used"));
   }
   getDocument(): Promise<DocumentResponse> {
     return Promise.reject(new Error("not used"));

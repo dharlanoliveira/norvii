@@ -6,17 +6,22 @@ import json
 import urllib.request
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 _MALFORMED_RESPONSE = "embedding provider response is malformed"
+_REQUEST_FAILED = "embedding provider request failed"
 
 
 class EmbeddingProviderError(RuntimeError):
     """Report an unavailable or invalid embedding provider response."""
+
+    def __init__(self, message: str, detail: str = "provider_response_invalid") -> None:
+        super().__init__(message)
+        self.detail = detail
 
 
 class EmbeddingProvider(Protocol):
@@ -68,36 +73,58 @@ class OpenAICompatibleEmbeddingProvider:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310
                 decoded = json.loads(response.read())
-        except (URLError, TimeoutError, json.JSONDecodeError) as error:
-            raise EmbeddingProviderError("embedding provider request failed") from error
+        except HTTPError as error:
+            raise EmbeddingProviderError(
+                _REQUEST_FAILED, f"provider_http_status_{error.code}"
+            ) from error
+        except URLError as error:
+            detail = (
+                "provider_timeout"
+                if isinstance(error.reason, TimeoutError)
+                else "provider_transport"
+            )
+            raise EmbeddingProviderError(_REQUEST_FAILED, detail) from error
+        except TimeoutError as error:
+            raise EmbeddingProviderError(_REQUEST_FAILED, "provider_timeout") from error
+        except json.JSONDecodeError as error:
+            raise EmbeddingProviderError(
+                "embedding provider response is malformed", "provider_response_invalid"
+            ) from error
         return self._parse_vectors(decoded, len(texts))
 
     def _parse_vectors(self, payload: object, expected_count: int) -> tuple[tuple[float, ...], ...]:
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
-            raise EmbeddingProviderError(_MALFORMED_RESPONSE)
+            raise EmbeddingProviderError(_MALFORMED_RESPONSE, "provider_response_schema_invalid")
         entries = payload["data"]
         if len(entries) != expected_count:
-            raise EmbeddingProviderError("embedding provider returned an unexpected item count")
+            raise EmbeddingProviderError(
+                "embedding provider returned an unexpected item count",
+                "provider_response_schema_invalid",
+            )
         vectors = [self._parse_entry(entry, expected_count) for entry in entries]
         indexed_vectors = dict(vectors)
         if set(indexed_vectors) != set(range(expected_count)):
-            raise EmbeddingProviderError(_MALFORMED_RESPONSE)
+            raise EmbeddingProviderError(_MALFORMED_RESPONSE, "provider_response_schema_invalid")
         ordered = [indexed_vectors[index] for index in range(expected_count)]
         return tuple(ordered)
 
     def _parse_entry(self, entry: object, expected_count: int) -> tuple[int, tuple[float, ...]]:
         if not isinstance(entry, dict):
-            raise EmbeddingProviderError(_MALFORMED_RESPONSE)
+            raise EmbeddingProviderError(_MALFORMED_RESPONSE, "provider_response_schema_invalid")
         index = entry.get("index")
         values = entry.get("embedding")
         if not isinstance(index, int) or not 0 <= index < expected_count:
-            raise EmbeddingProviderError("embedding provider returned an invalid index")
+            raise EmbeddingProviderError(
+                "embedding provider returned an invalid index", "provider_response_schema_invalid"
+            )
         if not isinstance(values, list):
-            raise EmbeddingProviderError(_MALFORMED_RESPONSE)
+            raise EmbeddingProviderError(_MALFORMED_RESPONSE, "provider_response_schema_invalid")
         if len(values) != self.dimensions or not all(
             isinstance(value, (int, float)) for value in values
         ):
-            raise EmbeddingProviderError("embedding vector dimensions are invalid")
+            raise EmbeddingProviderError(
+                "embedding vector dimensions are invalid", "provider_response_schema_invalid"
+            )
         return index, tuple(float(value) for value in values)
 
 

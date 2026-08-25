@@ -1,8 +1,12 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ChatProvider } from "../../api/chat";
+import type {
+  ChatProvider,
+  ChatReference,
+  RetrievalStrategy,
+} from "../../api/chat";
 import {
   expectNoAccessibilityViolations,
   renderAtRoute,
@@ -36,10 +40,50 @@ describe("research chat", () => {
     completeRequest?.();
   });
 
+  it("stops the active request and records the cancellation in the conversation", async () => {
+    let requestWasAborted = false;
+    const provider: ChatProvider = {
+      streamQuestion: (_corpus, _question, _language, _strategy, signal) =>
+        new Promise<void>((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              requestWasAborted = true;
+              resolve();
+            },
+            { once: true },
+          );
+        }),
+    };
+    const user = userEvent.setup();
+    renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Research question" }),
+      "What applies?",
+    );
+    await user.keyboard("{Enter}");
+
+    await user.click(
+      await screen.findByRole("button", { name: "Stop response" }),
+    );
+
+    expect(await screen.findByText("Response cancelled.")).toBeVisible();
+    expect(requestWasAborted).toBe(true);
+    expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
+  });
+
   it("submits with Enter and preserves a newline with Shift+Enter", async () => {
     const questions: string[] = [];
     const provider: ChatProvider = {
-      streamQuestion: (_corpus, question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         questions.push(question);
         onEvent({
           type: "completed",
@@ -69,10 +113,56 @@ describe("research chat", () => {
     expect(questions).toEqual(["First line\nSecond line"]);
   });
 
+  it("uses the selected retrieval strategy for the next question", async () => {
+    const strategies: RetrievalStrategy[] = [];
+    const provider: ChatProvider = {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        strategy,
+        _signal,
+        onEvent,
+      ) => {
+        strategies.push(strategy);
+        onEvent({
+          type: "completed",
+          requestId: "request-strategy",
+          answer: "Completed.",
+          references: [],
+          telemetry: {
+            outcome: "completed",
+            evidenceCount: 0,
+            durationMilliseconds: 1,
+          },
+        });
+        return Promise.resolve();
+      },
+    };
+    const user = userEvent.setup();
+    renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
+
+    await user.click(screen.getByRole("radio", { name: "Vector" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Research question" }),
+      "What applies?",
+    );
+    await user.keyboard("{Enter}");
+
+    expect(strategies).toEqual(["vector"]);
+  });
+
   it("submits a starter question through the normal chat runtime", async () => {
     const questions: string[] = [];
     const provider: ChatProvider = {
-      streamQuestion: (_corpus, question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         questions.push(question);
         onEvent({
           type: "completed",
@@ -101,8 +191,58 @@ describe("research chat", () => {
     expect(questions).toEqual(["What is the purpose of this document?"]);
   });
 
+  it("offers graph-oriented starter questions for the demonstration", async () => {
+    const strategies: RetrievalStrategy[] = [];
+    const provider: ChatProvider = {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        strategy,
+        _signal,
+        onEvent,
+      ) => {
+        strategies.push(strategy);
+        onEvent({
+          type: "completed",
+          requestId: "graph-starter-question",
+          answer: "Completed.",
+          references: [],
+          telemetry: {
+            outcome: "completed",
+            evidenceCount: 0,
+            durationMilliseconds: 1,
+          },
+        });
+        return Promise.resolve();
+      },
+    };
+    const user = userEvent.setup();
+    renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
+
+    const authorityReportsQuestion = await screen.findByRole("button", {
+      name: "Which reports does the national data protection authority require?",
+    });
+    expect(authorityReportsQuestion).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: "What does this document require the data protection authority to do?",
+      }),
+    ).toBeVisible();
+
+    expect(
+      screen.getByRole("button", {
+        name: "Which rights does this document grant to data subjects?",
+      }),
+    ).toBeVisible();
+
+    await user.click(authorityReportsQuestion);
+
+    expect(strategies).toEqual(["hybrid"]);
+  });
+
   it("submits a corpus-scoped question and renders the grounded answer", async () => {
-    const reference = {
+    const reference: ChatReference = {
       id: "reference-1",
       corpusId: "corpus-1",
       sourceId: "source-1",
@@ -116,7 +256,14 @@ describe("research chat", () => {
       rank: 1,
     };
     const provider: ChatProvider = {
-      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         onEvent({
           type: "started",
           requestId: "request-1",
@@ -182,17 +329,24 @@ describe("research chat", () => {
     await expectNoAccessibilityViolations(result.container);
   });
 
-  it("groups repeated legal locations and reveals additional locations on demand", async () => {
-    const references = [
-      createReference(1, "Article 474"),
-      createReference(2, "article-474"),
-      createReference(3, "Article 3"),
-      createReference(4, "Article 215"),
-      createReference(5, "Article 416"),
-      createReference(6, "Article 65"),
+  it("shows every unique legal location with its retrieval contribution", async () => {
+    const references: readonly ChatReference[] = [
+      { ...createReference(1, "Article 474"), contribution: "vector" },
+      { ...createReference(2, "article-474"), contribution: "graph" },
+      { ...createReference(3, "Article 3"), contribution: "vector" },
+      { ...createReference(4, "Article 215"), contribution: "graph" },
+      { ...createReference(5, "Article 416"), contribution: "graph" },
+      { ...createReference(6, "Article 65"), contribution: "vector" },
     ];
     const provider: ChatProvider = {
-      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         onEvent({
           type: "completed",
           requestId: "request-1",
@@ -227,21 +381,15 @@ describe("research chat", () => {
       await screen.findByRole("button", {
         name: "Open Article 474 in Official LGPD text",
       }),
-    ).toHaveTextContent("2 supporting passages");
+    ).toHaveTextContent("Vector and graph evidence");
     expect(
       screen.getByRole("button", {
-        name: "Open Article 215 in Official LGPD text",
-      }),
-    ).toBeVisible();
-    expect(
-      screen.queryByRole("button", {
         name: "Open Article 416 in Official LGPD text",
       }),
+    ).toHaveTextContent("Graph evidence");
+    expect(
+      screen.queryByRole("button", { name: /View .*more locations/ }),
     ).not.toBeInTheDocument();
-
-    await user.click(
-      screen.getByRole("button", { name: "View 2 more locations" }),
-    );
 
     await user.click(
       screen.getByRole("button", {
@@ -253,7 +401,14 @@ describe("research chat", () => {
 
   it("renders an abstention returned by grounded retrieval", async () => {
     const provider: ChatProvider = {
-      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         onEvent({
           type: "abstained",
           requestId: "request-1",
@@ -287,7 +442,7 @@ describe("research chat", () => {
   });
 
   it("renders a compact research record without duplicating preserved evidence excerpts", async () => {
-    const reference = {
+    const reference: ChatReference = {
       id: "reference-1",
       corpusId: "corpus-1",
       sourceId: "source-1",
@@ -296,6 +451,7 @@ describe("research chat", () => {
       sourceRevisionId: "revision-1",
       pipelineVersion: "corpus-ingestion-v1",
       sourceTitle: "Official GDPR text",
+      contribution: "vector",
       cosineDistance: null,
       unitLocator: "Article 1",
       startOffset: 0,
@@ -304,7 +460,14 @@ describe("research chat", () => {
       rank: 1,
     };
     const provider: ChatProvider = {
-      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         onEvent({
           type: "completed",
           requestId: "request-1",
@@ -330,6 +493,35 @@ describe("research chat", () => {
               inputTokens: null,
               outputTokens: null,
             },
+            stages: [
+              {
+                name: "vector",
+                state: "completed",
+                evidenceCount: 1,
+                durationMilliseconds: 2,
+                reasonCode: null,
+                inputTokens: null,
+                outputTokens: null,
+              },
+              {
+                name: "planning",
+                state: "skipped",
+                evidenceCount: 0,
+                durationMilliseconds: 1,
+                reasonCode: "not_relevant",
+                inputTokens: 8,
+                outputTokens: 1,
+              },
+              {
+                name: "graph",
+                state: "skipped",
+                evidenceCount: 0,
+                durationMilliseconds: null,
+                reasonCode: "not_relevant",
+                inputTokens: null,
+                outputTokens: null,
+              },
+            ],
             evidence: [reference],
           },
         });
@@ -356,6 +548,12 @@ describe("research chat", () => {
     expect(screen.getAllByText("Unavailable")[0]).not.toBeVisible();
     await user.click(screen.getByText("Research record"));
 
+    expect(screen.getByText("Vector retrieval")).toBeVisible();
+    expect(screen.getByText("Graph planning")).toBeVisible();
+    expect(screen.getAllByText(/Not relevant to this question/)).toHaveLength(
+      2,
+    );
+    expect(screen.getAllByText(/Vector evidence/)).toHaveLength(2);
     expect(screen.getAllByText("Unavailable")).toHaveLength(2);
     expect(screen.queryByText("Protected rights")).not.toBeInTheDocument();
     await user.click(
@@ -368,7 +566,14 @@ describe("research chat", () => {
 
   it("shows stream errors and provider failures to the researcher", async () => {
     const streamErrorProvider: ChatProvider = {
-      streamQuestion: (_corpus, _question, _language, _signal, onEvent) => {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
         onEvent({
           type: "error",
           requestId: "request-1",
@@ -396,6 +601,10 @@ describe("research chat", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The upstream provider failed.",
     );
+    expect(screen.getByRole("article", { name: "Norvii" })).toContainElement(
+      screen.getByRole("alert"),
+    );
+    expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
     streamErrorResult.unmount();
 
     const rejectedProvider: ChatProvider = {
@@ -414,6 +623,129 @@ describe("research chat", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Network unavailable",
     );
+  });
+
+  it("compares Vector and Hybrid retrieval strategies", async () => {
+    const strategies: string[] = [];
+    const provider: ChatProvider = {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        strategy,
+        _signal,
+        onEvent,
+      ) => {
+        strategies.push(strategy);
+        onEvent({
+          type: "completed",
+          requestId: `request-${strategy}`,
+          answer: `${strategy} answer`,
+          references: [],
+          telemetry: {
+            outcome: "completed",
+            evidenceCount: 0,
+            durationMilliseconds: 1,
+          },
+          inspection: {
+            outcome: "completed",
+            retrieval: {
+              strategy,
+              topK: 8,
+              returnedCount: 0,
+              embeddingModel: null,
+            },
+            measurements: {
+              retrievalMilliseconds: 1,
+              generationMilliseconds: 1,
+              totalMilliseconds: 2,
+              inputTokens: 1,
+              outputTokens: 1,
+            },
+          },
+        });
+        return Promise.resolve();
+      },
+    };
+    const user = userEvent.setup();
+    renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Research question" }),
+      "What applies?",
+    );
+    await user.click(screen.getByRole("button", { name: "Send question" }));
+    const compareButton = await screen.findByRole("button", {
+      name: "Compare strategies",
+    });
+
+    expect(compareButton.closest(".chat-viewport__footer")).toBeNull();
+    expect(compareButton.closest(".chat-viewport")).not.toBeNull();
+
+    await user.click(compareButton);
+
+    expect(await screen.findByText("vector answer")).toBeVisible();
+    expect(screen.getAllByText("hybrid answer")).toHaveLength(2);
+    expect(strategies).toEqual(["hybrid", "vector", "hybrid"]);
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Research question" }),
+      "Which authority is responsible?",
+    );
+    await user.click(screen.getByRole("button", { name: "Send question" }));
+
+    expect(screen.queryByText("vector answer")).not.toBeInTheDocument();
+  });
+
+  it("cancels all comparison requests when its chat view unmounts", async () => {
+    const comparisonSignals: AbortSignal[] = [];
+    let requestCount = 0;
+    const provider: ChatProvider = {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        signal,
+        onEvent,
+      ) => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          onEvent({
+            type: "completed",
+            requestId: "normal-request",
+            answer: "Normal answer.",
+            references: [],
+            telemetry: {
+              outcome: "completed",
+              evidenceCount: 0,
+              durationMilliseconds: 1,
+            },
+          });
+          return Promise.resolve();
+        }
+        comparisonSignals.push(signal);
+        return new Promise<void>(() => undefined);
+      },
+    };
+    const user = userEvent.setup();
+    const result = renderAtRoute(
+      <ResearchChat corpusId="corpus-1" provider={provider} />,
+    );
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Research question" }),
+      "What applies?",
+    );
+    await user.click(screen.getByRole("button", { name: "Send question" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Compare strategies" }),
+    );
+    await waitFor(() => expect(comparisonSignals).toHaveLength(2));
+
+    result.unmount();
+
+    expect(comparisonSignals.every((signal) => signal.aborted)).toBe(true);
   });
 });
 

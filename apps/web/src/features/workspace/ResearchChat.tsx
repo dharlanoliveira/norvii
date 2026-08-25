@@ -9,7 +9,7 @@ import {
   useAuiState,
 } from "@assistant-ui/react";
 import { ChevronDown, Info, Send, Square } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -17,12 +17,16 @@ import {
   type ChatProvider,
   type ChatInspection,
   type ChatReference,
+  type RetrievalStrategy,
 } from "../../api/chat";
 import { AssistantMarkdown } from "./AssistantMarkdown";
-import { useNorviiChatRuntime } from "./useNorviiChatRuntime";
+import { StrategyComparison } from "./StrategyComparison";
+import {
+  type AssistantTerminalState,
+  useNorviiChatRuntime,
+} from "./useNorviiChatRuntime";
 
 const defaultChatProvider = createHttpChatProvider();
-const initiallyVisibleCitationLocations = 3;
 
 interface ResearchChatProps {
   readonly corpusId: string;
@@ -39,18 +43,27 @@ export function ResearchChat({
   const interfaceLanguage: "en" | "pt" = i18n.resolvedLanguage?.startsWith("pt")
     ? "pt"
     : "en";
-  const { runtime, error, referencesByMessageId, inspectionsByMessageId } =
-    useNorviiChatRuntime({
-      corpusId,
-      provider,
-      interfaceLanguage,
-      abstainedAnswer: t("chat.abstained"),
-      fallbackError: t("chat.failed"),
-    });
+  const [strategy, setStrategy] = useState<RetrievalStrategy>("hybrid");
+  const {
+    runtime,
+    terminalStatesByMessageId,
+    referencesByMessageId,
+    inspectionsByMessageId,
+    lastSubmittedQuestion,
+    lastSubmittedQuestionVersion,
+  } = useNorviiChatRuntime({
+    corpusId,
+    provider,
+    interfaceLanguage,
+    abstainedAnswer: t("chat.abstained"),
+    fallbackError: t("chat.failed"),
+    strategy,
+  });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <section className="research-chat" aria-label={t("chat.regionLabel")}>
+        <StrategySelector strategy={strategy} onChange={setStrategy} />
         <ThreadPrimitive.Root className="chat-thread">
           <ThreadPrimitive.Viewport className="chat-viewport" turnAnchor="top">
             <AuiIf condition={(state) => state.thread.isEmpty}>
@@ -65,16 +78,58 @@ export function ResearchChat({
                     onReferenceSelect={onReferenceSelect}
                     referencesByMessageId={referencesByMessageId}
                     inspectionsByMessageId={inspectionsByMessageId}
+                    terminalStatesByMessageId={terminalStatesByMessageId}
                   />
                 )
               }
             </ThreadPrimitive.Messages>
-            {error ? <ChatError message={error} /> : null}
+            <ChatStrategyComparison
+              corpusId={corpusId}
+              interfaceLanguage={interfaceLanguage}
+              lastSubmittedQuestion={lastSubmittedQuestion}
+              lastSubmittedQuestionVersion={lastSubmittedQuestionVersion}
+              onReferenceSelect={onReferenceSelect}
+              provider={provider}
+            />
             <ChatViewportFooter interfaceLanguage={interfaceLanguage} />
           </ThreadPrimitive.Viewport>
         </ThreadPrimitive.Root>
       </section>
     </AssistantRuntimeProvider>
+  );
+}
+
+function StrategySelector({
+  strategy,
+  onChange,
+}: {
+  readonly strategy: RetrievalStrategy;
+  readonly onChange: (strategy: RetrievalStrategy) => void;
+}) {
+  const { t } = useTranslation();
+  const strategies: readonly RetrievalStrategy[] = ["vector", "hybrid"];
+
+  return (
+    <div
+      aria-label={t("chat.strategy.label")}
+      className="chat-strategy"
+      role="radiogroup"
+    >
+      <span>{t("chat.strategy.label")}</span>
+      <div className="chat-strategy__choices">
+        {strategies.map((option) => (
+          <button
+            aria-checked={strategy === option}
+            key={option}
+            role="radio"
+            type="button"
+            onClick={() => onChange(option)}
+          >
+            {t(`chat.strategy.${option}`)}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -88,12 +143,46 @@ function ChatEmptyState() {
   );
 }
 
+function ChatStrategyComparison({
+  corpusId,
+  interfaceLanguage,
+  lastSubmittedQuestion,
+  lastSubmittedQuestionVersion,
+  onReferenceSelect,
+  provider,
+}: {
+  readonly corpusId: string;
+  readonly interfaceLanguage: "en" | "pt";
+  readonly lastSubmittedQuestion: string | undefined;
+  readonly lastSubmittedQuestionVersion: number;
+  readonly onReferenceSelect?: ((reference: ChatReference) => void) | undefined;
+  readonly provider: ChatProvider;
+}) {
+  const isEmpty = useAuiState((state) => state.thread.isEmpty);
+
+  if (isEmpty) {
+    return null;
+  }
+
+  return (
+    <StrategyComparison
+      corpusId={corpusId}
+      interfaceLanguage={interfaceLanguage}
+      key={lastSubmittedQuestionVersion}
+      onReferenceSelect={onReferenceSelect}
+      provider={provider}
+      question={lastSubmittedQuestion}
+    />
+  );
+}
+
 function ChatViewportFooter({
   interfaceLanguage,
 }: {
   readonly interfaceLanguage: "en" | "pt";
 }) {
   const isEmpty = useAuiState((state) => state.thread.isEmpty);
+
   return (
     <ThreadPrimitive.ViewportFooter
       className={`chat-viewport__footer${isEmpty ? " chat-viewport__footer--empty" : ""}`}
@@ -112,6 +201,9 @@ function ChatStarterQuestions() {
     t("chat.starterQuestions.purpose"),
     t("chat.starterQuestions.scope"),
     t("chat.starterQuestions.rights"),
+    t("chat.starterQuestions.authorityReports"),
+    t("chat.starterQuestions.authorityRequirements"),
+    t("chat.starterQuestions.dataSubjectRights"),
   ];
 
   return (
@@ -165,27 +257,37 @@ interface AssistantMessageProps {
   readonly referencesByMessageId: ReadonlyMap<string, readonly ChatReference[]>;
   readonly onReferenceSelect?: ((reference: ChatReference) => void) | undefined;
   readonly inspectionsByMessageId: ReadonlyMap<string, ChatInspection>;
+  readonly terminalStatesByMessageId: ReadonlyMap<
+    string,
+    AssistantTerminalState
+  >;
 }
 
 function AssistantMessage({
   referencesByMessageId,
   inspectionsByMessageId,
   onReferenceSelect,
+  terminalStatesByMessageId,
 }: AssistantMessageProps) {
   const { t } = useTranslation();
   const messageId = useAuiState((state) => state.message.id);
+  const wasCancelled = useAuiState(
+    (state) =>
+      state.message.status?.type === "incomplete" &&
+      state.message.status.reason === "cancelled",
+  );
   const references = referencesByMessageId.get(messageId) ?? [];
   const inspection = inspectionsByMessageId.get(messageId);
+  const terminalState = terminalStatesByMessageId.get(messageId);
+  const content = assistantMessageContent(wasCancelled, terminalState);
   return (
     <MessagePrimitive.Root
       aria-label={t("chat.assistant")}
-      className="chat-message chat-message--assistant"
+      className={`chat-message chat-message--assistant${terminalState?.kind === "error" ? " chat-message--error" : ""}`}
       role="article"
     >
       <span className="message-author">{t("chat.assistant")}</span>
-      <MessagePrimitive.Parts
-        components={{ Text: AssistantMarkdown, Empty: AssistantPending }}
-      />
+      {content}
       {references.length > 0 ? (
         <CitationList
           onReferenceSelect={onReferenceSelect}
@@ -202,12 +304,32 @@ function AssistantMessage({
   );
 }
 
+function assistantMessageContent(
+  wasCancelled: boolean,
+  terminalState: AssistantTerminalState | undefined,
+): ReactNode {
+  if (wasCancelled || terminalState?.kind === "cancelled") {
+    return <AssistantCancelled />;
+  }
+  if (terminalState?.kind === "error") {
+    return <AssistantError message={terminalState.message} />;
+  }
+  return (
+    <MessagePrimitive.Parts
+      components={{ Text: AssistantMarkdown, Empty: AssistantPending }}
+    />
+  );
+}
+
 interface CitationLocationGroup {
+  readonly contribution: EvidenceContribution;
   readonly id: string;
   readonly ranks: readonly number[];
   readonly reference: ChatReference;
   readonly supportingPassageCount: number;
 }
+
+type EvidenceContribution = NonNullable<ChatReference["contribution"]>;
 
 function CitationList({
   references,
@@ -217,18 +339,13 @@ function CitationList({
   readonly onReferenceSelect?: ((reference: ChatReference) => void) | undefined;
 }) {
   const { t } = useTranslation();
-  const [showAllLocations, setShowAllLocations] = useState(false);
   const [selectedLocationId, setSelectedLocationId] = useState<string>();
   const citationGroups = groupCitationLocations(references);
-  const visibleGroups = showAllLocations
-    ? citationGroups
-    : citationGroups.slice(0, initiallyVisibleCitationLocations);
-  const hiddenLocationCount = citationGroups.length - visibleGroups.length;
 
   return (
     <section className="citation-list" aria-label={t("chat.citationLocations")}>
       <div className="citation-list__items">
-        {visibleGroups.map((group) => {
+        {citationGroups.map((group) => {
           const sourceTitle =
             group.reference.sourceTitle ?? group.reference.sourceId;
           const location = formatCitationLocation(
@@ -261,34 +378,20 @@ function CitationList({
                 </span>
                 <strong>{location}</strong>
               </span>
-              <span className="citation-chip__count">
-                {t("chat.supportingPassages", {
-                  count: group.supportingPassageCount,
-                })}
+              <span className="citation-chip__metadata">
+                <span className="citation-chip__contribution">
+                  {t(`chat.evidenceContribution.${group.contribution}`)}
+                </span>
+                <span className="citation-chip__count">
+                  {t("chat.supportingPassages", {
+                    count: group.supportingPassageCount,
+                  })}
+                </span>
               </span>
             </button>
           );
         })}
       </div>
-      {hiddenLocationCount > 0 ? (
-        <button
-          className="citation-list__reveal"
-          type="button"
-          onClick={() => setShowAllLocations(true)}
-        >
-          {t("chat.showMoreLocations", { count: hiddenLocationCount })}
-        </button>
-      ) : null}
-      {showAllLocations &&
-      citationGroups.length > initiallyVisibleCitationLocations ? (
-        <button
-          className="citation-list__reveal"
-          type="button"
-          onClick={() => setShowAllLocations(false)}
-        >
-          {t("chat.showFewerLocations")}
-        </button>
-      ) : null}
     </section>
   );
 }
@@ -306,6 +409,7 @@ function groupCitationLocations(
     const existingGroup = groups.get(groupId);
     if (existingGroup === undefined) {
       groups.set(groupId, {
+        contribution: reference.contribution ?? "vector",
         id: groupId,
         ranks: [reference.rank],
         reference,
@@ -315,6 +419,10 @@ function groupCitationLocations(
     }
     groups.set(groupId, {
       ...existingGroup,
+      contribution: combineEvidenceContribution(
+        existingGroup.contribution,
+        reference.contribution,
+      ),
       ranks: [...existingGroup.ranks, reference.rank],
       supportingPassageCount: existingGroup.supportingPassageCount + 1,
     });
@@ -322,6 +430,20 @@ function groupCitationLocations(
   return [...groups.values()].sort(
     (left, right) => left.reference.rank - right.reference.rank,
   );
+}
+
+function combineEvidenceContribution(
+  current: EvidenceContribution,
+  incoming: ChatReference["contribution"] = "vector",
+): EvidenceContribution {
+  if (
+    current === "vector_and_graph" ||
+    incoming === "vector_and_graph" ||
+    current !== incoming
+  ) {
+    return "vector_and_graph";
+  }
+  return current;
 }
 
 function citationLocatorKey(locator: string): string {
@@ -378,6 +500,9 @@ function AnswerInspection({
 }) {
   const { t } = useTranslation();
   const evidence = inspection.evidence ?? [];
+  const snapshotId = evidence.find(
+    (reference) => reference.snapshotId !== undefined,
+  )?.snapshotId;
   return (
     <details className="answer-inspection">
       <summary>
@@ -397,6 +522,12 @@ function AnswerInspection({
             label={t("chat.outcome")}
             value={t(`chat.outcomes.${inspection.outcome}`)}
           />
+          {snapshotId === undefined ? null : (
+            <InspectionMetric
+              label={t("chat.snapshotIdentity")}
+              value={snapshotId}
+            />
+          )}
           <InspectionMetric
             label={t("chat.retrieval")}
             value={inspection.retrieval?.strategy ?? t("chat.unavailable")}
@@ -431,30 +562,96 @@ function AnswerInspection({
             value={formatMeasurement(inspection.measurements.outputTokens, t)}
           />
         </dl>
+        {inspection.stages?.length ? (
+          <ol
+            className="answer-inspection__stages"
+            aria-label={t("chat.retrievalStages")}
+          >
+            {inspection.stages.map((stage) => {
+              const reason =
+                stage.reasonCode === null
+                  ? undefined
+                  : t(`chat.retrievalStageReason.${stage.reasonCode}`);
+              return (
+                <li key={stage.name}>
+                  <strong>{t(`chat.retrievalStage.${stage.name}`)}</strong>
+                  <span>{t(`chat.retrievalStageState.${stage.state}`)}</span>
+                  <small>
+                    {t("chat.retrievalStageEvidence", {
+                      count: stage.evidenceCount,
+                    })}
+                    {reason === undefined ? "" : ` - ${reason}`}
+                  </small>
+                </li>
+              );
+            })}
+          </ol>
+        ) : null}
         <ol
           className="answer-inspection__evidence"
           aria-label={t("chat.inspectionEvidence")}
         >
-          {evidence.map((reference) => (
-            <li key={reference.id}>
-              <button
-                type="button"
-                onClick={() => onReferenceSelect?.(reference)}
-                disabled={reference.documentVersionId === undefined}
-              >
-                <strong>{reference.sourceTitle ?? reference.sourceId}</strong>
-                <span>{reference.unitLocator}</span>
-              </button>
-              <small>
-                {t("chat.retrievalRank", { rank: reference.rank })}
-                {reference.cosineDistance === null ||
-                reference.cosineDistance === undefined
-                  ? ` - ${t("chat.unavailable")}`
-                  : ` - ${t("chat.cosineDistance", { value: reference.cosineDistance.toFixed(4) })}`}
-              </small>
-            </li>
-          ))}
+          {evidence.map((reference) => {
+            const contribution =
+              reference.contribution === undefined
+                ? undefined
+                : t(`chat.evidenceContribution.${reference.contribution}`);
+            const distance =
+              reference.cosineDistance === null ||
+              reference.cosineDistance === undefined
+                ? t("chat.unavailable")
+                : t("chat.cosineDistance", {
+                    value: reference.cosineDistance.toFixed(4),
+                  });
+            return (
+              <li key={reference.id}>
+                <button
+                  type="button"
+                  onClick={() => onReferenceSelect?.(reference)}
+                  disabled={reference.documentVersionId === undefined}
+                >
+                  <strong>{reference.sourceTitle ?? reference.sourceId}</strong>
+                  <span>{reference.unitLocator}</span>
+                </button>
+                <small>
+                  {t("chat.retrievalRank", { rank: reference.rank })}
+                  {contribution === undefined ? "" : ` - ${contribution}`}
+                  {` - ${distance}`}
+                </small>
+              </li>
+            );
+          })}
         </ol>
+        {inspection.graphPath?.length ? (
+          <ol
+            className="answer-inspection__path"
+            aria-label={t("chat.graphPath")}
+          >
+            {inspection.graphPath.map((step) => {
+              const reference = evidence.find(
+                (candidate) => candidate.id === step.evidenceId,
+              );
+              return (
+                <li key={`${step.evidenceId}:${step.relationshipType}`}>
+                  <button
+                    type="button"
+                    disabled={reference?.documentVersionId === undefined}
+                    onClick={() => {
+                      if (reference) onReferenceSelect?.(reference);
+                    }}
+                  >
+                    <strong>{step.subjectLabel}</strong>
+                    <span>
+                      {t(`chat.relationships.${step.relationshipType}`)}
+                    </span>
+                    <strong>{step.objectLabel}</strong>
+                  </button>
+                  <small>{step.evidenceLocator}</small>
+                </li>
+              );
+            })}
+          </ol>
+        ) : null}
       </div>
     </details>
   );
@@ -510,13 +707,22 @@ function AssistantPending() {
   );
 }
 
-function ChatError({ message }: { readonly message: string }) {
+function AssistantError({ message }: { readonly message: string }) {
   const { t } = useTranslation();
   return (
-    <div className="chat-error" role="alert">
+    <div className="assistant-terminal assistant-terminal--error" role="alert">
       <strong>{t("chat.errorTitle")}</strong>
       <span>{message}</span>
     </div>
+  );
+}
+
+function AssistantCancelled() {
+  const { t } = useTranslation();
+  return (
+    <output className="assistant-terminal assistant-terminal--cancelled">
+      {t("chat.cancelled")}
+    </output>
   );
 }
 

@@ -50,6 +50,15 @@ export function CorpusCard({ corpus, index, onToggleStatus }: CorpusCardProps) {
             </dt>
             <dd>{t("catalog.sourceCount", { count: corpus.sourceCount })}</dd>
           </div>
+          <div>
+            <dt>{t("catalog.activeSnapshot")}</dt>
+            <dd>
+              {corpus.activeSnapshot === null ||
+              corpus.activeSnapshot === undefined
+                ? t("catalog.snapshotUnavailable")
+                : corpus.activeSnapshot.id.slice(0, 8)}
+            </dd>
+          </div>
         </dl>
         <div className="corpus-card__actions">
           <Link

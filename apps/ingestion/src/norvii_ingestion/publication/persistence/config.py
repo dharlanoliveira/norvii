@@ -37,6 +37,7 @@ class PersistenceConfiguration:
     postgres: PostgresConfiguration
     neo4j: Neo4jConfiguration
     timeout_seconds: int
+    snapshot_api_base_url: str
 
 
 class EnvironmentConfigurationLoader:
@@ -54,6 +55,7 @@ class EnvironmentConfigurationLoader:
             maximum=10,
         )
         neo4j_uri = self._required_neo4j_uri()
+        snapshot_api_base_url = self._snapshot_api_base_url()
 
         return PersistenceConfiguration(
             postgres=PostgresConfiguration(
@@ -70,6 +72,7 @@ class EnvironmentConfigurationLoader:
                 database=self._required_value("NORVII_NEO4J_DATABASE"),
             ),
             timeout_seconds=timeout_seconds,
+            snapshot_api_base_url=snapshot_api_base_url,
         )
 
     def _required_value(self, name: str) -> str:
@@ -99,3 +102,18 @@ class EnvironmentConfigurationLoader:
                 "Configuration variable NORVII_NEO4J_URI must be a credential-free neo4j URI."
             )
         return uri
+
+    def _snapshot_api_base_url(self) -> str:
+        value = self._environment.get("NORVII_INGESTION_API_BASE_URL", "http://127.0.0.1:8080")
+        parsed = urlparse(value)
+        is_credential_free_http = (
+            parsed.scheme in {"http", "https"}
+            and parsed.hostname is not None
+            and parsed.username is None
+            and parsed.password is None
+        )
+        if not is_credential_free_http:
+            raise ConfigurationError(
+                "NORVII_INGESTION_API_BASE_URL must be a credential-free HTTP URL."
+            )
+        return value.rstrip("/")

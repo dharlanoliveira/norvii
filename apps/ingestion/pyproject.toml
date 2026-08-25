@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 norvii-ingestion-worker = "norvii_ingestion.orchestration.__main__:main"
+norvii-build-graph-release = "norvii_ingestion.graph_projection.__main__:main"
 norvii-verify-persistence = "norvii_ingestion.publication.persistence.__main__:main"
 
 [dependency-groups]
