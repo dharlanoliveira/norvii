@@ -86,6 +86,14 @@ dollar signs, or other special characters so Compose treats them literally. Norv
 parses the file without evaluating it as shell code and passes discrete connection
 fields to drivers so password-bearing URLs do not enter errors or logs.
 
+Chat and embedding providers are optional. Set `NORVII_CHAT_BASE_URL` together with
+the corresponding local credential only when model-backed chat is needed. Set the
+`NORVII_EMBEDDING_*` values before publishing sources that need vector retrieval; a
+blank embedding key reuses the chat key. Keep provider credentials only in the
+ignored `infra/.env` file. An empty chat URL fails chat requests closed while leaving
+the catalog and document reader available. Automated checks use deterministic fakes
+and never require provider credentials.
+
 Validate the rendered service list:
 
 ```bash
@@ -223,6 +231,14 @@ API errors include a request identifier but exclude credentials and document bod
 Worker failures expose a bounded category and retain prior ready revisions. A failed
 or expired attempt can be retried from the workspace; expired leases are recovered
 by the worker.
+
+The API and agent health endpoints verify that their local processes are ready to
+serve; they do not call an external chat or embedding provider and therefore do not
+validate provider credentials. For a provider configuration or availability failure,
+run `make local-status` and review only a bounded tail of `.log/agent.log`. Agent
+terminal diagnostics contain bounded outcome, evidence-count, and duration fields;
+they do not log prompts, evidence text, provider payloads, or credentials. Review
+logs before sharing them and never paste `infra/.env` into tickets or chat.
 
 ## Isolated integration journey
 

@@ -133,3 +133,17 @@ without exposing a new candidate snapshot before its graph release is ready.
 - [ ] T029 Ensure reused immutable documents obtain missing semantic artifacts idempotently before release coordination, with PostgreSQL repository regression coverage under `apps/ingestion/src/norvii_ingestion/publication/postgres/` and `apps/ingestion/tests/` per FR-016.
 - [ ] T030 Surface the release-stage state and safe actionable diagnostic in the source-status view, with TypeScript contract and component tests under `apps/web/src/` per FR-009, FR-014, and FR-015.
 - [ ] T031 Add an end-to-end seeded reingestion journey for both corpora that verifies a successful attempt activates a graph-ready snapshot and makes Vector, Graph, and Hybrid available without a separate command per SC-008.
+
+## Phase 8: Reconciliation
+
+The implementation-presence audit recorded in [reconciliation.md](reconciliation.md) found
+working graph-release persistence, projection, activation coordination, status presentation, and
+strategy-comparison code. Feature 009 replaces the standalone Graph strategy with Vector and
+planned Hybrid retrieval. The historical checklist remains unchanged to preserve traceability;
+complete the consolidated tasks below rather than recreating superseded behavior.
+
+- [X] T032 Add service-backed PostgreSQL and Neo4j isolation coverage for Vector and Hybrid retrieval, including foreign-corpus and foreign-snapshot exclusion, per T012, T023, FR-002, FR-007-FR-009, and SC-001-SC-004 (partial).
+- [X] T033 Add a three-run graph-projection reproducibility journey that verifies manifest identity, graph membership, evidence locations, and candidate exclusion per T015, T024, FR-003, FR-004, FR-013, and SC-002-SC-005 (partial).
+- [X] T034 Add Playwright journeys for planned Hybrid with graph contribution, graph unavailability, and immutable source navigation; do not restore a standalone Graph selector per T018-T020, T025, Feature 009 FR-001, and SC-003-SC-004 (partial).
+- [X] T035 Verify that reingestion backfills missing semantic artifacts before coordinated graph publication, exposes a safe release-stage diagnostic, and activates only a graph-ready snapshot; cover both seeded corpora end to end per T026, T029-T031, FR-016, and SC-008 (partial).
+- [X] T036 Execute the documented configured-provider graph-rebuild journey, update operational/module documentation if it diverges, and record reproducibility measurements in quickstart per T021, T022, T026, and SC-005-SC-006 (partial).

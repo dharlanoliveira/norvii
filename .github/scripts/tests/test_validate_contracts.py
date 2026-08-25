@@ -96,12 +96,35 @@ class ContractValidatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractValidationError, "reference"):
             self._validator.validate(contract_directory)
 
+    def test_accepts_grounded_chat_schema_and_fixtures(self) -> None:
+        directory = Path(__file__).resolve().parents[3] / "specs" / "005-grounded-rag-chat" / "contracts"
+
+        self._validator.validate_grounded_chat(directory)
+
+    def test_rejects_a_grounded_chat_fixture_that_is_not_invalid(self) -> None:
+        directory = self._copy_grounded_chat_contracts()
+        fixture = directory / "fixtures" / "invalid" / "unexpected-valid.json"
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text('{"type":"started","requestId":"request-id","corpusId":"corpus-id"}', encoding="utf-8")
+
+        with self.assertRaisesRegex(ContractValidationError, "invalid fixture"):
+            self._validator.validate_grounded_chat(directory)
+
     def _copy_repository_contracts(self) -> Path:
         source = Path(__file__).resolve().parents[3] / "contracts" / "corpus-ingestion" / "v1"
         destination = self._root / "contracts" / "corpus-ingestion" / "v1"
         destination.mkdir(parents=True)
         for name in ("openapi.json", "ingestion-work.schema.json"):
             (destination / name).write_bytes((source / name).read_bytes())
+        return destination
+
+    def _copy_grounded_chat_contracts(self) -> Path:
+        source = Path(__file__).resolve().parents[3] / "specs" / "005-grounded-rag-chat" / "contracts"
+        destination = self._root / "grounded-chat"
+        for path in source.rglob("*.json"):
+            target = destination / path.relative_to(source)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(path.read_bytes())
         return destination
 
     @staticmethod

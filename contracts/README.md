@@ -23,6 +23,10 @@ schema or choose a generator outside a feature plan.
 | Family | Version | Producer | Consumers | Location |
 | --- | --- | --- | --- | --- |
 | Corpus ingestion | v1 | Go API and Python ingestion | React client, Go API, Python ingestion | [`corpus-ingestion/v1`](corpus-ingestion/v1/) |
+| Grounded chat stream | Feature-local v1 | Go API | Web client, Python agent | [`specs/005-grounded-rag-chat/contracts`](../specs/005-grounded-rag-chat/contracts/) |
+
+The grounded chat stream remains feature-local. Its schema is not promoted until the Vector and
+planned Hybrid compatibility surface has a stable cross-feature owner.
 
 ## Contract requirements
 

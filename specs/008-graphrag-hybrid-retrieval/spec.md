@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-24
 
-**Status**: Draft
+**Status**: In Progress
 
 **Input**: User description: "GraphRAG and hybrid retrieval: enable evaluators to compare snapshot-scoped vector, graph, and hybrid evidence paths for the curated Portuguese and English legal corpora."
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid4, uuid5
@@ -651,8 +651,11 @@ class PostgresWorkRepository:
         if extraction is None:
             return
         extraction = _document_scoped_semantic_extraction(document_id, extraction)
-        self._insert_missing_semantic_run(cursor, work, document_id, extraction, now)
-        self._insert_missing_semantic_entities(cursor, work, document_id, extraction)
+        extraction = replace(
+            extraction,
+            id=self._insert_missing_semantic_run(cursor, work, document_id, extraction, now),
+        )
+        extraction = self._insert_missing_semantic_entities(cursor, work, document_id, extraction)
         self._insert_missing_semantic_relationships(cursor, work, document_id, extraction)
 
     @staticmethod
@@ -662,7 +665,8 @@ class PostgresWorkRepository:
         document_id: UUID,
         extraction: SemanticExtraction,
         now: datetime,
-    ) -> None:
+    ) -> UUID:
+        """Return the persisted run identity for a logically equivalent extraction."""
         cursor.execute(
             """
             INSERT INTO semantic_extraction_runs (
@@ -670,7 +674,8 @@ class PostgresWorkRepository:
                 input_sha256, status, input_tokens, output_tokens, duration_milliseconds,
                 created_at, completed_at
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'ready', %s, %s, %s, %s, %s)
-            ON CONFLICT (id) DO NOTHING
+            ON CONFLICT (document_id, extraction_version, input_sha256) DO NOTHING
+            RETURNING id
             """,
             (
                 extraction.id,
@@ -687,6 +692,17 @@ class PostgresWorkRepository:
                 now,
             ),
         )
+        row = cursor.fetchone()
+        if row is not None:
+            return cast("UUID", row[0])
+        cursor.execute(
+            """
+            SELECT id FROM semantic_extraction_runs
+            WHERE document_id = %s AND extraction_version = %s AND input_sha256 = %s
+            """,
+            (document_id, extraction.extraction_version, str(extraction.input_sha256)),
+        )
+        return cast("UUID", cursor.fetchone()[0])  # type: ignore[index]
 
     @staticmethod
     def _insert_missing_semantic_entities(
@@ -694,14 +710,16 @@ class PostgresWorkRepository:
         work: IngestionWork,
         document_id: UUID,
         extraction: SemanticExtraction,
-    ) -> None:
+    ) -> SemanticExtraction:
+        """Persist entities and return relationships bound to their canonical identities."""
         cursor.executemany(
             """
             INSERT INTO semantic_entities (
                 id, extraction_run_id, corpus_id, source_id, document_id, evidence_unit_id,
                 entity_type, label, normalized_label, validation_status
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'supported')
-            ON CONFLICT (id) DO NOTHING
+            ON CONFLICT (extraction_run_id, entity_type, normalized_label, evidence_unit_id)
+            DO NOTHING
             """,
             [
                 (
@@ -718,6 +736,41 @@ class PostgresWorkRepository:
                 for entity in extraction.entities
             ],
         )
+        cursor.execute(
+            """
+            SELECT id, entity_type, normalized_label, evidence_unit_id
+            FROM semantic_entities
+            WHERE extraction_run_id = %s
+            """,
+            (extraction.id,),
+        )
+        canonical_ids = {
+            (str(entity_type), str(normalized_label), evidence_unit_id): entity_id
+            for entity_id, entity_type, normalized_label, evidence_unit_id in cursor.fetchall()
+        }
+        replacements = {
+            entity.id: cast(
+                "UUID",
+                canonical_ids[
+                    (entity.entity_type, entity.normalized_label, entity.evidence_unit_id)
+                ],
+            )
+            for entity in extraction.entities
+        }
+        return replace(
+            extraction,
+            entities=tuple(
+                replace(entity, id=replacements[entity.id]) for entity in extraction.entities
+            ),
+            relationships=tuple(
+                replace(
+                    relationship,
+                    subject_entity_id=replacements[relationship.subject_entity_id],
+                    object_entity_id=replacements[relationship.object_entity_id],
+                )
+                for relationship in extraction.relationships
+            ),
+        )
 
     @staticmethod
     def _insert_missing_semantic_relationships(
@@ -732,7 +785,10 @@ class PostgresWorkRepository:
                 id, extraction_run_id, corpus_id, source_id, document_id, subject_entity_id,
                 object_entity_id, evidence_unit_id, relationship_type, qualifier, validation_status
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'supported')
-            ON CONFLICT (id) DO NOTHING
+            ON CONFLICT (
+                extraction_run_id, subject_entity_id, object_entity_id, relationship_type,
+                evidence_unit_id
+            ) DO NOTHING
             """,
             [
                 (
