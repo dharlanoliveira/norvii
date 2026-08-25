@@ -179,6 +179,59 @@ def test_builder_commits_snapshot_reads_before_recording_a_graph_release() -> No
     assert connection.completed_transactions == 4
 
 
+def test_builder_reuses_the_same_manifest_across_three_snapshot_builds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus_id = uuid4()
+    snapshot_id = uuid4()
+    entity = _EntityProjection(uuid4(), "Controller", "controller", "actor")
+    relationship = _RelationshipProjection(
+        id=uuid4(),
+        subject_entity_id=entity.id,
+        object_entity_id=entity.id,
+        evidence_unit_id=uuid4(),
+        source_id=uuid4(),
+        document_id=uuid4(),
+        source_revision_id=uuid4(),
+        pipeline_version="test-pipeline",
+        source_title="Official source",
+        evidence_locator="Article 1",
+        start_offset=0,
+        end_offset=10,
+        excerpt="Legal text",
+        relationship_type="governs",
+    )
+    graph = RecordingGraphStore()
+    builder = GraphReleaseBuilder(
+        cast("psycopg.Connection[tuple[object, ...]]", object()),
+        cast("Neo4jStore", graph),
+    )
+    ready: set[object] = set()
+    monkeypatch.setattr(
+        builder,
+        "_load_snapshot_projection",
+        lambda _corpus, _snapshot: ((entity,), (relationship,)),
+    )
+    monkeypatch.setattr(builder, "_ready_release", lambda summary: summary.release_id in ready)
+    monkeypatch.setattr(builder, "_record_building", lambda _summary: None)
+    monkeypatch.setattr(
+        builder,
+        "_record_ready",
+        lambda summary, _entities, _relationships: ready.add(summary.release_id),
+    )
+
+    first = builder.build(corpus_id, snapshot_id)
+    second = builder.build(corpus_id, snapshot_id)
+    third = builder.build(corpus_id, snapshot_id)
+
+    assert first.reused is False
+    assert second.reused is True
+    assert third.reused is True
+    assert first.release_id == second.release_id == third.release_id
+    assert first.manifest_sha256 == second.manifest_sha256 == third.manifest_sha256
+    assert len(graph.releases) == 1
+
+
 def _raise_state_change(
     _summary: object,
     _entities: object,

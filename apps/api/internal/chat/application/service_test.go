@@ -40,6 +40,24 @@ func TestAskRejectsCorpusWithoutAnActiveSnapshot(t *testing.T) {
 	}
 }
 
+func TestAskRejectsReleaseOutsideRequestedCorpus(t *testing.T) {
+	requestedCorpusID := uuid.New()
+	service := NewService(
+		fakeReleases{release: activeRelease(uuid.New(), uuid.New())},
+		&fakeAgent{},
+	)
+
+	_, err := service.Ask(
+		context.Background(),
+		chatdomain.Request{CorpusID: requestedCorpusID, Question: "What applies?"},
+		func(string) {},
+	)
+
+	if !errors.Is(err, chatdomain.ErrSnapshotUnavailable) {
+		t.Fatalf("Ask() error = %v, want %v", err, chatdomain.ErrSnapshotUnavailable)
+	}
+}
+
 func TestAskAllowsHybridWithoutAPreflightGraphRelease(t *testing.T) {
 	corpusID := uuid.New()
 	snapshotID := uuid.New()

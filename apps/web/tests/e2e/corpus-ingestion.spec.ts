@@ -106,6 +106,49 @@ test("opens immutable citation evidence and preserves its answer inspection", as
   ).toBeVisible();
 });
 
+test("offers Vector and Hybrid retrieval without restoring a Graph-only option", async ({
+  page,
+}) => {
+  await page.goto(`/corpora/${corpusId}`);
+
+  const strategies = page.getByRole("radiogroup", {
+    name: "Retrieval strategy",
+  });
+  await expect(strategies.getByRole("radio", { name: "Vector" })).toBeVisible();
+  await expect(strategies.getByRole("radio", { name: "Hybrid" })).toBeVisible();
+  await expect(strategies.getByRole("radio")).toHaveCount(2);
+  await expect(strategies.getByRole("radio", { name: "Graph" })).toHaveCount(0);
+});
+
+test("shows graph contribution and safe graph unavailability in Hybrid research records", async ({
+  page,
+}) => {
+  await configureCitationInspectionAPI(page, hybridChatStream("completed"));
+  await page.goto(`/corpora/${corpusId}`);
+  await page
+    .getByRole("textbox", { name: "Research question" })
+    .fill("Which right applies?");
+  await page.getByRole("button", { name: "Send question" }).click();
+  await page.locator("details.answer-inspection > summary").click();
+  await expect(
+    page.getByRole("list", { name: "Retrieval stages" }),
+  ).toContainText("Graph contribution");
+  await expect(
+    page.getByRole("list", { name: "Graph evidence path" }),
+  ).toBeVisible();
+
+  await configureCitationInspectionAPI(page, hybridChatStream("unavailable"));
+  await page.reload();
+  await page
+    .getByRole("textbox", { name: "Research question" })
+    .fill("Which right applies?");
+  await page.getByRole("button", { name: "Send question" }).click();
+  await page.locator("details.answer-inspection > summary").click();
+  await expect(
+    page.getByRole("list", { name: "Retrieval stages" }),
+  ).toContainText("No graph release is available");
+});
+
 async function configureAuthoritativeAPI(page: Page): Promise<void> {
   await page.route("**/api/v1/corpora?includeDisabled=true", async (route) =>
     route.fulfill({ json: [corpus()] }),
@@ -122,7 +165,10 @@ async function configureAuthoritativeAPI(page: Page): Promise<void> {
   );
 }
 
-async function configureCitationInspectionAPI(page: Page): Promise<void> {
+async function configureCitationInspectionAPI(
+  page: Page,
+  stream = chatStream(),
+): Promise<void> {
   await configureAuthoritativeAPI(page);
   await page.route(
     `**/api/v1/corpora/${corpusId}/sources/${sourceId}/documents/50000000-0000-4000-8000-000000000001`,
@@ -130,7 +176,7 @@ async function configureCitationInspectionAPI(page: Page): Promise<void> {
   );
   await page.route(`**/api/v1/corpora/${corpusId}/chat/stream`, async (route) =>
     route.fulfill({
-      body: chatStream(),
+      body: stream,
       contentType: "text/event-stream",
     }),
   );
@@ -342,6 +388,100 @@ function chatStream(): string {
         },
         evidence: [reference],
       },
+    },
+  ]
+    .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+    .join("");
+}
+
+function hybridChatStream(graphState: "completed" | "unavailable"): string {
+  const reference = {
+    id: "reference-1",
+    corpusId,
+    sourceId,
+    documentId: "50000000-0000-4000-8000-000000000001",
+    documentVersionId: "50000000-0000-4000-8000-000000000001",
+    unitLocator: "article-1",
+    startOffset: 10,
+    endOffset: 34,
+    excerpt: "Immutable cited version.",
+    rank: 1,
+    sourceTitle: "Official GDPR text",
+    contribution: graphState === "completed" ? "graph" : "vector",
+  };
+  const stages = [
+    {
+      name: "vector",
+      state: "completed",
+      evidenceCount: 1,
+      durationMilliseconds: 1,
+      reasonCode: null,
+      inputTokens: null,
+      outputTokens: null,
+    },
+    {
+      name: "planning",
+      state: "completed",
+      evidenceCount: 0,
+      durationMilliseconds: 1,
+      reasonCode: null,
+      inputTokens: null,
+      outputTokens: null,
+    },
+    {
+      name: "graph",
+      state: graphState,
+      evidenceCount: graphState === "completed" ? 1 : 0,
+      durationMilliseconds: 1,
+      reasonCode:
+        graphState === "completed" ? null : "graph_release_unavailable",
+      inputTokens: null,
+      outputTokens: null,
+    },
+  ];
+  const inspection = {
+    outcome: "completed",
+    retrieval: {
+      strategy: "hybrid",
+      topK: 8,
+      returnedCount: 1,
+      embeddingModel: "text-embedding-3-small",
+    },
+    measurements: {
+      retrievalMilliseconds: 1,
+      generationMilliseconds: 1,
+      totalMilliseconds: 2,
+      inputTokens: null,
+      outputTokens: null,
+    },
+    evidence: [reference],
+    stages,
+    graphPath:
+      graphState === "completed"
+        ? [
+            {
+              relationshipType: "applies_to",
+              subjectLabel: "Right",
+              objectLabel: "Request",
+              evidenceId: reference.id,
+              evidenceLocator: "article-1",
+            },
+          ]
+        : [],
+  };
+  return [
+    { type: "started", requestId: "request-1", corpusId },
+    {
+      type: "completed",
+      requestId: "request-1",
+      answer: "Hybrid answer [1].",
+      references: [reference],
+      telemetry: {
+        outcome: "completed",
+        evidenceCount: 1,
+        durationMilliseconds: 2,
+      },
+      inspection,
     },
   ]
     .map((event) => `data: ${JSON.stringify(event)}\n\n`)

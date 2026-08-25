@@ -41,6 +41,9 @@ func (service *Service) Ask(
 	if err != nil {
 		return chatdomain.Result{}, fmt.Errorf("resolve active corpus snapshot: %w", err)
 	}
+	if release.CorpusID != request.CorpusID || release.SnapshotID == uuid.Nil {
+		return chatdomain.Result{}, chatdomain.ErrSnapshotUnavailable
+	}
 	request.SnapshotID = release.SnapshotID
 	return service.agent.Ask(ctx, request, emit)
 }

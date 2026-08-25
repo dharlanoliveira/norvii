@@ -77,3 +77,17 @@ git diff --check
 
 Feature-specific integration tests use deterministic provider fakes and isolated PostgreSQL data.
 No CI job may call a live model or embedding provider.
+
+## Deterministic service-backed acceptance evidence
+
+The browser journey below uses the public HTTP/SSE boundary with deterministic service fixtures;
+it does not require a configured provider or credentials. It verifies active corpus and snapshot
+identity, immutable citation navigation, foreign-corpus citation rejection, abstention, and
+cancellation terminal rendering.
+
+```bash
+npm --prefix apps/web run test:e2e -- grounded-rag-chat.spec.ts
+```
+
+On 2026-08-25, this command passed twice: 4 browser scenarios in 4.49 seconds on each run.
+The runs used no live provider.

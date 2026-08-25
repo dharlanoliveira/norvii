@@ -13,7 +13,7 @@ from norvii_agent.graph import (
     RetrievalInspection,
     RetrievalStage,
 )
-from norvii_agent.transport.server import AgentHTTPServer, _inspection
+from norvii_agent.transport.server import AgentHTTPServer, _inspection, _telemetry
 
 
 class EmptyEvidenceGraph:
@@ -30,6 +30,16 @@ class EmptyEvidenceGraph:
             evidence=(),
             reason="insufficient_evidence",
         )
+
+
+class FailingGraph:
+    def run(
+        self,
+        request: GroundedChatRequest,
+        emit: Callable[[str], None],
+    ) -> GroundedChatResult:
+        del request, emit
+        raise RuntimeError("provider rejected diagnostic-token and private-request-content")
 
 
 def test_chat_stream_reads_only_the_declared_request_body_length() -> None:
@@ -102,3 +112,49 @@ def test_terminal_inspection_serializes_measurements_and_evidence_metadata() -> 
             "outputTokens": None,
         }
     ]
+
+
+def test_terminal_telemetry_bounds_the_evidence_counter() -> None:
+    assert _telemetry("completed", 99) == {
+        "outcome": "completed",
+        "evidenceCount": 8,
+        "durationMilliseconds": 0,
+    }
+    assert _telemetry("failed", -1)["evidenceCount"] == 0
+
+
+def test_provider_diagnostics_and_request_content_are_not_exposed_in_terminal_error() -> None:
+    server = AgentHTTPServer(("127.0.0.1", 0), FailingGraph)
+    server.daemon_threads = True
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    connection = HTTPConnection("127.0.0.1", int(server.server_address[1]), timeout=1)
+
+    try:
+        request_body = json.dumps(
+            {
+                "question": "private-request-content",
+                "interfaceLanguage": "en",
+                "snapshotId": "50000000-0000-4000-8000-000000000001",
+            }
+        )
+        connection.request(
+            "POST",
+            "/v1/corpora/10000000-0000-4000-8000-000000000001/chat/stream",
+            body=request_body,
+            headers={"Content-Type": "application/json"},
+        )
+
+        response = connection.getresponse()
+        body = response.read().decode()
+
+        assert response.status == 200
+        assert "event: error" in body
+        assert '"code": "generation_failed"' in body
+        assert "diagnostic-token" not in body
+        assert "private-request-content" not in body
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join()

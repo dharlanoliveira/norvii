@@ -1,0 +1,10 @@
+{
+  "type": "abstained",
+  "requestId": "00000000-0000-4000-8000-000000000001",
+  "reason": "insufficient_evidence",
+  "telemetry": {
+    "outcome": "abstained",
+    "evidenceCount": 0,
+    "durationMilliseconds": 1
+  }
+}

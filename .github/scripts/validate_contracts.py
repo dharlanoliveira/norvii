@@ -13,12 +13,49 @@ class ContractValidationError(RuntimeError):
 class ContractValidator:
     _HTTP_CONTRACT = "openapi.json"
     _WORK_CONTRACT = "ingestion-work.schema.json"
+    _CHAT_STREAM_CONTRACT = "chat-stream.schema.json"
 
     def validate(self, contract_directory: Path) -> None:
         openapi = self._load_object(contract_directory / self._HTTP_CONTRACT)
         work_schema = self._load_object(contract_directory / self._WORK_CONTRACT)
         self._validate_openapi(openapi)
         self._validate_work_schema(work_schema)
+
+    def validate_grounded_chat(self, contract_directory: Path) -> None:
+        schema = self._load_object(contract_directory / self._CHAT_STREAM_CONTRACT)
+        schema_id = schema.get("$id")
+        if not isinstance(schema_id, str) or not schema_id.endswith("/grounded-chat/v1/stream-event.json"):
+            raise ContractValidationError("The grounded chat stream schema must have a versioned $id")
+        variants = schema.get("oneOf")
+        expected_variants = {
+            "#/$defs/started",
+            "#/$defs/evidence",
+            "#/$defs/delta",
+            "#/$defs/completed",
+            "#/$defs/abstained",
+            "#/$defs/cancelled",
+            "#/$defs/error",
+        }
+        actual_variants = {value.get("$ref") for value in variants if isinstance(value, dict)} if isinstance(variants, list) else set()
+        if actual_variants != expected_variants:
+            raise ContractValidationError("The grounded chat stream schema must define every terminal and streaming variant")
+        self._validate_local_references(schema)
+        self._validate_chat_fixtures(contract_directory / "fixtures", expected_variants)
+
+    def _validate_chat_fixtures(self, fixture_directory: Path, variants: set[str]) -> None:
+        expected_types = {variant.rsplit("/", 1)[-1] for variant in variants}
+        valid_fixtures = sorted((fixture_directory / "valid").glob("*.json"))
+        invalid_fixtures = sorted((fixture_directory / "invalid").glob("*.json"))
+        if not valid_fixtures or not invalid_fixtures:
+            raise ContractValidationError("The grounded chat stream contract must include valid and invalid fixtures")
+        for path in valid_fixtures:
+            payload = self._load_object(path)
+            if payload.get("type") not in expected_types or not isinstance(payload.get("requestId"), str):
+                raise ContractValidationError(f"Invalid grounded chat valid fixture: {path}")
+        for path in invalid_fixtures:
+            payload = self._load_object(path)
+            if payload.get("type") in expected_types and isinstance(payload.get("requestId"), str):
+                raise ContractValidationError(f"Grounded chat invalid fixture is valid: {path}")
 
     def _validate_openapi(self, document: dict[str, Any]) -> None:
         if document.get("openapi") != "3.1.0":
@@ -111,8 +148,10 @@ class ContractValidator:
 def main() -> int:
     root = Path(__file__).resolve().parents[2]
     directory = root / "contracts" / "corpus-ingestion" / "v1"
+    chat_directory = root / "specs" / "005-grounded-rag-chat" / "contracts"
     try:
         ContractValidator().validate(directory)
+        ContractValidator().validate_grounded_chat(chat_directory)
     except ContractValidationError as error:
         print(f"Contract validation failed: {error}", file=sys.stderr)
         return 1

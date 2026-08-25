@@ -3,14 +3,14 @@ from __future__ import annotations
 import json
 from io import BytesIO
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Self
+from typing import Self
+from urllib import error
 from uuid import UUID
 
-from norvii_agent.graph import Evidence
-from norvii_agent.providers import OpenAICompatibleChatModel
+import pytest
 
-if TYPE_CHECKING:
-    import pytest
+from norvii_agent.graph import Evidence
+from norvii_agent.providers import OpenAICompatibleChatModel, ProviderUnavailableError
 
 
 class FakeResponse:
@@ -86,6 +86,24 @@ def test_provider_reads_usage_from_a_stream_usage_chunk(monkeypatch: pytest.Monk
     assert answer == "The rule applies [1]."
     assert provider.last_usage.input_tokens == 13
     assert provider.last_usage.output_tokens == 6
+
+
+def test_provider_failure_does_not_expose_provider_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unavailable_provider(*_args: object, **_kwargs: object) -> None:
+        raise error.URLError("provider diagnostic-token")
+
+    monkeypatch.setattr("norvii_agent.providers.chat.request.urlopen", unavailable_provider)
+
+    with pytest.raises(ProviderUnavailableError) as exc_info:
+        OpenAICompatibleChatModel(
+            "https://provider.test/chat", "diagnostic-token", "model", 1
+        ).generate("private-request-content", sample_evidence(), "en", lambda _: None)
+
+    assert str(exc_info.value) == "chat model provider request failed"
+    assert "diagnostic-token" not in str(exc_info.value)
+    assert "private-request-content" not in str(exc_info.value)
 
 
 def test_provider_accepts_complete_json_response(monkeypatch: pytest.MonkeyPatch) -> None:

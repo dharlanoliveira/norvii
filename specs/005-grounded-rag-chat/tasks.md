@@ -108,6 +108,19 @@ citations.
 - [ ] T041 Run every affected Go, Python, and React quality gate plus the deterministic quickstart twice and record measured results in `specs/005-grounded-rag-chat/quickstart.md` per SC-001-SC-009.
 - [ ] T042 Promote the stabilized chat contract to `contracts/` only after provider/consumer compatibility tests are green, update `contracts/README.md`, and record the promotion decision in the feature docs per FR-013-FR-018.
 
+## Phase 7: Reconciliation
+
+The implementation-presence audit recorded in [reconciliation.md](reconciliation.md) found that
+the current codebase already contains substantial delivery for the originally unchecked tasks.
+The historical checklist remains unchanged because several items do not record their required
+acceptance evidence under the originally named test path. Do not reimplement a mapped capability;
+complete the consolidated tasks below instead.
+
+- [X] T043 Add feature-owned valid and invalid chat-stream fixtures, then extend contract validation to load the schema and fixtures per T002, T003, and FR-013-FR-018 (partial).
+- [X] T044 Add deterministic service-backed grounded-chat coverage for corpus and snapshot isolation, terminal-event ordering, citation navigation, cancellation, and abstention; record the two-run quickstart evidence per T004, T012, T018, T26, T32, T37, T40, T41, and SC-001-SC-009 (partial).
+- [X] T045 Verify content-safe chat telemetry, provider diagnostics, and local health/configuration guidance against the implementation; add missing redaction or bounded-counter coverage and update operations documentation per T038 and T039 (partial).
+- [X] T046 Decide and document whether the stabilized chat contract is promoted to `contracts/`; if promoted, add producer/consumer compatibility coverage and update the contracts index per T042 and FR-013-FR-018 (missing).
+
 ## Dependencies and Execution Order
 
 - **Phase 1** has no feature dependencies and establishes local contracts/configuration.

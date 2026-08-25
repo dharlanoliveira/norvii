@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -96,6 +97,64 @@ func TestHandlerMapsCancellationToCancelledTerminalEvent(t *testing.T) {
 	}
 }
 
+func TestHandlerEmitsExactlyOneTerminalEventAfterOrderedStreamEvents(t *testing.T) {
+	corpusID := uuid.New()
+	tests := []struct {
+		name         string
+		service      fakeService
+		wantEvents   []string
+		wantTerminal string
+	}{
+		{
+			name: "completed",
+			service: fakeService{result: chatdomain.Result{
+				Answer: "The rule applies.",
+				Evidence: []chatdomain.Evidence{{
+					ID: "evidence-1", CorpusID: corpusID, SnapshotID: uuid.New(), SourceID: uuid.New(), DocumentID: uuid.New(),
+					UnitLocator: "article-1", StartOffset: 0, EndOffset: 10, Excerpt: "The rule.", Rank: 1,
+				}},
+			}},
+			wantEvents:   []string{"started", "evidence", "delta", "completed"},
+			wantTerminal: "completed",
+		},
+		{
+			name:         "abstained",
+			service:      fakeService{err: chatdomain.ErrInsufficientEvidence},
+			wantEvents:   []string{"started", "abstained"},
+			wantTerminal: "abstained",
+		},
+		{
+			name:         "cancelled",
+			service:      fakeService{err: context.Canceled},
+			wantEvents:   []string{"started", "cancelled"},
+			wantTerminal: "cancelled",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			NewHandler(test.service).Register(mux)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/corpora/"+corpusID.String()+"/chat/stream",
+				strings.NewReader(`{"question":"What applies?"}`),
+			)
+
+			mux.ServeHTTP(recorder, request)
+
+			events := streamEventTypes(t, recorder.Body.String())
+			if strings.Join(events, ",") != strings.Join(test.wantEvents, ",") {
+				t.Fatalf("events = %v, want %v", events, test.wantEvents)
+			}
+			if terminalEventCount(events) != 1 || events[len(events)-1] != test.wantTerminal {
+				t.Fatalf("terminal events = %v, want exactly one %q terminal", events, test.wantTerminal)
+			}
+		})
+	}
+}
+
 func TestHandlerRejectsInvalidPayloads(t *testing.T) {
 	tests := []struct {
 		name string
@@ -152,6 +211,38 @@ func TestHandlerMapsTerminalFailures(t *testing.T) {
 type fakeService struct {
 	result chatdomain.Result
 	err    error
+}
+
+func streamEventTypes(t *testing.T, body string) []string {
+	t.Helper()
+	types := make([]string, 0)
+	for _, record := range strings.Split(strings.TrimSpace(body), "\n\n") {
+		var event struct {
+			Type string `json:"type"`
+		}
+		data := strings.TrimPrefix(strings.Split(record, "\n")[1], "data: ")
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			t.Fatalf("decode SSE event %q: %v", record, err)
+		}
+		types = append(types, event.Type)
+	}
+	return types
+}
+
+func terminalEventCount(events []string) int {
+	terminals := map[string]bool{
+		"completed": true,
+		"abstained": true,
+		"cancelled": true,
+		"error":     true,
+	}
+	count := 0
+	for _, event := range events {
+		if terminals[event] {
+			count++
+		}
+	}
+	return count
 }
 
 func (fake fakeService) Ask(_ context.Context, _ chatdomain.Request, emit func(string)) (chatdomain.Result, error) {

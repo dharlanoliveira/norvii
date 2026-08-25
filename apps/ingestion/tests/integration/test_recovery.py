@@ -39,6 +39,7 @@ class SemanticFixtureKind(StrEnum):
     NONE = "none"
     LEGACY = "legacy"
     CURRENT = "current"
+    CURRENT_WITH_REPLACED_RUN_ID = "current_with_replaced_run_id"
 
 
 def test_expired_lease_recovers_and_reprocessing_is_idempotent() -> None:
@@ -147,6 +148,69 @@ def test_reprocessing_reused_document_backfills_missing_semantic_artifacts() -> 
             _html("Stable"),
             now + timedelta(minutes=4, seconds=10),
             semantic_fixture=SemanticFixtureKind.CURRENT,
+        )
+
+        with repository.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    (SELECT count(*) FROM semantic_extraction_runs WHERE document_id = %s),
+                    (SELECT count(*) FROM semantic_entities WHERE document_id = %s),
+                    (SELECT count(*) FROM semantic_relationships WHERE document_id = %s)
+                """,
+                (document_id, document_id, document_id),
+            )
+            row = cursor.fetchone()
+        assert reused_document_id == document_id
+        assert row == (1, 2, 1)
+    finally:
+        _cleanup(repository.connection, corpus_id)
+        repository.close()
+
+
+def test_reprocessing_reuses_a_historical_semantic_run_identity() -> None:
+    configuration = EnvironmentConfigurationLoader(os.environ).load()
+    repository = PostgresWorkRepository.connect(
+        configuration.postgres, configuration.timeout_seconds
+    )
+    corpus_id, source_id, work_id = uuid4(), uuid4(), uuid4()
+    now = datetime(2020, 1, 2, tzinfo=UTC)
+    try:
+        _insert_expired_claim(repository.connection, corpus_id, source_id, work_id)
+        first = repository.claim("recovery-worker", timedelta(minutes=2), now)
+        assert first is not None
+        document_id = _publish(
+            repository,
+            first,
+            _html("Stable"),
+            now + timedelta(seconds=20),
+            semantic_fixture=SemanticFixtureKind.LEGACY,
+        )
+
+        _queue(repository.connection, corpus_id, source_id, now + timedelta(minutes=4))
+        initial_backfill = repository.claim(
+            "recovery-worker", timedelta(minutes=2), now + timedelta(minutes=4)
+        )
+        assert initial_backfill is not None
+        _publish(
+            repository,
+            initial_backfill,
+            _html("Stable"),
+            now + timedelta(minutes=4, seconds=10),
+            semantic_fixture=SemanticFixtureKind.CURRENT,
+        )
+
+        _queue(repository.connection, corpus_id, source_id, now + timedelta(minutes=7))
+        reprocess = repository.claim(
+            "recovery-worker", timedelta(minutes=2), now + timedelta(minutes=7)
+        )
+        assert reprocess is not None
+        reused_document_id = _publish(
+            repository,
+            reprocess,
+            _html("Stable"),
+            now + timedelta(minutes=7, seconds=10),
+            semantic_fixture=SemanticFixtureKind.CURRENT_WITH_REPLACED_RUN_ID,
         )
 
         with repository.connection.cursor() as cursor:
@@ -308,12 +372,22 @@ def _semantic_extraction(
     artifact: DocumentArtifact, fixture_kind: SemanticFixtureKind
 ) -> SemanticExtraction:
     root, article = artifact.units
-    root_entity_id = uuid5(root.id, "location")
-    article_entity_id = uuid5(article.id, "location")
+    entity_identity = (
+        "location-replaced"
+        if fixture_kind is SemanticFixtureKind.CURRENT_WITH_REPLACED_RUN_ID
+        else "location"
+    )
+    root_entity_id = uuid5(root.id, entity_identity)
+    article_entity_id = uuid5(article.id, entity_identity)
+    run_identity = (
+        "test-semantic-extraction-replaced"
+        if fixture_kind is SemanticFixtureKind.CURRENT_WITH_REPLACED_RUN_ID
+        else "test-semantic-extraction"
+    )
     return SemanticExtraction(
         id=uuid5(
             UUID("9177fef2-00b3-49c9-b5a1-0d631d79255a"),
-            f"{artifact.text_sha256}:test-semantic-extraction",
+            f"{artifact.text_sha256}:{run_identity}",
         ),
         extraction_version="test-semantic-v1",
         model_identifier="test-model",
@@ -331,7 +405,11 @@ def _semantic_extraction(
                     normalized_label=root.locator,
                 ),
             )
-            if fixture_kind is SemanticFixtureKind.CURRENT
+            if fixture_kind
+            in {
+                SemanticFixtureKind.CURRENT,
+                SemanticFixtureKind.CURRENT_WITH_REPLACED_RUN_ID,
+            }
             else ()
         )
         + (
@@ -353,7 +431,11 @@ def _semantic_extraction(
                     relationship_type="contains",
                 ),
             )
-            if fixture_kind is SemanticFixtureKind.CURRENT
+            if fixture_kind
+            in {
+                SemanticFixtureKind.CURRENT,
+                SemanticFixtureKind.CURRENT_WITH_REPLACED_RUN_ID,
+            }
             else ()
         ),
     )

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 _CORPUS_PATH = re.compile(r"^/v1/corpora/(?P<corpus>[0-9a-f-]+)/chat/stream$")
 _MAX_REQUEST_BODY_BYTES = 64 * 1024
+_MAX_TELEMETRY_EVIDENCE_COUNT = 8
 
 
 class InvalidRequestBodyError(ValueError):
@@ -282,4 +283,9 @@ def _uuid_or_none(value: object) -> str | None:
 
 
 def _telemetry(outcome: str, evidence_count: int) -> dict[str, object]:
-    return {"outcome": outcome, "evidenceCount": evidence_count, "durationMilliseconds": 0}
+    """Return only bounded, content-free terminal measurements."""
+    return {
+        "outcome": outcome,
+        "evidenceCount": min(max(evidence_count, 0), _MAX_TELEMETRY_EVIDENCE_COUNT),
+        "durationMilliseconds": 0,
+    }
