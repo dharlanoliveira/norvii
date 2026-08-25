@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-25
 
-**Status**: Implemented - manual configured-provider verification pending
+**Status**: Verified
 
 **Input**: User description: "For every research question, retrieve vector evidence first. In
 Hybrid mode, plan whether the selected snapshot's graph schema can add relevant evidence, use

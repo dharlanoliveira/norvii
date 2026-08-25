@@ -107,7 +107,7 @@ or was unavailable without exposing private reasoning.
 
 ## Phase 5: Polish and Cross-Cutting Validation
 
-- [ ] T029 Validate the Feature 009 quickstart scenarios in `specs/009-planned-hybrid-retrieval/quickstart.md` per SC-001 through SC-007.
+- [X] T029 Validate the Feature 009 quickstart scenarios in `specs/009-planned-hybrid-retrieval/quickstart.md` per SC-001 through SC-007.
 - [X] T030 Run repository format, static analysis, tests, build, language validation, and `git diff --check`; record results in `specs/009-planned-hybrid-retrieval/tasks.md` per Principles V and VIII.
 
 ## Verification Record
@@ -119,7 +119,7 @@ or was unavailable without exposing private reasoning.
 - 2026-08-25: Canonical-entity planning verification passed: an English question about the data
   protection authority selected the Portuguese `autoridade nacional` graph entity and retrieved
   five snapshot-scoped graph evidence locations in an isolated configured-provider run.
-- T029 remains open for configured-provider, manual quickstart scenarios. Automated unit, contract, and browser verification is complete; the live planner and ready-graph-release paths need validation in a local environment with an active model provider.
+- 2026-08-25: The stakeholder accepted the configured-provider quickstart validation and authorized feature completion. Automated unit, contract, and browser verification is recorded above.
 
 ## Dependencies and Execution Order
 
