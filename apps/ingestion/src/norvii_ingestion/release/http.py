@@ -60,7 +60,6 @@ class SnapshotReleaseHttpClient:
             error.HTTPError,
             error.URLError,
             OSError,
-            TimeoutError,
             json.JSONDecodeError,
         ) as exception:
             raise GraphReleaseCoordinatorError("snapshot_release_api_unavailable") from exception

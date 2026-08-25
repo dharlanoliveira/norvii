@@ -231,4 +231,63 @@ describe("HTTP grounded chat provider", () => {
       }),
     ).toThrow("retrieval duration must not be negative");
   });
+
+  it("validates graph-backed evidence and graph path provenance", () => {
+    const event = parseChatEvent({
+      type: "completed",
+      requestId: "request-1",
+      answer: "The authority must issue guidance. [1]",
+      references: [
+        {
+          id: "reference-1",
+          corpusId: "corpus-1",
+          sourceId: "source-1",
+          documentId: "document-1",
+          unitLocator: "article-55",
+          startOffset: 0,
+          endOffset: 10,
+          excerpt: "Authority duties.",
+          rank: 1,
+          contribution: "vector_and_graph",
+        },
+      ],
+      telemetry: {
+        outcome: "completed",
+        evidenceCount: 1,
+        durationMilliseconds: 12,
+      },
+      inspection: {
+        outcome: "completed",
+        measurements: {
+          retrievalMilliseconds: 5,
+          generationMilliseconds: 7,
+          totalMilliseconds: 12,
+          inputTokens: 4,
+          outputTokens: 6,
+        },
+        graphPath: [
+          {
+            relationshipType: "requires",
+            subjectLabel: "data protection authority",
+            objectLabel: "issue guidance",
+            evidenceId: "reference-1",
+            evidenceLocator: "article-55",
+          },
+        ],
+      },
+    });
+
+    if (event.type !== "completed")
+      throw new Error("Expected completion event.");
+    expect(event.references[0]?.contribution).toBe("vector_and_graph");
+    expect(event.inspection?.graphPath).toEqual([
+      {
+        relationshipType: "requires",
+        subjectLabel: "data protection authority",
+        objectLabel: "issue guidance",
+        evidenceId: "reference-1",
+        evidenceLocator: "article-55",
+      },
+    ]);
+  });
 });
