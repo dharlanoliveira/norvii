@@ -3,12 +3,13 @@ from __future__ import annotations
 import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from typing import TYPE_CHECKING
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 import pytest
 
-from norvii_ingestion.domain.artifacts import PublicationCommand
+from norvii_ingestion.domain.artifacts import DocumentArtifact, PublicationCommand
 from norvii_ingestion.domain.models import (
     FailureCategory,
     IngestionWork,
@@ -20,11 +21,24 @@ from norvii_ingestion.enrichment.chunking import LegalChunker
 from norvii_ingestion.extraction.html import HtmlExtractor
 from norvii_ingestion.publication.persistence.config import EnvironmentConfigurationLoader
 from norvii_ingestion.publication.postgres.repository import PostgresWorkRepository
+from norvii_ingestion.semantic.extraction import (
+    SemanticEntity,
+    SemanticExtraction,
+    SemanticRelationship,
+)
 
 if TYPE_CHECKING:
     import psycopg
 
 pytestmark = pytest.mark.integration
+
+
+class SemanticFixtureKind(StrEnum):
+    """Represent the semantic artifact shape used by recovery fixtures."""
+
+    NONE = "none"
+    LEGACY = "legacy"
+    CURRENT = "current"
 
 
 def test_expired_lease_recovers_and_reprocessing_is_idempotent() -> None:
@@ -95,6 +109,59 @@ def test_expired_lease_recovers_and_reprocessing_is_idempotent() -> None:
             )
             row = cursor.fetchone()
         assert row == ("failed", changed_document, 2, 2, 0, 5, True)
+    finally:
+        _cleanup(repository.connection, corpus_id)
+        repository.close()
+
+
+def test_reprocessing_reused_document_backfills_missing_semantic_artifacts() -> None:
+    configuration = EnvironmentConfigurationLoader(os.environ).load()
+    repository = PostgresWorkRepository.connect(
+        configuration.postgres, configuration.timeout_seconds
+    )
+    corpus_id, source_id, work_id = uuid4(), uuid4(), uuid4()
+    now = datetime(2020, 1, 2, tzinfo=UTC)
+    try:
+        _insert_expired_claim(repository.connection, corpus_id, source_id, work_id)
+        first = repository.claim("recovery-worker", timedelta(minutes=2), now)
+        assert first is not None
+        document_id = _publish(
+            repository,
+            first,
+            _html("Stable"),
+            now + timedelta(seconds=20),
+            semantic_fixture=SemanticFixtureKind.LEGACY,
+        )
+
+        reprocess_work_id = _queue(
+            repository.connection, corpus_id, source_id, now + timedelta(minutes=4)
+        )
+        reprocess = repository.claim(
+            "recovery-worker", timedelta(minutes=2), now + timedelta(minutes=4)
+        )
+        assert reprocess is not None
+        assert reprocess.claim.work_id == reprocess_work_id
+        reused_document_id = _publish(
+            repository,
+            reprocess,
+            _html("Stable"),
+            now + timedelta(minutes=4, seconds=10),
+            semantic_fixture=SemanticFixtureKind.CURRENT,
+        )
+
+        with repository.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    (SELECT count(*) FROM semantic_extraction_runs WHERE document_id = %s),
+                    (SELECT count(*) FROM semantic_entities WHERE document_id = %s),
+                    (SELECT count(*) FROM semantic_relationships WHERE document_id = %s)
+                """,
+                (document_id, document_id, document_id),
+            )
+            row = cursor.fetchone()
+        assert reused_document_id == document_id
+        assert row == (1, 2, 1)
     finally:
         _cleanup(repository.connection, corpus_id)
         repository.close()
@@ -202,6 +269,8 @@ def _publish(
     work: IngestionWork,
     content: bytes,
     now: datetime,
+    *,
+    semantic_fixture: SemanticFixtureKind = SemanticFixtureKind.NONE,
 ) -> UUID:
     artifact = HtmlExtractor().extract(content)
     capture = OriginCapture(
@@ -224,8 +293,66 @@ def _publish(
                 replace(chunk, embedding=(0.0,) * 1536, embedding_model="test-embedding")
                 for chunk in LegalChunker().chunk(artifact)
             ),
+            semantic_extraction=_semantic_extraction(artifact, semantic_fixture)
+            if semantic_fixture is not SemanticFixtureKind.NONE
+            else None,
         ),
         now,
+    )
+
+
+def _semantic_extraction(
+    artifact: DocumentArtifact, fixture_kind: SemanticFixtureKind
+) -> SemanticExtraction:
+    root, article = artifact.units
+    root_entity_id = uuid5(root.id, "location")
+    article_entity_id = uuid5(article.id, "location")
+    return SemanticExtraction(
+        id=uuid5(
+            UUID("9177fef2-00b3-49c9-b5a1-0d631d79255a"),
+            f"{artifact.text_sha256}:test-semantic-extraction",
+        ),
+        extraction_version="test-semantic-v1",
+        model_identifier="test-model",
+        input_sha256=artifact.text_sha256,
+        input_tokens=1,
+        output_tokens=1,
+        duration_milliseconds=1,
+        entities=(
+            (
+                SemanticEntity(
+                    id=root_entity_id,
+                    evidence_unit_id=root.id,
+                    entity_type="location",
+                    label=root.locator,
+                    normalized_label=root.locator,
+                ),
+            )
+            if fixture_kind is SemanticFixtureKind.CURRENT
+            else ()
+        )
+        + (
+            SemanticEntity(
+                id=article_entity_id,
+                evidence_unit_id=article.id,
+                entity_type="location",
+                label=article.locator,
+                normalized_label=article.locator,
+            ),
+        ),
+        relationships=(
+            (
+                SemanticRelationship(
+                    id=uuid5(article.id, "contains"),
+                    subject_entity_id=root_entity_id,
+                    object_entity_id=article_entity_id,
+                    evidence_unit_id=article.id,
+                    relationship_type="contains",
+                ),
+            )
+            if fixture_kind is SemanticFixtureKind.CURRENT
+            else ()
+        ),
     )
 
 
@@ -240,6 +367,9 @@ def _html(version: str) -> bytes:
 def _cleanup(connection: psycopg.Connection[tuple[object, ...]], corpus_id: UUID) -> None:
     connection.rollback()
     with connection.transaction(), connection.cursor() as cursor:
+        cursor.execute("DELETE FROM semantic_relationships WHERE corpus_id = %s", (corpus_id,))
+        cursor.execute("DELETE FROM semantic_entities WHERE corpus_id = %s", (corpus_id,))
+        cursor.execute("DELETE FROM semantic_extraction_runs WHERE corpus_id = %s", (corpus_id,))
         cursor.execute("DELETE FROM retrieval_chunks WHERE corpus_id = %s", (corpus_id,))
         cursor.execute(
             """

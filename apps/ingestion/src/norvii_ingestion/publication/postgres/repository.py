@@ -15,6 +15,7 @@ from norvii_ingestion.domain.models import (
     WorkClaim,
     WorkReason,
 )
+from norvii_ingestion.semantic import SemanticEntity, SemanticExtraction, SemanticRelationship
 
 if TYPE_CHECKING:
     from norvii_ingestion.domain.artifacts import PublicationCommand
@@ -31,6 +32,7 @@ class WorkRepositoryError(RuntimeError):
 
 
 _RETRIEVAL_CHUNK_NAMESPACE = UUID("dec70116-ff61-48f5-8d67-dbf457330dd2")
+_SEMANTIC_ARTIFACT_NAMESPACE = UUID("e32667d2-998c-4b49-a814-a9380de0d4a3")
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,6 +290,10 @@ class PostgresWorkRepository:
                     self._insert_units(cursor, document_id, command)
                     self._insert_retrieval_chunks(cursor, work, document_id, command)
                     self._insert_semantic_extraction(cursor, work, document_id, command, now)
+                else:
+                    self._insert_missing_semantic_extraction(
+                        cursor, work, document_id, command, now
+                    )
                 self._complete_attempt(
                     cursor,
                     work,
@@ -545,6 +551,7 @@ class PostgresWorkRepository:
         extraction = command.semantic_extraction
         if extraction is None:
             return
+        extraction = _document_scoped_semantic_extraction(document_id, extraction)
         cursor.execute(
             """
             INSERT INTO semantic_extraction_runs (
@@ -596,6 +603,119 @@ class PostgresWorkRepository:
                 id, extraction_run_id, corpus_id, source_id, document_id, subject_entity_id,
                 object_entity_id, evidence_unit_id, relationship_type, qualifier, validation_status
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'supported')
+            """,
+            [
+                (
+                    relationship.id,
+                    extraction.id,
+                    work.claim.corpus_id,
+                    work.claim.source_id,
+                    document_id,
+                    relationship.subject_entity_id,
+                    relationship.object_entity_id,
+                    relationship.evidence_unit_id,
+                    relationship.relationship_type,
+                    relationship.qualifier,
+                )
+                for relationship in extraction.relationships
+            ],
+        )
+
+    def _insert_missing_semantic_extraction(
+        self,
+        cursor: psycopg.Cursor[tuple[object, ...]],
+        work: IngestionWork,
+        document_id: UUID,
+        command: PublicationCommand,
+        now: datetime,
+    ) -> None:
+        """Backfill required graph artifacts when a historical document version is reused."""
+        extraction = command.semantic_extraction
+        if extraction is None:
+            return
+        extraction = _document_scoped_semantic_extraction(document_id, extraction)
+        self._insert_missing_semantic_run(cursor, work, document_id, extraction, now)
+        self._insert_missing_semantic_entities(cursor, work, document_id, extraction)
+        self._insert_missing_semantic_relationships(cursor, work, document_id, extraction)
+
+    @staticmethod
+    def _insert_missing_semantic_run(
+        cursor: psycopg.Cursor[tuple[object, ...]],
+        work: IngestionWork,
+        document_id: UUID,
+        extraction: SemanticExtraction,
+        now: datetime,
+    ) -> None:
+        cursor.execute(
+            """
+            INSERT INTO semantic_extraction_runs (
+                id, corpus_id, source_id, document_id, extraction_version, model_identifier,
+                input_sha256, status, input_tokens, output_tokens, duration_milliseconds,
+                created_at, completed_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'ready', %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (
+                extraction.id,
+                work.claim.corpus_id,
+                work.claim.source_id,
+                document_id,
+                extraction.extraction_version,
+                extraction.model_identifier,
+                str(extraction.input_sha256),
+                extraction.input_tokens,
+                extraction.output_tokens,
+                extraction.duration_milliseconds,
+                now,
+                now,
+            ),
+        )
+
+    @staticmethod
+    def _insert_missing_semantic_entities(
+        cursor: psycopg.Cursor[tuple[object, ...]],
+        work: IngestionWork,
+        document_id: UUID,
+        extraction: SemanticExtraction,
+    ) -> None:
+        cursor.executemany(
+            """
+            INSERT INTO semantic_entities (
+                id, extraction_run_id, corpus_id, source_id, document_id, evidence_unit_id,
+                entity_type, label, normalized_label, validation_status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'supported')
+            ON CONFLICT (id) DO NOTHING
+            """,
+            [
+                (
+                    entity.id,
+                    extraction.id,
+                    work.claim.corpus_id,
+                    work.claim.source_id,
+                    document_id,
+                    entity.evidence_unit_id,
+                    entity.entity_type,
+                    entity.label,
+                    entity.normalized_label,
+                )
+                for entity in extraction.entities
+            ],
+        )
+
+    @staticmethod
+    def _insert_missing_semantic_relationships(
+        cursor: psycopg.Cursor[tuple[object, ...]],
+        work: IngestionWork,
+        document_id: UUID,
+        extraction: SemanticExtraction,
+    ) -> None:
+        cursor.executemany(
+            """
+            INSERT INTO semantic_relationships (
+                id, extraction_run_id, corpus_id, source_id, document_id, subject_entity_id,
+                object_entity_id, evidence_unit_id, relationship_type, qualifier, validation_status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'supported')
+            ON CONFLICT (id) DO NOTHING
             """,
             [
                 (
@@ -676,6 +796,48 @@ def _vector_literal(vector: tuple[float, ...] | None) -> str:
 def retrieval_chunk_id_for_document(document_id: UUID, logical_chunk_id: UUID) -> UUID:
     """Scope a stable logical chunk identity to its immutable document version."""
     return uuid5(_RETRIEVAL_CHUNK_NAMESPACE, f"{document_id}:{logical_chunk_id}")
+
+
+def _document_scoped_semantic_extraction(
+    document_id: UUID, extraction: SemanticExtraction
+) -> SemanticExtraction:
+    """Bind logical semantic output to one immutable document version."""
+    entity_ids = {
+        entity.id: uuid5(_SEMANTIC_ARTIFACT_NAMESPACE, f"{document_id}:{entity.id}")
+        for entity in extraction.entities
+    }
+    entities = tuple(
+        SemanticEntity(
+            id=entity_ids[entity.id],
+            evidence_unit_id=entity.evidence_unit_id,
+            entity_type=entity.entity_type,
+            label=entity.label,
+            normalized_label=entity.normalized_label,
+        )
+        for entity in extraction.entities
+    )
+    relationships = tuple(
+        SemanticRelationship(
+            id=uuid5(_SEMANTIC_ARTIFACT_NAMESPACE, f"{document_id}:{relationship.id}"),
+            subject_entity_id=entity_ids[relationship.subject_entity_id],
+            object_entity_id=entity_ids[relationship.object_entity_id],
+            evidence_unit_id=relationship.evidence_unit_id,
+            relationship_type=relationship.relationship_type,
+            qualifier=relationship.qualifier,
+        )
+        for relationship in extraction.relationships
+    )
+    return SemanticExtraction(
+        id=uuid5(_SEMANTIC_ARTIFACT_NAMESPACE, f"{document_id}:{extraction.id}"),
+        extraction_version=extraction.extraction_version,
+        model_identifier=extraction.model_identifier,
+        input_sha256=extraction.input_sha256,
+        input_tokens=extraction.input_tokens,
+        output_tokens=extraction.output_tokens,
+        duration_milliseconds=extraction.duration_milliseconds,
+        entities=entities,
+        relationships=relationships,
+    )
 
 
 def _repository_error_detail(error: psycopg.Error) -> str:

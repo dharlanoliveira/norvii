@@ -514,7 +514,10 @@ function parseAttempt(value: unknown): ProcessingAttemptResponse | null {
       attempt.failureCategory,
       "attempt failure category",
     ),
-    failureDetail: nullableString(attempt.failureDetail, "attempt failure detail"),
+    failureDetail: nullableString(
+      attempt.failureDetail,
+      "attempt failure detail",
+    ),
     acquiredByteCount: nullableNonnegativeInteger(
       attempt.acquiredByteCount,
       "acquired bytes",

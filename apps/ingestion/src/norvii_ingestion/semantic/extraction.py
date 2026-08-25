@@ -25,6 +25,7 @@ _ENTITY_TYPES = frozenset({"concept", "actor", "right", "obligation"})
 _RELATIONSHIP_TYPES = frozenset(
     {"defines", "applies_to", "grants", "requires", "protects", "governs"}
 )
+_STRUCTURAL_RELATIONSHIP_TYPE = "contains"
 # Semantic output must remain small enough to be reliably JSON-validated. The
 # POC intentionally samples opening legal locations instead of attempting an
 # unbounded document-wide graph extraction in a single ingestion run.
@@ -110,12 +111,16 @@ class OpenAICompatibleSemanticExtractor:
     def extract(self, artifact: DocumentArtifact) -> SemanticExtraction:
         """Extract only supported entities and relationships from bounded legal locations."""
         selected = tuple(_selected_units(artifact))
+        structural_units = _structural_closure(selected, artifact.units)
         started = time.perf_counter()
         entity_by_key = {
             (entity.evidence_unit_id, entity.entity_type, entity.normalized_label): entity
-            for entity in _structural_entities(selected)
+            for entity in _structural_entities(structural_units)
         }
-        relationships: dict[UUID, SemanticRelationship] = {}
+        relationships = {
+            relationship.id: relationship
+            for relationship in _structural_relationships(structural_units)
+        }
         input_tokens: int | None = 0
         output_tokens: int | None = 0
         for unit_batch in _batches(selected, _MAX_UNITS_PER_REQUEST):
@@ -251,6 +256,48 @@ def _structural_entities(units: Sequence[DocumentUnit]) -> tuple[SemanticEntity,
         )
         for unit in units
     )
+
+
+def _structural_closure(
+    selected: Sequence[DocumentUnit], all_units: Sequence[DocumentUnit]
+) -> tuple[DocumentUnit, ...]:
+    """Include selected legal locations and their parents as deterministic graph anchors."""
+    units_by_id = {unit.id: unit for unit in all_units}
+    selected_ids = {unit.id for unit in selected}
+    for unit in selected:
+        parent_id = unit.parent_id
+        while parent_id is not None:
+            selected_ids.add(parent_id)
+            parent_id = units_by_id[parent_id].parent_id
+    return tuple(unit for unit in all_units if unit.id in selected_ids)
+
+
+def _structural_relationships(units: Sequence[DocumentUnit]) -> tuple[SemanticRelationship, ...]:
+    """Connect persisted legal locations without treating structure as a model-derived fact."""
+    entity_by_unit_id = {
+        unit.id: uuid5(
+            _EXTRACTION_NAMESPACE,
+            f"{unit.id}:location:{_normalize_label(unit.locator)}",
+        )
+        for unit in units
+    }
+    relationships: list[SemanticRelationship] = []
+    for unit in units:
+        if unit.parent_id is None or unit.parent_id not in entity_by_unit_id:
+            continue
+        relationships.append(
+            SemanticRelationship(
+                id=uuid5(
+                    _EXTRACTION_NAMESPACE,
+                    f"{unit.parent_id}:{unit.id}:contains:{unit.id}",
+                ),
+                subject_entity_id=entity_by_unit_id[unit.parent_id],
+                object_entity_id=entity_by_unit_id[unit.id],
+                evidence_unit_id=unit.id,
+                relationship_type=_STRUCTURAL_RELATIONSHIP_TYPE,
+            )
+        )
+    return tuple(relationships)
 
 
 def _selection_bytes(units: Sequence[DocumentUnit], artifact: DocumentArtifact) -> bytes:

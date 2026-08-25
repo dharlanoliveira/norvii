@@ -189,6 +189,39 @@ def test_extractor_bounds_each_provider_request_to_one_legal_location(
     assert extraction.output_tokens == 8
 
 
+def test_extractor_creates_document_structure_when_provider_returns_no_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = _article_artifact(2)
+
+    def respond(*_args: object, **_kwargs: object) -> _ProviderResponse:
+        return _ProviderResponse(
+            json.dumps(
+                {
+                    "choices": [{"message": {"content": '{"entities":[],"relationships":[]}'}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                }
+            ).encode()
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", respond)
+    extraction = OpenAICompatibleSemanticExtractor(
+        endpoint="https://example.test/v1/chat/completions",
+        api_key="test-key",
+        model="test-model",
+    ).extract(artifact)
+
+    assert {entity.label for entity in extraction.entities} == {
+        "document",
+        "Article 1",
+        "Article 2",
+    }
+    assert len(extraction.relationships) == 2
+    assert {relationship.relationship_type for relationship in extraction.relationships} == {
+        "contains"
+    }
+
+
 def test_remaining_timeout_uses_a_single_document_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("norvii_ingestion.semantic.extraction.time.perf_counter", lambda: 10.2)
 
