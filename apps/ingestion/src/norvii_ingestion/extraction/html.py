@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, replace
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import trafilatura
@@ -18,10 +19,10 @@ _LEGAL_MARKER = re.compile(
     r"(?:\d+\s+U\.S\.C\.\s+\u00a7\s*\d+(?:\.\d+)*(?:\([A-Za-z0-9]+\))*"
     r"|\d+\s+CFR\s+\u00a7\s*\d+(?:\.\d+)*(?:\([A-Za-z0-9]+\))*)"
     r"|(?:Title|T\u00edtulo|Chapter|Cap\u00edtulo|Section|Se\u00e7\u00e3o)\s+[^\n]+"
-    r"|(?:Article|Artigo)\s+\d+[A-Za-z]?[.\u00ba\u00b0]?"
-    r"|Art\.\s*\d+(?:-[A-Za-z])?[\u00ba\u00b0o]?"
+    r"|(?:Article|Artigo)\s+\d+(?:[\u00ba\u00b0o])?(?:-[A-Za-z]+)?[.]?"
+    r"|Art\.\s*\d+(?:[\u00ba\u00b0o])?(?:-[A-Za-z]+)?[.]?"
     r"|Recital\s+\d+"
-    r"|\u00a7\s*\d+[\u00bao]?"
+    r"|\u00a7\s*\d+(?:[\u00bao])?(?:-[A-Za-z]+)?"
     r"|(?:\(\d+\)|\d+\.)\s+"
     r"|[IVXLCDM]+\s*[-\u2013\u2014]\s+"
     r"|(?:\([a-z]\)|[a-z]\))\s+"
@@ -57,7 +58,7 @@ class _LegalNode:
 
 
 class ExtractionError(ValueError):
-    """Report unsupported or empty HTML content without retaining source text."""
+    """Report HTML content that cannot yield a valid document artifact."""
 
 
 class HtmlExtractor:
@@ -104,7 +105,10 @@ class HtmlExtractor:
                 *children,
             ),
         )
-        artifact.validate()
+        try:
+            artifact.validate()
+        except ValueError as error:
+            raise ExtractionError("Extracted HTML artifact is structurally invalid.") from error
         return artifact
 
     @staticmethod
@@ -208,7 +212,22 @@ class HtmlExtractor:
                     ),
                 )
             )
-        return tuple(units)
+        return self._omit_ambiguous_canonical_locators(units)
+
+    @staticmethod
+    def _omit_ambiguous_canonical_locators(
+        units: list[DocumentUnit],
+    ) -> tuple[DocumentUnit, ...]:
+        aliases = [unit.canonical_locator for unit in units if unit.canonical_locator is not None]
+        ambiguous_aliases = {locator for locator, count in Counter(aliases).items() if count > 1}
+        if not ambiguous_aliases:
+            return tuple(units)
+        return tuple(
+            replace(unit, canonical_locator=None)
+            if _depends_on_ambiguous_alias(unit.canonical_locator, ambiguous_aliases)
+            else unit
+            for unit in units
+        )
 
     @staticmethod
     def _marker_kind(marker: str) -> UnitKind:
@@ -293,3 +312,11 @@ class HtmlExtractor:
     @staticmethod
     def _unit_id(text_hash: Sha256, locator: str) -> UUID:
         return uuid5(NAMESPACE_URL, f"norvii:{text_hash}:{locator}")
+
+
+def _depends_on_ambiguous_alias(alias: str | None, ambiguous_aliases: set[str]) -> bool:
+    if alias is None:
+        return False
+    return any(
+        alias == candidate or alias.startswith(f"{candidate}/") for candidate in ambiguous_aliases
+    )

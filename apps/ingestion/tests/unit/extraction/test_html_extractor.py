@@ -155,6 +155,68 @@ def test_extractor_derives_auditable_hierarchical_canonical_legal_locators() -> 
     )
 
 
+def test_extractor_preserves_suffixed_provisions_and_scopes_repeated_headings() -> None:
+    artifact = HtmlExtractor().extract(
+        (
+            "<main><p>Title I First title.</p><p>Chapter I First chapter.</p>"
+            "<p>Article 4 Main provision.</p><p>Article 4-A Supplementary provision.</p>"
+            "<p>\u00a7 2\u00ba Main paragraph.</p><p>\u00a7 2\u00ba-B Supplementary paragraph.</p>"
+            "<p>Title II Second title.</p><p>Chapter I Second chapter.</p>"
+            "<p>Article 17-A A suffixed article.</p></main>"
+        ).encode()
+    )
+
+    assert {
+        unit.canonical_locator for unit in artifact.units if unit.canonical_locator is not None
+    } == {
+        "title:i",
+        "title:i/chapter:i",
+        "article:4",
+        "article:4-a",
+        "article:4-a/paragraph:2",
+        "article:4-a/paragraph:2-b",
+        "title:ii",
+        "title:ii/chapter:i",
+        "article:17-a",
+    }
+
+
+def test_extractor_omits_ambiguous_aliases_without_discarding_document_units() -> None:
+    artifact = HtmlExtractor().extract(
+        b"<main><p>Art. 17 First version.</p><p>I - First item.</p>"
+        b"<p>Art. 17 Second version.</p><p>I - Second item.</p>"
+        b"<p>Art. 18 Unambiguous provision.</p></main>"
+    )
+
+    article_markers = [unit for unit in artifact.units if unit.marker == "Art. 17"]
+
+    assert len(article_markers) == 2
+    assert all(unit.canonical_locator is None for unit in article_markers)
+    assert all(
+        unit.canonical_locator is None
+        for unit in artifact.units
+        if unit.parent_id in {article.id for article in article_markers}
+    )
+    assert artifact.resolve_canonical_legal_locator("article:18").marker == "Art. 18"
+
+
+def test_extractor_maps_remaining_artifact_validation_errors_to_extraction_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def reject_artifact(_artifact: object) -> None:
+        raise ValueError("test-only structural validation failure")
+
+    monkeypatch.setattr(
+        "norvii_ingestion.extraction.html.DocumentArtifact.validate", reject_artifact
+    )
+
+    with pytest.raises(ExtractionError, match="structurally invalid"):
+        HtmlExtractor().extract(
+            b"<main><p>First official block contains the complete legal introduction.</p>"
+            b"<p>Second official block contains the complete legal conclusion.</p></main>"
+        )
+
+
 def test_extractor_rejects_empty_and_invalid_unicode_content() -> None:
     extractor = HtmlExtractor()
 
