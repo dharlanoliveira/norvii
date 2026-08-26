@@ -18,6 +18,9 @@ import (
 	chathttp "github.com/dharlanoliveira/norvii/apps/api/internal/chat/http"
 	documenthttp "github.com/dharlanoliveira/norvii/apps/api/internal/document/http"
 	documentpostgres "github.com/dharlanoliveira/norvii/apps/api/internal/document/postgres"
+	evaluationapplication "github.com/dharlanoliveira/norvii/apps/api/internal/evaluation/application"
+	evaluationhttp "github.com/dharlanoliveira/norvii/apps/api/internal/evaluation/http"
+	evaluationpostgres "github.com/dharlanoliveira/norvii/apps/api/internal/evaluation/postgres"
 	graphapplication "github.com/dharlanoliveira/norvii/apps/api/internal/graphrelease/application"
 	graphhttp "github.com/dharlanoliveira/norvii/apps/api/internal/graphrelease/http"
 	graphpostgres "github.com/dharlanoliveira/norvii/apps/api/internal/graphrelease/postgres"
@@ -30,6 +33,8 @@ import (
 	sourceapplication "github.com/dharlanoliveira/norvii/apps/api/internal/source/application"
 	sourcehttp "github.com/dharlanoliveira/norvii/apps/api/internal/source/http"
 	sourcepostgres "github.com/dharlanoliveira/norvii/apps/api/internal/source/postgres"
+	suggestionshttp "github.com/dharlanoliveira/norvii/apps/api/internal/suggestions/http"
+	suggestionspostgres "github.com/dharlanoliveira/norvii/apps/api/internal/suggestions/postgres"
 	"github.com/google/uuid"
 )
 
@@ -67,7 +72,19 @@ func main() {
 	snapshothttp.NewHandler(snapshotapplication.NewService(snapshotRepository, uuid.New, time.Now)).Register(application)
 	graphRepository := graphpostgres.NewRepository(pool)
 	graphhttp.NewHandler(graphapplication.NewService(graphRepository)).Register(application)
+	suggestionshttp.NewHandler(suggestionspostgres.NewRepository(pool)).Register(application)
 	chathttp.NewHandler(chatapplication.NewService(snapshotRepository, chatagent.NewClient(configuration.Agent))).Register(application)
+	evaluationRepository := evaluationpostgres.NewRepository(pool)
+	evaluationPreflight := evaluationapplication.NewPreflightService(evaluationRepository)
+	evaluationRunnable := evaluationapplication.RunnableConfiguration{
+		Retrieval: evaluationapplication.RetrievalConfiguration{Strategy: configuration.Evaluation.RetrievalStrategy, Fingerprint: configuration.Evaluation.RetrievalFingerprint},
+		Identity:  evaluationapplication.ExecutionIdentity{AgentBuild: configuration.Evaluation.AgentBuild, ChatModelIdentity: configuration.Evaluation.ChatModelIdentity, EmbeddingModelIdentity: configuration.Evaluation.EmbeddingModelIdentity},
+	}
+	evaluationhttp.NewHandler(
+		evaluationapplication.NewRunService(evaluationPreflight, evaluationRepository, evaluationRunnable),
+		evaluationhttp.NewTokenAuthorizer(configuration.Evaluation.MaintainerToken),
+		evaluationapplication.NewCatalogService(evaluationRepository, evaluationPreflight),
+	).WithComparison(evaluationapplication.NewComparisonService(evaluationRepository)).Register(application)
 	server := httpserver.New(configuration, application, uuid.New)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

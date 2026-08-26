@@ -74,6 +74,24 @@
 
 **Rationale**: This keeps a model/retrieval experiment useful without pretending that different law versions, source sets, or benchmarks measure the same thing.
 
+## Decision 10: Publish corpus opening suggestions as a separate snapshot-bound projection
+
+**Decision**: Let a reviewed available dataset revision explicitly select at most five reciprocal
+English and Portuguese case pairs with a stable display rank. Publish those pairs as an append-only
+opening-suggestion projection for one corpus and one compatible snapshot. The ordinary researcher
+workspace reads only the projection's case ID, rank, language, and original question text through
+a dedicated versioned endpoint; it never reads evaluation rows, invokes preflight or scoring, or
+changes public chat streaming.
+
+**Rationale**: The current static LGPD prompts appear in every corpus and violate the evidence
+boundary. A projection preserves a deterministic, auditable chat surface without leaking golden
+answers or coupling the normal chat request to the evaluation runner. Requiring the active
+snapshot and manifest to match prevents legal prompts from silently surviving a source release.
+
+**Rejected alternative**: Store global question translations in the web client or take the first
+few JSONL rows at runtime. Both approaches lose corpus/snapshot provenance, can expose a
+cross-corpus prompt, and let asset order unexpectedly change researcher-facing behavior.
+
 ## Open implementation input to capture during tasks
 
 The data assets currently lack reviewed `expected_outcome: abstain` cases. The schema supports it, but initial reports must display abstention correctness as `not_applicable` until each legal corpus receives a legally reviewed abstention fixture. This is a data-quality prerequisite, not a reason to fabricate a metric.

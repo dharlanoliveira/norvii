@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 _REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
 _EMBEDDING_DIMENSIONS = 1536
+_EXECUTION_IDENTITY_TRIM_CHARACTERS = " \t\n\v\f\r\x1c\x1d\x1e\x1f"
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +37,11 @@ class AgentConfig:
     neo4j_user: str = ""
     neo4j_password: str = ""
     neo4j_database: str = "neo4j"
+    evaluation_retrieval_strategy: str = "vector"
+    evaluation_retrieval_fingerprint: str = (
+        "4a24773ff594172e714cb08099af9525839b5c16c0ec09da62bfae7612102523"
+    )
+    evaluation_agent_build: str = "norvii-agent-v1"
 
     @classmethod
     def from_environment(cls) -> AgentConfig:
@@ -50,7 +56,9 @@ class AgentConfig:
             postgres_password=os.environ.get("NORVII_POSTGRES_PASSWORD", ""),
             chat_base_url=os.environ.get("NORVII_CHAT_BASE_URL", "").strip(),
             chat_api_key=os.environ.get("NORVII_CHAT_API_KEY", ""),
-            chat_model=os.environ.get("NORVII_CHAT_MODEL", "gpt-4o-mini"),
+            chat_model=_normalized_execution_identity_value(
+                "NORVII_CHAT_MODEL", "gpt-4o-mini"
+            ),
             chat_reasoning_effort=_reasoning_effort("NORVII_CHAT_REASONING_EFFORT", "medium"),
             chat_timeout_seconds=_positive_float("NORVII_CHAT_TIMEOUT_SECONDS", 30.0),
             mcp_host=os.environ.get("NORVII_MCP_HOST", "127.0.0.1"),
@@ -60,15 +68,25 @@ class AgentConfig:
                 os.environ.get("NORVII_EMBEDDING_API_KEY", "").strip()
                 or os.environ.get("NORVII_CHAT_API_KEY", "")
             ),
-            embedding_model=os.environ.get(
+            embedding_model=_normalized_execution_identity_value(
                 "NORVII_EMBEDDING_MODEL", "text-embedding-3-small"
-            ).strip(),
+            ),
             embedding_dimensions=_embedding_dimensions(),
             embedding_timeout_seconds=_positive_float("NORVII_EMBEDDING_TIMEOUT_SECONDS", 30.0),
             neo4j_uri=os.environ.get("NORVII_NEO4J_URI", "").strip(),
             neo4j_user=os.environ.get("NORVII_NEO4J_USER", "").strip(),
             neo4j_password=os.environ.get("NORVII_NEO4J_PASSWORD", ""),
             neo4j_database=os.environ.get("NORVII_NEO4J_DATABASE", "neo4j").strip(),
+            evaluation_retrieval_strategy=os.environ.get(
+                "NORVII_EVALUATION_RETRIEVAL_STRATEGY", "vector"
+            ).strip(),
+            evaluation_retrieval_fingerprint=os.environ.get(
+                "NORVII_EVALUATION_RETRIEVAL_FINGERPRINT",
+                "4a24773ff594172e714cb08099af9525839b5c16c0ec09da62bfae7612102523",
+            ).strip(),
+            evaluation_agent_build=_normalized_execution_identity_value(
+                "NORVII_EVALUATION_AGENT_BUILD", "norvii-agent-v1"
+            ),
         )
 
 
@@ -76,6 +94,14 @@ def _positive_int(key: str, fallback: int) -> int:
     value = int(os.environ.get(key, str(fallback)))
     if value < 1:
         raise ValueError(f"{key} must be positive")
+    return value
+
+
+def _normalized_execution_identity_value(key: str, fallback: str) -> str:
+    """Normalize a runtime identity before it can select or persist an evaluation run."""
+    value = os.environ.get(key, fallback).strip(_EXECUTION_IDENTITY_TRIM_CHARACTERS)
+    if not value:
+        raise ValueError(f"{key} must not be empty")
     return value
 
 

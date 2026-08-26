@@ -11,10 +11,13 @@ import trafilatura
 
 from norvii_ingestion.domain.artifacts import DocumentArtifact, DocumentUnit, UnitKind
 from norvii_ingestion.domain.models import Sha256
+from norvii_ingestion.extraction.legal_locator import canonical_legal_locator
 
 _LEGAL_MARKER = re.compile(
     r"^(?P<marker>"
-    r"(?:Title|T\u00edtulo|Chapter|Cap\u00edtulo|Section|Se\u00e7\u00e3o)\s+[^\n]+"
+    r"(?:\d+\s+U\.S\.C\.\s+\u00a7\s*\d+(?:\.\d+)*(?:\([A-Za-z0-9]+\))*"
+    r"|\d+\s+CFR\s+\u00a7\s*\d+(?:\.\d+)*(?:\([A-Za-z0-9]+\))*)"
+    r"|(?:Title|T\u00edtulo|Chapter|Cap\u00edtulo|Section|Se\u00e7\u00e3o)\s+[^\n]+"
     r"|(?:Article|Artigo)\s+\d+[A-Za-z]?[.\u00ba\u00b0]?"
     r"|Art\.\s*\d+(?:-[A-Za-z])?[\u00ba\u00b0o]?"
     r"|Recital\s+\d+"
@@ -37,6 +40,7 @@ class _UnitSpec:
     end: int
     locator: str
     marker: str | None = None
+    canonical_locator: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +53,7 @@ class _LegalNode:
     level: int
     locator: str
     marker: str
+    canonical_locator: str | None
 
 
 class ExtractionError(ValueError):
@@ -161,6 +166,10 @@ class HtmlExtractor:
             ordinal = child_counts.get(parent_id, 0)
             child_counts[parent_id] = ordinal + 1
             locator = f"{kind.value}-{index + 1}"
+            parent_locator = next(
+                (node.canonical_locator for node in reversed(active) if node.canonical_locator),
+                None,
+            )
             node = _LegalNode(
                 id=self._unit_id(text_hash, locator),
                 parent_id=parent_id,
@@ -170,6 +179,7 @@ class HtmlExtractor:
                 level=level,
                 locator=locator,
                 marker=marker,
+                canonical_locator=canonical_legal_locator(kind.value, marker, parent_locator),
             )
             nodes.append(node)
             active.append(node)
@@ -194,6 +204,7 @@ class HtmlExtractor:
                         end,
                         node.locator,
                         node.marker,
+                        node.canonical_locator,
                     ),
                 )
             )
@@ -202,6 +213,8 @@ class HtmlExtractor:
     @staticmethod
     def _marker_kind(marker: str) -> UnitKind:
         folded = marker.casefold()
+        if "u.s.c." in folded or "cfr" in folded:
+            return UnitKind.SECTION
         prefixes = (
             (("title ", "t\u00edtulo "), UnitKind.TITLE),
             (("chapter ", "cap\u00edtulo "), UnitKind.CHAPTER),
@@ -274,6 +287,7 @@ class HtmlExtractor:
             end_page=None,
             locator=spec.locator,
             content_sha256=Sha256.from_bytes(text[spec.start : spec.end].encode("utf-8")),
+            canonical_locator=spec.canonical_locator,
         )
 
     @staticmethod

@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
+import englishSuggestionsFixture from "../../../../contracts/corpus-opening-suggestions/v1/fixtures/suggestions-response-en.json?raw";
+import portugueseSuggestionsFixture from "../../../../contracts/corpus-opening-suggestions/v1/fixtures/suggestions-response-pt.json?raw";
+
 import { createHttpResearchProvider } from "./researchProvider";
 
 const corpusId = "10000000-0000-4000-8000-000000000002";
@@ -11,6 +14,11 @@ describe("HTTP research provider", () => {
       .fn<typeof fetch>()
       .mockImplementation((input, init) => {
         const url = requestUrl(input);
+        if (url.includes("/opening-suggestions")) {
+          return Promise.resolve(
+            jsonResponse(openingSuggestionsResponse("pt")),
+          );
+        }
         if (url.endsWith("/document") || url.includes("/documents/"))
           return Promise.resolve(jsonResponse(documentResponse()));
         if (url.endsWith("/sources") && init?.method === "GET") {
@@ -54,6 +62,9 @@ describe("HTTP research provider", () => {
     await expect(provider.getCorpus(corpusId, signal)).resolves.toMatchObject({
       id: corpusId,
     });
+    await expect(
+      provider.getCorpusOpeningSuggestions(corpusId, "pt", signal),
+    ).resolves.toMatchObject({ interfaceLanguage: "pt" });
     await expect(provider.listSources(corpusId, signal)).resolves.toHaveLength(
       1,
     );
@@ -135,6 +146,9 @@ describe("HTTP research provider", () => {
       `https://api.example.test/v1/corpora/${corpusId}/snapshots`,
     );
     expect(requests).toContain(
+      `https://api.example.test/v1/corpora/${corpusId}/opening-suggestions?interfaceLanguage=pt`,
+    );
+    expect(requests).toContain(
       `https://api.example.test/v1/corpora/${corpusId}/snapshots/70000000-0000-4000-8000-000000000001/graph-release`,
     );
     expect(requests).toContain(
@@ -175,6 +189,76 @@ describe("HTTP research provider", () => {
       }),
     );
   });
+
+  it("passes cancellation through from the opening-suggestions request", async () => {
+    const controller = new AbortController();
+    const cancellation = new DOMException(
+      "The operation was aborted.",
+      "AbortError",
+    );
+    const fetchResponse = vi
+      .fn<typeof fetch>()
+      .mockImplementation((_input, init) => {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(cancellation), {
+            once: true,
+          });
+        });
+      });
+    const provider = createHttpResearchProvider({ fetch: fetchResponse });
+    const request = provider.getCorpusOpeningSuggestions(
+      corpusId,
+      "en",
+      controller.signal,
+    );
+
+    controller.abort();
+
+    await expect(request).rejects.toBe(cancellation);
+    expect(fetchResponse).toHaveBeenCalledWith(
+      `/api/v1/corpora/${corpusId}/opening-suggestions?interfaceLanguage=en`,
+      expect.objectContaining({ method: "GET", signal: controller.signal }),
+    );
+  });
+
+  it("raises non-success opening-suggestion responses as public API errors", async () => {
+    const fetchResponse = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: "not_found",
+            message: "Corpus not found.",
+            requestId: "40000000-0000-4000-8000-000000000001",
+          },
+        },
+        404,
+      ),
+    );
+    const provider = createHttpResearchProvider({ fetch: fetchResponse });
+
+    await expect(
+      provider.getCorpusOpeningSuggestions(
+        corpusId,
+        "en",
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("rejects opening suggestions for a different corpus or interface language", async () => {
+    const fetchResponse = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(openingSuggestionsResponse("pt")));
+    const provider = createHttpResearchProvider({ fetch: fetchResponse });
+
+    await expect(
+      provider.getCorpusOpeningSuggestions(
+        corpusId,
+        "en",
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("language does not match");
+  });
 });
 
 function requestUrl(input: RequestInfo | URL): string {
@@ -208,6 +292,30 @@ function corpusResponse() {
     createdAt: "2026-08-17T12:00:00Z",
     updatedAt: "2026-08-17T12:00:00Z",
   };
+}
+
+function openingSuggestionsResponse(interfaceLanguage: "en" | "pt") {
+  const fixture =
+    interfaceLanguage === "en"
+      ? englishSuggestionsFixture
+      : portugueseSuggestionsFixture;
+  return {
+    ...fixtureObject(fixture),
+    corpusId,
+    interfaceLanguage,
+  };
+}
+
+function fixtureObject(fixture: string): Record<string, unknown> {
+  const payload: unknown = JSON.parse(fixture) as unknown;
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    throw new Error("Opening-suggestion fixture must be an object.");
+  }
+  return payload as Record<string, unknown>;
 }
 
 function graphReleaseResponse() {

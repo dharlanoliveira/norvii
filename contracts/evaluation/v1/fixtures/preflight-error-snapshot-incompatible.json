@@ -1,0 +1,14 @@
+{
+  "error": {
+    "code": "snapshot_incompatible",
+    "message": "The selected snapshot is not compatible with the dataset sources.",
+    "requestId": "50000000-0000-4000-8000-000000000013",
+    "missingRequirements": [
+      {
+        "sourceAlias": "official-source",
+        "locator": "synthetic-locator-2",
+        "reason": "The required source is not a member of the selected snapshot."
+      }
+    ]
+  }
+}

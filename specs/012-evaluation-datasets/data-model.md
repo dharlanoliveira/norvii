@@ -11,6 +11,7 @@ evaluation_dataset_revision
   +-- evaluation_dataset_source
   +-- evaluation_dataset_case
   |     +-- evaluation_case_expected_evidence
+  |     +-- evaluation_dataset_starter_case
   +-- evaluation_dataset_publication
 ```
 
@@ -39,6 +40,16 @@ One immutable JSONL record.
 - Add `expected_outcome` with `answer` as the backward-compatible default. `abstain` requires a controlled expected-reason code.
 - Paired cases must be different, reciprocal, and use different query languages. They share no generated result and are not independent statistical observations.
 
+### `evaluation_dataset_starter_case`
+
+One explicit, immutable opening-suggestion selection per selected case.
+
+- Dataset revision, case ID, positive rank, case checksum, and review eligibility.
+- Each selected English and Portuguese case pair has the same rank. A revision has at most five
+  ranks, each rank has exactly one `en` and one `pt-BR` case, and no case may appear twice.
+- Selections are not inferred from JSONL order. Import rejects incomplete, non-reciprocal,
+  duplicate, out-of-range, unsafe, or non-reviewed selections.
+
 ### `evaluation_case_expected_evidence`
 
 An ordered required source/locator selector with `required_propositions` retained as review annotations. The v1 policy is `all`: every compound selector is expanded into atomic legal targets before it can be used. Alternative (`any`) targets require a future explicit reviewed schema.
@@ -46,6 +57,35 @@ An ordered required source/locator selector with `required_propositions` retaine
 ### `evaluation_dataset_publication`
 
 Append-only record of review and availability. It identifies the dataset revision, review decision, reviewer identity, timestamp, bounded note, and publication state (`draft`, `available`, `superseded`, `withdrawn`). Imported data is draft; only `available` data can start a run.
+
+## Opening-suggestion publication
+
+```text
+corpus_opening_suggestion_set
+  +-- corpus_opening_suggestion_item
+```
+
+### `corpus_opening_suggestion_set`
+
+One append-only researcher-facing projection published from an available dataset revision for one
+compatible corpus snapshot.
+
+- Corpus ID, snapshot ID, snapshot manifest hash, source dataset revision/content hash, selection
+  policy version, review/publication identity, and creation time.
+- Publication proves that the selection belongs to the corpus, every selected case has a valid
+  paired rank, and all expected evidence resolves in the named snapshot.
+- Runtime returns a set only while its snapshot and manifest identities equal the corpus's active
+  release. A later active snapshot hides the former set until a new compatible set is published.
+
+### `corpus_opening_suggestion_item`
+
+One rendered-question-safe item for a published set.
+
+- Suggestion set ID, rank, evaluation case ID, case checksum, query language, and original
+  question text.
+- Unique `(suggestion_set_id, query_language, rank)` prevents ambiguous ordering.
+- It deliberately excludes reference answers, expected evidence, scoring annotations, provider
+  configuration, and evaluation results.
 
 ## Locator resolution and compatibility
 
@@ -87,9 +127,13 @@ Stores case and aggregate component value, numerator, denominator, eligibility, 
 
 ## Invariants
 
-1. Dataset revisions, cases, source requirements, and publications are append-only.
+1. Dataset revisions, cases, source requirements, publications, and opening-suggestion
+   projections are append-only.
 2. A run is created only after all source bindings and locator resolutions succeed for its fixed corpus snapshot; it never resolves the active snapshot during execution.
 3. Every actual evidence reference belongs to the run corpus and snapshot; cross-corpus and cross-snapshot references are invalid.
 4. Execution failure/cancellation is `not_scored`, never a fabricated zero. Aggregates include `total`, `eligible`, `scored`, `failed`, `cancelled`, and `not_applicable`; telemetry percentiles use only non-null measurements and declare `n`.
 5. A direct comparison requires equal dataset revision/hash, snapshot/manifest hash, ordered case-set hash, and scoring-policy version. Configuration differences are visible but allowed.
 6. Query language, expected answer language, and authoritative evidence language remain distinct.
+7. An opening-suggestion projection is visible only if its corpus, active snapshot ID, and active
+   snapshot manifest hash all match; it cannot return a question from another corpus or stale
+   source release.

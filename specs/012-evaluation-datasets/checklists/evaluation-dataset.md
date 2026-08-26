@@ -25,6 +25,16 @@
 - [x] CHK009 Are query language, expected answer language, and authoritative source language separately required for every case? [Completeness, SpecFR-002]
 - [x] CHK010 Are reciprocal cross-language case links defined and validated without requiring the two answers to use the same prose? [Clarity, SpecFR-003, SC-005]
 
+## Corpus Opening Suggestions
+
+- [x] CHK017 Are every visible starter case's corpus, reciprocal language pair, stable rank, and
+  checksum defined without inferring selection from JSONL order? [Completeness, SpecFR-014]
+- [x] CHK018 Is the published suggestion projection explicitly bound to a matching active snapshot
+  and manifest, with a safe empty result for stale or unavailable data? [Coverage, SpecFR-015,
+  SpecFR-016]
+- [x] CHK019 Does the researcher-facing read contract exclude reference answers, expected evidence,
+  scoring, and evaluation-run behavior? [Safety, SpecFR-015, SpecFR-018]
+
 ## Results and Comparison
 
 - [x] CHK011 Are all run identities necessary for reproduction specified at case and aggregate level? [Completeness, SpecFR-005, ?FR-011]

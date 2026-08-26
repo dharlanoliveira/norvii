@@ -480,9 +480,30 @@ class LocalEnvironmentManager:
                 layout,
                 self._logger,
             ),
+            "evaluation-worker": ManagedProcess(
+                "evaluation-worker",
+                [
+                    sys.executable,
+                    str(layout.environment_runner),
+                    str(layout.environment_file),
+                    "go",
+                    "-C",
+                    str(layout.api_directory),
+                    "run",
+                    "./cmd/evaluation-worker",
+                    "--ready-file",
+                    str(layout.ready_marker("evaluation-worker")),
+                ],
+                ("go", "cmd/evaluation-worker"),
+                layout,
+                self._logger,
+            ),
             "web": ManagedProcess(
                 "web",
                 [
+                    sys.executable,
+                    str(layout.environment_runner),
+                    str(layout.environment_file),
                     "npm",
                     "--prefix",
                     str(layout.web_directory),
@@ -513,13 +534,16 @@ class LocalEnvironmentManager:
             self._runner.run("mcp", self._make("persistence-mcp-up"))
             if not self._processes["web"].is_running():
                 self._runner.run("web", ["npm", "--prefix", str(self._layout.web_directory), "ci"])
+            if not self._processes["evaluation-worker"].is_running():
+                self._layout.ready_marker("evaluation-worker").unlink(missing_ok=True)
             started_components.extend(
                 component
-                for component in ("postgres", "neo4j", "mcp", "agent", "api", "ingestion", "web")
+                for component in ("postgres", "neo4j", "mcp", "agent", "api", "ingestion", "evaluation-worker", "web")
                 if self._processes[component].start()
             )
             self._wait_for_agent()
             self._wait_for_api()
+            self._wait_for_evaluation_worker()
             self._wait_for_web()
             initial_states = self._wait_for_initial_sources()
         except LocalEnvironmentError:
@@ -542,14 +566,17 @@ class LocalEnvironmentManager:
         print(health, end="")
         print("Web is running." if self._processes["web"].is_running() else "Web is stopped.")
         self._runner.run("mcp", self._make("persistence-mcp-health"))
-        for component in ("api", "agent", "ingestion", "mcp"):
+        for component in ("api", "agent", "ingestion", "evaluation-worker", "mcp"):
             state = "running" if self._processes[component].is_running() else "stopped"
             label = {
                 "api": "API",
                 "agent": "Agent",
                 "ingestion": "Ingestion",
+                "evaluation-worker": "Evaluation worker",
                 "mcp": "MCP",
             }[component]
+            if component == "evaluation-worker" and state == "running" and not self._layout.ready_marker(component).is_file():
+                state = "starting"
             print(f"{label} is {state}.")
 
     def stop(self) -> None:
@@ -557,13 +584,18 @@ class LocalEnvironmentManager:
         self._layout.validate_root()
         self._logger.initialize()
         self._stop_managed_processes(
-            ("web", "ingestion", "api", "agent", "mcp", "neo4j", "postgres")
+            ("web", "evaluation-worker", "ingestion", "api", "agent", "mcp", "neo4j", "postgres")
         )
         if self._layout.environment_file.exists():
             self._runner.run("bootstrap", self._make("persistence-stop"))
-        for component in ("api", "agent", "ingestion"):
+        for component in ("api", "agent", "ingestion", "evaluation-worker"):
             self._layout.ready_marker(component).unlink(missing_ok=True)
         print("Norvii is stopped.")
+
+    def restart(self) -> None:
+        """Restart every managed component while retaining local persistence data."""
+        self.stop()
+        self.start()
 
     def _prepare(self, *, required_commands: tuple[str, ...]) -> None:
         self._layout.validate_root()
@@ -631,6 +663,26 @@ class LocalEnvironmentManager:
                 time.sleep(0.2)
         raise ComponentCommandError("Agent", self._layout.log("agent"), self._layout.root)
 
+    def _wait_for_evaluation_worker(self) -> None:
+        """Wait for the worker's persisted PostgreSQL readiness marker."""
+        timeout = int(os.environ.get("NORVII_EVALUATION_WORKER_START_TIMEOUT_SECONDS", "30"))
+        if timeout <= 0:
+            raise LocalEnvironmentError(
+                "NORVII_EVALUATION_WORKER_START_TIMEOUT_SECONDS must be a positive integer."
+            )
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self._processes["evaluation-worker"].is_running():
+                raise ComponentCommandError(
+                    "Evaluation worker", self._layout.log("evaluation-worker"), self._layout.root
+                )
+            if self._layout.ready_marker("evaluation-worker").is_file():
+                return
+            time.sleep(0.2)
+        raise ComponentCommandError(
+            "Evaluation worker", self._layout.log("evaluation-worker"), self._layout.root
+        )
+
     def _wait_for_initial_sources(self) -> dict[str, str]:
         """Wait until each stable seed source reaches a bounded terminal state."""
         deadline = time.monotonic() + self._initial_ingestion_timeout
@@ -670,7 +722,7 @@ class LocalEnvironmentManager:
 def parse_arguments(arguments: list[str]) -> argparse.Namespace:
     """Parse a lifecycle action and optional repository root."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("start", "status", "stop"))
+    parser.add_argument("action", choices=("start", "restart", "status", "stop"))
     parser.add_argument("--repository-root", type=Path, default=Path(__file__).parents[2])
     return parser.parse_args(arguments)
 

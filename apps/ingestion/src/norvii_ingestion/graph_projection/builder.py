@@ -46,6 +46,8 @@ class _LegalUnitProjection:
     parent_id: UUID | None
     kind: str
     locator: str
+    canonical_locator: str
+    content_sha256: str
 
     def neo4j(self) -> dict[str, object]:
         return {
@@ -54,6 +56,8 @@ class _LegalUnitProjection:
             "parent_id": None if self.parent_id is None else str(self.parent_id),
             "kind": self.kind,
             "locator": self.locator,
+            "canonical_locator": self.canonical_locator,
+            "content_sha256": self.content_sha256,
         }
 
 
@@ -87,6 +91,8 @@ class _AssertionProjection:
     source_title: str
     establishing_locator: str
     evidence_locator: str
+    evidence_canonical_locator: str
+    evidence_content_sha256: str
     start_offset: int
     end_offset: int
     excerpt: str
@@ -108,6 +114,8 @@ class _AssertionProjection:
             "source_title": self.source_title,
             "establishing_locator": self.establishing_locator,
             "evidence_locator": self.evidence_locator,
+            "evidence_canonical_locator": self.evidence_canonical_locator,
+            "evidence_content_sha256": self.evidence_content_sha256,
             "start_offset": self.start_offset,
             "end_offset": self.end_offset,
             "excerpt": self.excerpt,
@@ -123,7 +131,7 @@ class GraphReleaseBuilder:
         self,
         connection: psycopg.Connection[tuple[object, ...]],
         neo4j: Neo4jStore,
-        build_version: str = "legal-assertion-graph-v1",
+        build_version: str = "legal-assertion-graph-v2",
     ) -> None:
         if not build_version.strip():
             raise ValueError("graph build version is required")
@@ -168,6 +176,7 @@ class GraphReleaseBuilder:
                     corpus_id=corpus_id,
                     snapshot_id=snapshot_id,
                     manifest_sha256=manifest,
+                    build_version=self._build_version,
                     legal_units=tuple(unit.neo4j() for unit in legal_units),
                     entities=tuple(entity.neo4j() for entity in entities),
                     assertions=tuple(assertion.neo4j() for assertion in assertions),
@@ -334,6 +343,8 @@ def _legal_unit(row: tuple[object, ...]) -> _LegalUnitProjection:
         parent_id=cast("UUID | None", row[2]),
         kind=cast("str", row[3]),
         locator=cast("str", row[4]),
+        canonical_locator=cast("str", row[5]),
+        content_sha256=cast("str", row[6]),
     )
 
 
@@ -365,6 +376,8 @@ def _assertion(row: tuple[object, ...]) -> _AssertionProjection:
         excerpt=cast("str", row[14]),
         predicate=cast("str", row[15]),
         qualifier=cast("str | None", row[16]),
+        evidence_canonical_locator=cast("str", row[17]),
+        evidence_content_sha256=cast("str", row[18]),
     )
 
 
@@ -382,7 +395,8 @@ def _manifest(
 
 
 _LEGAL_UNIT_QUERY = """
-SELECT unit.id, unit.document_id, unit.parent_id, unit.kind, unit.locator
+SELECT unit.id, unit.document_id, unit.parent_id, unit.kind, unit.locator,
+       unit.canonical_locator, unit.content_sha256
 FROM corpus_snapshot_documents snapshot_document
 JOIN document_units unit
   ON unit.document_id = snapshot_document.document_id
@@ -422,6 +436,7 @@ SELECT assertion.id, assertion.subject_entity_id, assertion.object_entity_id,
          1200
        ),
        assertion.predicate, assertion.qualifier
+       , evidence_unit.canonical_locator, evidence_unit.content_sha256
 FROM corpus_snapshot_documents snapshot_document
 JOIN semantic_extraction_runs extraction
   ON extraction.document_id = snapshot_document.document_id

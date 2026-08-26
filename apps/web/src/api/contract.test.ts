@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
+import emptyNoActiveSnapshotFixture from "../../../../contracts/corpus-opening-suggestions/v1/fixtures/suggestions-response-empty-no-active-snapshot.json?raw";
+import emptyStaleProjectionFixture from "../../../../contracts/corpus-opening-suggestions/v1/fixtures/suggestions-response-empty-stale-projection.json?raw";
+import englishSuggestionsFixture from "../../../../contracts/corpus-opening-suggestions/v1/fixtures/suggestions-response-en.json?raw";
+import evaluationLeakageFixture from "../../../../contracts/corpus-opening-suggestions/v1/fixtures/suggestions-response-invalid-evaluation-leakage.json?raw";
+import invalidRankOrderFixture from "../../../../contracts/corpus-opening-suggestions/v1/fixtures/suggestions-response-invalid-rank-order.json?raw";
+import portugueseSuggestionsFixture from "../../../../contracts/corpus-opening-suggestions/v1/fixtures/suggestions-response-pt.json?raw";
+
 import {
   parseCorpusList,
+  parseCorpusOpeningSuggestionResponse,
   parseCorpusResponse,
   parseDocumentResponse,
   parseErrorEnvelope,
@@ -11,6 +19,122 @@ import {
 } from "./contract";
 
 describe("corpus ingestion HTTP contract", () => {
+  it("validates rank-ordered English and Portuguese opening suggestions", () => {
+    const english = parseCorpusOpeningSuggestionResponse(
+      openingSuggestionResponse("en"),
+    );
+    const portuguese = parseCorpusOpeningSuggestionResponse(
+      openingSuggestionResponse("pt"),
+    );
+
+    expect(english.interfaceLanguage).toBe("en");
+    expect(portuguese.interfaceLanguage).toBe("pt");
+    expect(english.suggestions.map((suggestion) => suggestion.rank)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+  });
+
+  it("validates an empty opening-suggestion response without a snapshot", () => {
+    const response = parseCorpusOpeningSuggestionResponse(
+      fixturePayload(emptyNoActiveSnapshotFixture),
+    );
+    const staleProjection = parseCorpusOpeningSuggestionResponse(
+      fixturePayload(emptyStaleProjectionFixture),
+    );
+
+    expect(response.suggestions).toEqual([]);
+    expect(response.activeSnapshotId).toBeNull();
+    expect(staleProjection.suggestions).toEqual([]);
+    expect(staleProjection.activeSnapshotId).not.toBeNull();
+  });
+
+  it("rejects malformed and evaluation-leaking opening suggestions", () => {
+    expect(() =>
+      parseCorpusOpeningSuggestionResponse({
+        ...openingSuggestionResponse("en"),
+        unexpected: true,
+      }),
+    ).toThrow("unsupported field");
+    expect(() =>
+      parseCorpusOpeningSuggestionResponse(
+        fixturePayload(evaluationLeakageFixture),
+      ),
+    ).toThrow("unsupported field");
+    expect(() =>
+      parseCorpusOpeningSuggestionResponse(
+        fixturePayload(invalidRankOrderFixture),
+      ),
+    ).toThrow("ascending order");
+    expect(() =>
+      parseCorpusOpeningSuggestionResponse({
+        ...openingSuggestionResponse("en"),
+        suggestions: Array.from({ length: 6 }, (_, index) => ({
+          caseId: `synthetic-${String(index + 1)}`,
+          rank: index + 1,
+          question: "Synthetic question?",
+        })),
+      }),
+    ).toThrow("more than five");
+  });
+
+  it("rejects invalid opening-suggestion values at the response boundary", () => {
+    const invalidResponses = [
+      {
+        ...openingSuggestionResponse("en"),
+        corpusId: "not-a-uuid",
+      },
+      {
+        ...openingSuggestionResponse("en"),
+        activeSnapshotManifestSha256: "not-a-hash",
+      },
+      {
+        ...openingSuggestionResponse("en"),
+        interfaceLanguage: "fr",
+      },
+      {
+        ...openingSuggestionResponse("en"),
+        suggestions: [
+          { caseId: "synthetic-question", rank: 0, question: "Question?" },
+        ],
+      },
+      {
+        ...openingSuggestionResponse("en"),
+        suggestions: [
+          { caseId: "synthetic-question", rank: 1, question: "   " },
+        ],
+      },
+      {
+        ...openingSuggestionResponse("en"),
+        activeSnapshotId: null,
+      },
+      {
+        ...openingSuggestionResponse("en"),
+        activeSnapshotId: undefined,
+      },
+      {
+        ...openingSuggestionResponse("en"),
+        activeSnapshotManifestSha256: undefined,
+      },
+    ];
+
+    for (const response of invalidResponses) {
+      expect(() => parseCorpusOpeningSuggestionResponse(response)).toThrow();
+    }
+    expect(() =>
+      parseCorpusOpeningSuggestionResponse({
+        corpusId: "10000000-0000-4000-8000-000000000002",
+        activeSnapshotId: null,
+        activeSnapshotManifestSha256: null,
+        interfaceLanguage: "en",
+      }),
+    ).toThrow("must contain suggestions");
+    expect(() =>
+      parseCorpusOpeningSuggestionResponse({
+        ...openingSuggestionResponse("en"),
+        suggestions: [{ caseId: "synthetic-question", rank: 1 }],
+      }),
+    ).toThrow("must contain question");
+  });
   it("validates authoritative corpus list responses", () => {
     const corpora = parseCorpusList([
       {
@@ -272,4 +396,16 @@ function documentUnit(
     locator,
     contentSha256: "c".repeat(64),
   };
+}
+
+function openingSuggestionResponse(interfaceLanguage: "en" | "pt") {
+  const fixture =
+    interfaceLanguage === "en"
+      ? englishSuggestionsFixture
+      : portugueseSuggestionsFixture;
+  return parseCorpusOpeningSuggestionResponse(fixturePayload(fixture));
+}
+
+function fixturePayload(fixture: string): unknown {
+  return JSON.parse(fixture) as unknown;
 }

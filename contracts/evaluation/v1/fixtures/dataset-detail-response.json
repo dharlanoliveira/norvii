@@ -1,0 +1,43 @@
+{
+  "revision": {
+    "id": "30000000-0000-4000-8000-000000000021",
+    "corpusId": "10000000-0000-4000-8000-000000000021",
+    "datasetKey": "synthetic-evaluation-dataset",
+    "semanticRevision": "v1",
+    "jurisdiction": "Synthetic jurisdiction",
+    "manifestSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "jsonlSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "contentSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "declaredSnapshotDate": "2026-08-26",
+    "queryLanguages": ["en", "pt"],
+    "authoritativeEvidenceLanguage": "pt-BR"
+  },
+  "available": true,
+  "review": {
+    "decision": "approved",
+    "publicationState": "available",
+    "reviewedAt": "2026-08-26T20:00:00Z"
+  },
+  "sources": [
+    {
+      "id": "60000000-0000-4000-8000-000000000021",
+      "sourceAlias": "official-source",
+      "title": "Synthetic official source",
+      "officialUrl": "https://example.test/official-source",
+      "issuingAuthority": "Synthetic authority",
+      "documentType": "statute",
+      "authorityRole": "statute",
+      "corpusSourceId": "20000000-0000-4000-8000-000000000021",
+      "bound": true
+    }
+  ],
+  "starters": [
+    {
+      "id": "70000000-0000-4000-8000-000000000021",
+      "caseId": "40000000-0000-4000-8000-000000000021",
+      "rank": 1,
+      "queryLanguage": "en",
+      "reviewEligible": true
+    }
+  ]
+}

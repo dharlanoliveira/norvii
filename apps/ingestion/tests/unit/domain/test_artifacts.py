@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import UUID, uuid4
 
 import pytest
@@ -68,6 +68,74 @@ def test_document_artifact_rejects_units_outside_source_reading_order() -> None:
 
     with pytest.raises(ValueError, match="reading order"):
         artifact.validate()
+
+
+def test_document_artifact_rejects_invalid_or_ambiguous_canonical_legal_locators() -> None:
+    text = "Article 19\nA clear statement.\nArticle 20\nAnother statement."
+    root_id = uuid4()
+    article_id = uuid4()
+    artifact = DocumentArtifact(
+        text=text,
+        text_sha256=_hash(text),
+        units=(
+            _unit(text, UnitSpec(root_id, None, UnitKind.DOCUMENT, 0, 0, len(text), "document")),
+            replace(
+                _unit(text, UnitSpec(article_id, root_id, UnitKind.ARTICLE, 0, 0, 28, "article-1")),
+                canonical_locator="article-19",
+            ),
+            replace(
+                _unit(
+                    text,
+                    UnitSpec(uuid4(), root_id, UnitKind.ARTICLE, 1, 28, len(text), "article-2"),
+                ),
+                canonical_locator="article:19",
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="format"):
+        artifact.validate()
+
+    duplicate_alias_artifact = replace(
+        artifact,
+        units=(
+            artifact.units[0],
+            replace(artifact.units[1], canonical_locator="article:19"),
+            artifact.units[2],
+        ),
+    )
+    with pytest.raises(ValueError, match="unique"):
+        duplicate_alias_artifact.validate()
+
+
+def test_document_artifact_resolves_only_atomic_canonical_aliases() -> None:
+    text = "Article 19\nA clear statement.\nArticle 20\nAnother statement."
+    root_id = uuid4()
+    article_id = uuid4()
+    artifact = DocumentArtifact(
+        text=text,
+        text_sha256=_hash(text),
+        units=(
+            _unit(text, UnitSpec(root_id, None, UnitKind.DOCUMENT, 0, 0, len(text), "document")),
+            replace(
+                _unit(text, UnitSpec(article_id, root_id, UnitKind.ARTICLE, 0, 0, 28, "article-1")),
+                canonical_locator="article:19",
+            ),
+            replace(
+                _unit(
+                    text,
+                    UnitSpec(uuid4(), root_id, UnitKind.ARTICLE, 1, 28, len(text), "article-2"),
+                ),
+                canonical_locator="article:20",
+            ),
+        ),
+    )
+
+    assert artifact.resolve_canonical_legal_locator(" ARTICLE:19 ").id == article_id
+    with pytest.raises(ValueError, match="atomic"):
+        artifact.resolve_canonical_legal_locator("article:19;article:20")
+    with pytest.raises(ValueError, match="does not exist"):
+        artifact.resolve_canonical_legal_locator("article:21")
 
 
 def test_publication_command_rejects_incorrect_text_hash() -> None:

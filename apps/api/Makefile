@@ -1,4 +1,4 @@
-.PHONY: build ci coverage dependencies-check format format-check initialize-snapshots migrate migration-status test test-race verify-persistence vet
+.PHONY: build ci coverage dependencies-check evaluation-worker format format-check import-evaluation-datasets initialize-snapshots migrate migration-status test test-race verify-persistence vet
 
 build:
 	go build ./...
@@ -21,6 +21,12 @@ migrate:
 
 initialize-snapshots:
 	go run ./cmd/initialize-snapshots
+
+import-evaluation-datasets:
+	go run ./cmd/import-evaluation-datasets
+
+evaluation-worker:
+	go run ./cmd/evaluation-worker
 
 migration-status:
 	go run ./cmd/migration-status

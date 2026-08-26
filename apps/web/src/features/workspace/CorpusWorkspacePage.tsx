@@ -11,6 +11,9 @@ import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 
 import type {
+  ActiveSnapshotResponse,
+  CorpusOpeningSuggestion,
+  CorpusOpeningSuggestionResponse,
   CorpusResponse,
   DocumentResponse,
   GraphReleaseResponse,
@@ -59,6 +62,19 @@ type DocumentState =
     }
   | { readonly status: "failed" };
 
+interface OpeningSuggestionIdentity {
+  readonly corpusId: string;
+  readonly interfaceLanguage: "en" | "pt";
+  readonly snapshotId: string;
+  readonly snapshotManifestSha256: string;
+  readonly snapshotReleaseVersion: number;
+}
+
+interface OpeningSuggestionState {
+  readonly identity?: OpeningSuggestionIdentity | undefined;
+  readonly suggestions: readonly CorpusOpeningSuggestion[];
+}
+
 interface CitationTarget {
   readonly citedRange: CitedRange;
   readonly documentVersionId: string;
@@ -95,7 +111,7 @@ function LoadedCorpusWorkspace({
   corpusId,
   chatProvider,
 }: LoadedCorpusWorkspaceProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const {
     registerCreatedSource,
     replaceCorpus,
@@ -108,6 +124,15 @@ function LoadedCorpusWorkspace({
   const sourceViewer = useSourceViewer(provider, corpusId, () => {
     setMode("source");
   });
+  const interfaceLanguage: "en" | "pt" = i18n.resolvedLanguage?.startsWith("pt")
+    ? "pt"
+    : "en";
+  const openingSuggestions = useCorpusOpeningSuggestions(
+    provider,
+    corpusId,
+    state.status === "ready" ? state.corpus.activeSnapshot : undefined,
+    interfaceLanguage,
+  );
 
   if (state.status === "loading")
     return <output>{t("workspace.loading")}</output>;
@@ -155,6 +180,7 @@ function LoadedCorpusWorkspace({
           }
           onSelectSource={sourceViewer.selectSource}
           onSelectUnit={sourceViewer.selectUnit}
+          openingSuggestions={openingSuggestions}
           onReprocess={async (source, signal) => {
             const updated = await provider.reprocessSource(
               corpusId,
@@ -201,6 +227,106 @@ function LoadedCorpusWorkspace({
         />
       </div>
     </section>
+  );
+}
+
+function useCorpusOpeningSuggestions(
+  provider: ResearchProvider,
+  corpusId: string,
+  activeSnapshot: ActiveSnapshotResponse | null | undefined,
+  interfaceLanguage: "en" | "pt",
+): readonly CorpusOpeningSuggestion[] {
+  const [state, setState] = useState<OpeningSuggestionState>({
+    suggestions: [],
+  });
+  const identity = openingSuggestionIdentity(
+    corpusId,
+    activeSnapshot,
+    interfaceLanguage,
+  );
+
+  useEffect(() => {
+    const requestIdentity = openingSuggestionIdentity(
+      corpusId,
+      activeSnapshot,
+      interfaceLanguage,
+    );
+    if (requestIdentity === undefined) {
+      return;
+    }
+
+    const controller = new AbortController();
+    void provider
+      .getCorpusOpeningSuggestions(
+        requestIdentity.corpusId,
+        requestIdentity.interfaceLanguage,
+        controller.signal,
+      )
+      .then((response) => {
+        if (
+          !controller.signal.aborted &&
+          openingSuggestionsMatchWorkspace(response, requestIdentity)
+        ) {
+          setState({
+            identity: requestIdentity,
+            suggestions: response.suggestions,
+          });
+        }
+      })
+      .catch(() => {
+        // An unavailable suggestion projection intentionally leaves the empty chat unadorned.
+      });
+
+    return () => controller.abort();
+  }, [activeSnapshot, corpusId, interfaceLanguage, provider]);
+
+  return openingSuggestionIdentitiesMatch(state.identity, identity)
+    ? state.suggestions
+    : [];
+}
+
+function openingSuggestionIdentity(
+  corpusId: string,
+  activeSnapshot: ActiveSnapshotResponse | null | undefined,
+  interfaceLanguage: "en" | "pt",
+): OpeningSuggestionIdentity | undefined {
+  if (activeSnapshot === null || activeSnapshot === undefined) {
+    return undefined;
+  }
+
+  return {
+    corpusId,
+    interfaceLanguage,
+    snapshotId: activeSnapshot.id,
+    snapshotManifestSha256: activeSnapshot.manifestSha256,
+    snapshotReleaseVersion: activeSnapshot.releaseVersion,
+  };
+}
+
+function openingSuggestionsMatchWorkspace(
+  response: CorpusOpeningSuggestionResponse,
+  identity: OpeningSuggestionIdentity,
+): boolean {
+  return (
+    response.corpusId === identity.corpusId &&
+    response.interfaceLanguage === identity.interfaceLanguage &&
+    response.activeSnapshotId === identity.snapshotId &&
+    response.activeSnapshotManifestSha256 === identity.snapshotManifestSha256
+  );
+}
+
+function openingSuggestionIdentitiesMatch(
+  first: OpeningSuggestionIdentity | undefined,
+  second: OpeningSuggestionIdentity | undefined,
+): boolean {
+  return (
+    first !== undefined &&
+    second !== undefined &&
+    first.corpusId === second.corpusId &&
+    first.interfaceLanguage === second.interfaceLanguage &&
+    first.snapshotId === second.snapshotId &&
+    first.snapshotManifestSha256 === second.snapshotManifestSha256 &&
+    first.snapshotReleaseVersion === second.snapshotReleaseVersion
   );
 }
 
@@ -623,6 +749,7 @@ interface WorkspacePrimaryProps {
   ) => Promise<void>;
   readonly onSelectSource: (source: SourceResponse) => void;
   readonly onSelectUnit: (unitId: string) => void;
+  readonly openingSuggestions: readonly CorpusOpeningSuggestion[];
   readonly selectedSource?: SourceResponse | undefined;
   readonly selectedUnitId?: string | undefined;
 }
@@ -645,6 +772,7 @@ function WorkspacePrimary({
   onRetry,
   onSelectSource,
   onSelectUnit,
+  openingSuggestions,
   selectedSource,
   selectedUnitId,
 }: WorkspacePrimaryProps) {
@@ -656,6 +784,7 @@ function WorkspacePrimary({
       <div id="chat-panel" role="tabpanel" hidden={mode !== "chat"}>
         <ResearchChat
           corpusId={corpusId}
+          openingSuggestions={openingSuggestions}
           provider={chatProvider}
           onReferenceSelect={onReferenceSelect}
         />

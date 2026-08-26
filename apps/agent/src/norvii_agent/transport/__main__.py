@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import logging
+from typing import Literal, cast
 
 from norvii_agent.config import AgentConfig
+from norvii_agent.evaluation import (
+    EvaluationExecutor,
+    ExecutionIdentity,
+    FrozenRetrievalConfiguration,
+)
 from norvii_agent.graph import GroundedChatGraph
 from norvii_agent.providers import (
+    EvaluationChatModel,
     OpenAICompatibleChatModel,
     OpenAICompatibleEmbeddingProvider,
     OpenAICompatibleGraphPlanner,
@@ -57,6 +64,21 @@ def main() -> None:
     server = AgentHTTPServer(
         (configuration.host, configuration.port),
         lambda: GroundedChatGraph(retriever, model),
+        lambda: EvaluationExecutor(
+            retriever,
+            EvaluationChatModel(model),
+            ExecutionIdentity(
+                agent_build=configuration.evaluation_agent_build,
+                chat_model_identity=configuration.chat_model,
+                embedding_model_identity=configuration.embedding_model,
+            ),
+            FrozenRetrievalConfiguration(
+                strategy=cast(
+                    "Literal['vector', 'hybrid']", configuration.evaluation_retrieval_strategy
+                ),
+                fingerprint=configuration.evaluation_retrieval_fingerprint,
+            ),
+        ),
     )
     server.serve_forever()
 

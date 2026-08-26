@@ -1,4 +1,22 @@
 import type { CorpusFixture } from "../models";
+import {
+  createSuggestionPreparedAnswers,
+  findCorpusSuggestionFixture,
+} from "./opening-suggestions";
+
+function getOpeningSuggestionFixture(corpusId: string) {
+  const fixture = findCorpusSuggestionFixture(corpusId);
+  if (!fixture) {
+    throw new Error(`Missing opening-suggestion fixture for ${corpusId}.`);
+  }
+  return fixture;
+}
+
+function getSuggestionPreparedAnswers(corpusId: string) {
+  return createSuggestionPreparedAnswers(
+    getOpeningSuggestionFixture(corpusId).openingSuggestionSet,
+  );
+}
 
 export const corpora: readonly CorpusFixture[] = [
   {
@@ -107,11 +125,85 @@ export const corpora: readonly CorpusFixture[] = [
           },
         ],
       },
+      ...getSuggestionPreparedAnswers("brazil-data-protection"),
     ],
-    suggestedQuestions: [
-      "What rights does a data subject have?",
-      "Who is the controller?",
+    ...getOpeningSuggestionFixture("brazil-data-protection"),
+    failurePrompts: [
+      "Simulate a failed response",
+      "Simule uma resposta com falha",
     ],
+  },
+  {
+    id: "brazil-anti-corruption-white-collar-crime",
+    label: "Brazilian Anti-Corruption",
+    eyebrowKey: "corpora.antiCorruption.eyebrow",
+    descriptionKey: "corpora.antiCorruption.description",
+    language: "pt",
+    jurisdiction: "Brazil",
+    sources: [
+      {
+        id: "anti-corruption-synthetic-act",
+        corpusId: "brazil-anti-corruption-white-collar-crime",
+        kind: "pdf",
+        title: "Synthetic anti-corruption statute excerpt",
+        shortTitle: "Synthetic anti-corruption excerpt",
+        publisher: "Prototype fixture",
+        publishedLabel: "Synthetic legal fixture · 2026",
+        status: "available",
+        sections: [
+          {
+            id: "synthetic-liability",
+            marker: "Synthetic Article 1",
+            heading: "Illustrative corporate-liability scenario",
+            paragraphs: [
+              "This safe synthetic fixture illustrates a corporate-liability scenario for prototype interaction testing. It is not an authoritative legal source.",
+            ],
+          },
+        ],
+      },
+    ],
+    preparedAnswers: getSuggestionPreparedAnswers(
+      "brazil-anti-corruption-white-collar-crime",
+    ),
+    ...getOpeningSuggestionFixture("brazil-anti-corruption-white-collar-crime"),
+    failurePrompts: [
+      "Simulate a failed response",
+      "Simule uma resposta com falha",
+    ],
+  },
+  {
+    id: "us-fair-housing-disability-accommodations",
+    label: "United States Fair Housing",
+    eyebrowKey: "corpora.fairHousing.eyebrow",
+    descriptionKey: "corpora.fairHousing.description",
+    language: "en",
+    jurisdiction: "United States",
+    sources: [
+      {
+        id: "fair-housing-synthetic-guidance",
+        corpusId: "us-fair-housing-disability-accommodations",
+        kind: "pdf",
+        title: "Synthetic fair-housing accommodation guidance",
+        shortTitle: "Synthetic housing guidance",
+        publisher: "Prototype fixture",
+        publishedLabel: "Synthetic legal fixture · 2026",
+        status: "available",
+        sections: [
+          {
+            id: "synthetic-accommodation",
+            marker: "Synthetic Section 1",
+            heading: "Illustrative accommodation scenario",
+            paragraphs: [
+              "This safe synthetic fixture illustrates a housing-accommodation scenario for prototype interaction testing. It is not an authoritative legal source.",
+            ],
+          },
+        ],
+      },
+    ],
+    preparedAnswers: getSuggestionPreparedAnswers(
+      "us-fair-housing-disability-accommodations",
+    ),
+    ...getOpeningSuggestionFixture("us-fair-housing-disability-accommodations"),
     failurePrompts: [
       "Simulate a failed response",
       "Simule uma resposta com falha",
@@ -212,11 +304,9 @@ export const corpora: readonly CorpusFixture[] = [
           },
         ],
       },
+      ...getSuggestionPreparedAnswers("eu-data-protection"),
     ],
-    suggestedQuestions: [
-      "What does the right of access include?",
-      "What is data minimisation?",
-    ],
+    ...getOpeningSuggestionFixture("eu-data-protection"),
     failurePrompts: [
       "Simulate a failed response",
       "Simule uma resposta com falha",

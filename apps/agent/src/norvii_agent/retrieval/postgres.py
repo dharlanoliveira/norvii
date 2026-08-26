@@ -18,6 +18,9 @@ _DISTANCE_INDEX = 8
 _SOURCE_REVISION_INDEX = 9
 _PIPELINE_VERSION_INDEX = 10
 _SOURCE_TITLE_INDEX = 11
+_UNIT_ID_INDEX = 12
+_CANONICAL_LOCATOR_INDEX = 13
+_CONTENT_SHA256_INDEX = 14
 
 
 class PostgresRetriever:
@@ -55,7 +58,8 @@ class PostgresRetriever:
                     SELECT c.id, c.corpus_id, c.source_id, c.document_id,
                            c.context_locator, c.start_offset, c.end_offset, c.content,
                            c.embedding <=> %s::vector AS cosine_distance,
-                           d.source_revision_id, d.pipeline_version, s.title, c.ordinal
+                           d.source_revision_id, d.pipeline_version, s.title, c.unit_id,
+                           unit.canonical_locator, c.content_sha256, c.ordinal
                     FROM corpus_snapshot_documents sd
                     JOIN corpus_snapshots snapshot
                       ON snapshot.id = sd.snapshot_id AND snapshot.corpus_id = sd.corpus_id
@@ -63,6 +67,8 @@ class PostgresRetriever:
                       ON c.corpus_id = sd.corpus_id AND c.source_id = sd.source_id
                      AND c.document_id = sd.document_id
                     JOIN document_versions d ON d.id = c.document_id
+                    JOIN document_units unit
+                      ON unit.document_id = c.document_id AND unit.id = c.unit_id
                     JOIN corpora co ON co.id = c.corpus_id AND co.status = 'enabled'
                     JOIN sources s ON s.corpus_id = c.corpus_id AND s.id = c.source_id
                     WHERE c.corpus_id = %s AND sd.snapshot_id = %s
@@ -72,7 +78,8 @@ class PostgresRetriever:
                 )
                 SELECT id, corpus_id, source_id, document_id,
                        context_locator, start_offset, end_offset, content,
-                       cosine_distance, source_revision_id, pipeline_version, title
+                       cosine_distance, source_revision_id, pipeline_version, title, unit_id,
+                       canonical_locator, content_sha256
                 FROM ranked_chunks
                 ORDER BY cosine_distance, ordinal, id
                 LIMIT 8
@@ -109,6 +116,13 @@ class PostgresRetriever:
                 ),
                 source_title=(row[_SOURCE_TITLE_INDEX] if len(row) > _SOURCE_TITLE_INDEX else None),
                 snapshot_id=snapshot_id,
+                unit_id=(row[_UNIT_ID_INDEX] if len(row) > _UNIT_ID_INDEX else None),
+                canonical_locator=(
+                    row[_CANONICAL_LOCATOR_INDEX] if len(row) > _CANONICAL_LOCATOR_INDEX else None
+                ),
+                content_sha256=(
+                    row[_CONTENT_SHA256_INDEX] if len(row) > _CONTENT_SHA256_INDEX else None
+                ),
             )
             for index, row in enumerate(rows)
         )

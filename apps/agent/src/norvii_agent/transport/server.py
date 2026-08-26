@@ -5,9 +5,18 @@ from __future__ import annotations
 import json
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, cast
 from uuid import UUID, uuid4
 
+from norvii_agent.evaluation import (
+    EvaluationContractError,
+    EvaluationExecutor,
+    EvaluationRequest,
+    EvaluationResult,
+    ExecutionIdentity,
+    FrozenIdentityUnavailableError,
+    FrozenRetrievalConfiguration,
+)
 from norvii_agent.graph import GroundedChatRequest
 
 if TYPE_CHECKING:
@@ -16,8 +25,10 @@ if TYPE_CHECKING:
     from norvii_agent.graph import AnswerInspection, Evidence, GroundedChatGraph
 
 _CORPUS_PATH = re.compile(r"^/v1/corpora/(?P<corpus>[0-9a-f-]+)/chat/stream$")
+_EVALUATION_PATH = "/v1/evaluations/execute"
 _MAX_REQUEST_BODY_BYTES = 64 * 1024
 _MAX_TELEMETRY_EVIDENCE_COUNT = 8
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class InvalidRequestBodyError(ValueError):
@@ -29,12 +40,16 @@ class ClientDisconnectedError(ConnectionError):
 
 
 class AgentHTTPServer(ThreadingHTTPServer):
-    """HTTP server carrying one graph factory."""
+    """HTTP server carrying independent chat and fixed-snapshot evaluation factories."""
 
     def __init__(
-        self, address: tuple[str, int], graph_factory: Callable[[], GroundedChatGraph]
+        self,
+        address: tuple[str, int],
+        graph_factory: Callable[[], GroundedChatGraph],
+        evaluation_executor_factory: Callable[[], EvaluationExecutor] | None = None,
     ) -> None:
         self.graph_factory = graph_factory
+        self.evaluation_executor_factory = evaluation_executor_factory
         super().__init__(address, AgentRequestHandler)
 
 
@@ -54,7 +69,10 @@ class AgentRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(b'{"status":"ok"}')
 
     def do_POST(self) -> None:
-        """Handle one graph stream request."""
+        """Route an internal request to its isolated transport contract."""
+        if self.path == _EVALUATION_PATH:
+            self._execute_evaluation()
+            return
         match = _CORPUS_PATH.fullmatch(self.path)
         if match is None:
             self.send_error(404)
@@ -82,6 +100,46 @@ class AgentRequestHandler(BaseHTTPRequestHandler):
             return
 
         self._stream_graph(corpus_id, snapshot_id, question, interface_language, strategy)
+
+    def _execute_evaluation(self) -> None:
+        """Execute one strict JSON evaluation request without invoking the SSE chat handler."""
+        if self.server.evaluation_executor_factory is None:
+            self._evaluation_error(404, "not_found")
+            return
+        try:
+            request = _evaluation_request(self._read_evaluation_payload())
+            result = self.server.evaluation_executor_factory().execute(request)
+            payload = _evaluation_result_payload(result)
+        except FrozenIdentityUnavailableError:
+            self._evaluation_error(409, "frozen_identity_unavailable")
+            return
+        except (EvaluationContractError, InvalidRequestBodyError, ValueError, TypeError):
+            self._evaluation_error(400, "invalid_request")
+            return
+        except Exception:  # noqa: BLE001 - never expose provider or retrieval diagnostics
+            self._evaluation_error(502, "evaluation_unavailable")
+            return
+        encoded = json.dumps(payload, separators=(",", ":")).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def _read_evaluation_payload(self) -> dict[str, object]:
+        """Read the dedicated JSON media type before strict request validation."""
+        if self.headers.get_content_type() != "application/json":
+            raise InvalidRequestBodyError("evaluation request content type is invalid")
+        return self._read_json_payload()
+
+    def _evaluation_error(self, status: int, code: str) -> None:
+        """Return a bounded content-free JSON error for the private evaluation transport."""
+        encoded = json.dumps({"code": code}, separators=(",", ":")).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
 
     def _stream_graph(
         self,
@@ -212,6 +270,207 @@ def _reference(evidence: Evidence) -> dict[str, object]:
         "cosineDistance": evidence.cosine_distance,
         "contribution": evidence.contribution,
     }
+
+
+def _evaluation_request(payload: dict[str, object]) -> EvaluationRequest:
+    """Decode the versioned fixed-snapshot request without accepting chat fields."""
+    _require_exact_keys(
+        payload,
+        {
+            "corpusId",
+            "snapshotId",
+            "question",
+            "interfaceLanguage",
+            "retrievalConfiguration",
+            "executionIdentity",
+        },
+    )
+    configuration = _required_object(payload, "retrievalConfiguration")
+    _require_exact_keys(configuration, {"strategy", "fingerprint"})
+    execution_identity = _required_object(payload, "executionIdentity")
+    _require_exact_keys(
+        execution_identity,
+        {"agentBuild", "chatModelIdentity", "embeddingModelIdentity"},
+    )
+    corpus_id = UUID(_required_text(payload, "corpusId"))
+    snapshot_id = UUID(_required_text(payload, "snapshotId"))
+    question = _required_text(payload, "question")
+    interface_language = _required_text(payload, "interfaceLanguage")
+    strategy = _required_text(configuration, "strategy")
+    fingerprint = _required_text(configuration, "fingerprint")
+    if interface_language not in {"en", "pt"}:
+        raise EvaluationContractError("evaluation interface language is unsupported")
+    return EvaluationRequest(
+        corpus_id=corpus_id,
+        snapshot_id=snapshot_id,
+        question=question,
+        interface_language=cast("Literal['en', 'pt']", interface_language),
+        retrieval_configuration=FrozenRetrievalConfiguration(
+            strategy=cast("Literal['vector', 'hybrid']", strategy), fingerprint=fingerprint
+        ),
+        execution_identity=ExecutionIdentity(
+            agent_build=_required_text(execution_identity, "agentBuild"),
+            chat_model_identity=_required_text(execution_identity, "chatModelIdentity"),
+            embedding_model_identity=_required_text(execution_identity, "embeddingModelIdentity"),
+        ),
+    )
+
+
+def _evaluation_result_payload(result: EvaluationResult) -> dict[str, object]:
+    """Serialize complete immutable evaluation provenance as terminal JSON only."""
+    answer = result.answer
+    outcome = result.outcome
+    retrieved_evidence = result.retrieved_evidence
+    citation_marker_inputs = result.citation_marker_inputs
+    graph_grounding = result.graph_grounding
+    telemetry = result.telemetry
+    model_identity = result.model_identity
+    agent_build_identity = result.agent_build_identity
+    embedding_model_identity = result.embedding_model_identity
+    if (
+        not isinstance(answer, str)
+        or outcome not in {"completed", "abstained"}
+        or not isinstance(retrieved_evidence, tuple)
+        or not isinstance(citation_marker_inputs, tuple)
+        or not isinstance(model_identity, str)
+        or not model_identity.strip()
+        or not isinstance(agent_build_identity, str)
+        or not agent_build_identity.strip()
+        or not isinstance(embedding_model_identity, str)
+        or not embedding_model_identity.strip()
+    ):
+        raise EvaluationContractError("evaluation result is invalid")
+    graph_status = _required_attribute(graph_grounding, "status")
+    if graph_status not in {"not_requested", "not_used", "grounded"}:
+        raise EvaluationContractError("evaluation graph grounding is invalid")
+    return {
+        "answer": answer,
+        "outcome": outcome,
+        "retrievedEvidence": [
+            _evaluation_evidence_payload(item, index)
+            for index, item in enumerate(retrieved_evidence, start=1)
+        ],
+        "citationMarkerInputs": [
+            _citation_marker_payload(item, index)
+            for index, item in enumerate(citation_marker_inputs, start=1)
+        ],
+        "graphGrounding": {"status": graph_status},
+        "modelIdentity": model_identity,
+        "agentBuildIdentity": agent_build_identity,
+        "embeddingModelIdentity": embedding_model_identity,
+        "telemetry": {
+            "retrievalMilliseconds": _measurement_payload(telemetry, "retrieval_milliseconds"),
+            "generationMilliseconds": _measurement_payload(telemetry, "generation_milliseconds"),
+            "totalMilliseconds": _measurement_payload(telemetry, "total_milliseconds"),
+            "inputTokens": _measurement_payload(telemetry, "input_tokens"),
+            "outputTokens": _measurement_payload(telemetry, "output_tokens"),
+        },
+    }
+
+
+def _evaluation_evidence_payload(evidence: object, expected_rank: int) -> dict[str, object]:
+    """Require the full Go evidence provenance contract before writing a response."""
+    rank = _required_attribute(evidence, "rank")
+    corpus_id = _required_attribute(evidence, "corpus_id")
+    snapshot_id = _required_attribute(evidence, "snapshot_id")
+    source_id = _required_attribute(evidence, "source_id")
+    source_revision_id = _required_attribute(evidence, "source_revision_id")
+    document_id = _required_attribute(evidence, "document_id")
+    unit_id = _required_attribute(evidence, "unit_id")
+    canonical_locator = _required_attribute(evidence, "canonical_locator")
+    start_offset = _required_attribute(evidence, "start_offset")
+    end_offset = _required_attribute(evidence, "end_offset")
+    content_sha256 = _required_attribute(evidence, "content_sha256")
+    if (
+        isinstance(rank, bool)
+        or not isinstance(rank, int)
+        or rank != expected_rank
+        or not all(
+            isinstance(value, UUID)
+            for value in (
+                corpus_id,
+                snapshot_id,
+                source_id,
+                source_revision_id,
+                document_id,
+                unit_id,
+            )
+        )
+        or not isinstance(canonical_locator, str)
+        or not canonical_locator.strip()
+        or not isinstance(start_offset, int)
+        or isinstance(start_offset, bool)
+        or not isinstance(end_offset, int)
+        or isinstance(end_offset, bool)
+        or start_offset < 0
+        or end_offset <= start_offset
+        or not isinstance(content_sha256, str)
+        or _SHA256.fullmatch(content_sha256) is None
+    ):
+        raise EvaluationContractError("evaluation evidence provenance is invalid")
+    return {
+        "rank": rank,
+        "corpusId": str(corpus_id),
+        "snapshotId": str(snapshot_id),
+        "sourceId": str(source_id),
+        "sourceRevisionId": str(source_revision_id),
+        "documentId": str(document_id),
+        "unitId": str(unit_id),
+        "canonicalLocator": canonical_locator,
+        "startOffset": start_offset,
+        "endOffset": end_offset,
+        "contentSha256": content_sha256,
+    }
+
+
+def _citation_marker_payload(marker: object, expected_position: int) -> dict[str, int]:
+    """Serialize the one-based marker/evidence order supplied by the executor."""
+    marker_position = _required_attribute(marker, "marker_position")
+    evidence = _required_attribute(marker, "evidence")
+    evidence_rank = _required_attribute(evidence, "rank")
+    if marker_position != expected_position or evidence_rank != expected_position:
+        raise EvaluationContractError("evaluation citation marker order is invalid")
+    return {"markerPosition": marker_position, "evidenceRank": evidence_rank}
+
+
+def _measurement_payload(telemetry: object, name: str) -> int | None:
+    """Keep nullable telemetry bounded to non-negative integral values."""
+    value = getattr(telemetry, name, None)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise EvaluationContractError("evaluation telemetry is invalid")
+    return value
+
+
+def _require_exact_keys(payload: dict[str, object], expected: set[str]) -> None:
+    """Reject unknown or missing JSON fields at the evaluation boundary."""
+    if set(payload) != expected:
+        raise InvalidRequestBodyError("evaluation request fields are invalid")
+
+
+def _required_object(payload: dict[str, object], key: str) -> dict[str, object]:
+    """Return one required object field without coercing client-controlled values."""
+    value = payload.get(key)
+    if not isinstance(value, dict):
+        raise InvalidRequestBodyError("evaluation request object is invalid")
+    return cast("dict[str, object]", value)
+
+
+def _required_text(payload: dict[str, object], key: str) -> str:
+    """Return a non-blank string without accepting coercible request values."""
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise InvalidRequestBodyError("evaluation request text is invalid")
+    return value.strip()
+
+
+def _required_attribute(value: object, name: str) -> object:
+    """Read required immutable result attributes without silently substituting values."""
+    result = getattr(value, name, None)
+    if result is None:
+        raise EvaluationContractError("evaluation result is incomplete")
+    return result
 
 
 def _inspection(inspection: AnswerInspection | None) -> dict[str, object]:

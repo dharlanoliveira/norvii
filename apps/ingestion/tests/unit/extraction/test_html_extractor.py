@@ -132,6 +132,29 @@ def test_extractor_preserves_brazilian_article_hierarchy() -> None:
     assert items[3].parent_id == items[2].id
 
 
+def test_extractor_derives_auditable_hierarchical_canonical_legal_locators() -> None:
+    artifact = HtmlExtractor().extract(
+        (
+            "<main><p>Art. 3\u00ba This Law applies to processing operations.</p>"
+            "<p>\u00a7 1\u00ba A supplementary condition applies.</p>"
+            "<p>I - the data subject is in the national territory.</p>"
+            "<p>a) at the time the personal data was collected.</p></main>"
+        ).encode()
+    )
+
+    assert {
+        unit.canonical_locator for unit in artifact.units if unit.canonical_locator is not None
+    } == {
+        "article:3",
+        "article:3/paragraph:1",
+        "article:3/paragraph:1/item:i",
+        "article:3/paragraph:1/item:i/item:a",
+    }
+    assert artifact.resolve_canonical_legal_locator(" ARTICLE:3/PARAGRAPH:1 ").kind is (
+        UnitKind.PARAGRAPH
+    )
+
+
 def test_extractor_rejects_empty_and_invalid_unicode_content() -> None:
     extractor = HtmlExtractor()
 

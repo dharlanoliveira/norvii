@@ -1,0 +1,14 @@
+{
+  "error": {
+    "code": "invalid_configuration",
+    "message": "The retrieval configuration cannot run on the selected snapshot.",
+    "requestId": "50000000-0000-4000-8000-000000000015",
+    "missingRequirements": [
+      {
+        "sourceAlias": "retrieval-configuration",
+        "locator": "configuration",
+        "reason": "The configured strategy is unavailable for this snapshot."
+      }
+    ]
+  }
+}

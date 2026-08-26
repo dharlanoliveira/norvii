@@ -36,6 +36,16 @@ export const portugueseTranslation: TranslationResource = {
       description:
         "Uma coleção focada na comparação de princípios de tratamento, direitos individuais e obrigações do controlador na União Europeia.",
     },
+    antiCorruption: {
+      eyebrow: "Coleção de pesquisa anticorrupção",
+      description:
+        "Uma coleção sintética segura para explorar cenários de responsabilidade empresarial e contratação pública no protótipo.",
+    },
+    fairHousing: {
+      eyebrow: "Coleção de pesquisa de moradia justa",
+      description:
+        "Uma coleção sintética segura para explorar cenários de adaptações por deficiência no protótipo.",
+    },
   },
   workspace: {
     corpusLabel: "Corpus ativo",
@@ -106,7 +116,7 @@ export const portugueseTranslation: TranslationResource = {
     unknownCorpusKicker: "Corpus não encontrado",
     unknownCorpusTitle: "Esta coleção de pesquisa não está disponível.",
     unknownCorpusBody:
-      "Volte ao catálogo e escolha um dos dois corpora jurídicos preparados.",
+      "Volte ao catálogo e escolha um dos corpora jurídicos preparados.",
     returnToCatalog: "Voltar ao catálogo de corpora",
   },
 };

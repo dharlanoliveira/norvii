@@ -497,8 +497,9 @@ class PostgresWorkRepository:
             """
             INSERT INTO document_units (
                 id, document_id, parent_id, kind, ordinal, marker, label,
-                start_offset, end_offset, start_page, end_page, locator, content_sha256
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                start_offset, end_offset, start_page, end_page, locator, canonical_locator,
+                content_sha256
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             [
                 (
@@ -514,6 +515,7 @@ class PostgresWorkRepository:
                     unit.start_page,
                     unit.end_page,
                     unit.locator,
+                    unit.canonical_locator,
                     str(unit.content_sha256),
                 )
                 for unit in command.artifact.units

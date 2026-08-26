@@ -21,7 +21,7 @@ describe("App", () => {
 
     expect(
       await screen.findAllByRole("link", { name: "Abrir corpus" }),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
     expect(i18n.resolvedLanguage).toBe("pt");
   });
 

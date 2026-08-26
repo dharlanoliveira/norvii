@@ -53,11 +53,24 @@ func TestCorpusIngestionSchemaIsCanonicalSeededAndRepeatable(t *testing.T) {
 	connection := openCatalogTestConnection(t, ctx, config.Postgres)
 	expectedTables := []string{
 		"corpora",
+		"corpus_opening_suggestion_item",
+		"corpus_opening_suggestion_set",
 		"corpus_snapshot_documents",
 		"corpus_snapshot_releases",
 		"corpus_snapshots",
 		"document_units",
 		"document_versions",
+		"evaluation_case_expected_evidence",
+		"evaluation_dataset_case",
+		"evaluation_dataset_publication",
+		"evaluation_dataset_revision",
+		"evaluation_dataset_source",
+		"evaluation_dataset_starter_case",
+		"evaluation_run",
+		"evaluation_run_actual_evidence",
+		"evaluation_run_case",
+		"evaluation_run_expected_evidence",
+		"evaluation_run_metric",
 		"graph_release_assertions",
 		"graph_release_entities",
 		"graph_release_legal_units",
@@ -90,10 +103,20 @@ func TestCorpusIngestionSchemaIsCanonicalSeededAndRepeatable(t *testing.T) {
 
 	expectedIndexes := []string{
 		"corpora_enabled_order_idx",
+		"corpus_opening_suggestion_item_rank_idx",
+		"corpus_opening_suggestion_set_snapshot_idx",
 		"corpus_snapshot_documents_document_idx",
+		"document_units_canonical_locator_uidx",
 		"document_units_locator_uidx",
 		"document_units_parent_order_idx",
 		"document_versions_revision_pipeline_unique",
+		"evaluation_case_expected_evidence_case_idx",
+		"evaluation_dataset_case_revision_position_idx",
+		"evaluation_dataset_publication_revision_latest_idx",
+		"evaluation_dataset_revision_corpus_imported_idx",
+		"evaluation_dataset_source_binding_idx",
+		"evaluation_run_case_claim_idx",
+		"evaluation_run_case_run_state_idx",
 		"graph_releases_snapshot_status_idx",
 		"ingestion_work_active_source_uidx",
 		"ingestion_work_pending_order_idx",
@@ -158,13 +181,38 @@ func TestCorpusIngestionSchemaIsCanonicalSeededAndRepeatable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed count query error = %v", err)
 	}
-	if corpusCount != 2 || sourceCount != 2 || originCount != 2 || workCount != 2 {
+	if corpusCount != 4 || sourceCount != 12 || originCount != 12 || workCount != 2 {
 		t.Fatalf(
-			"seed counts = corpora:%d sources:%d origins:%d work:%d, want all 2",
+			"seed counts = corpora:%d sources:%d origins:%d work:%d, want 4/12/12/2",
 			corpusCount,
 			sourceCount,
 			originCount,
 			workCount,
+		)
+	}
+
+	expectedEvaluationCorpusSeedKeys := []string{
+		"brazil-anti-corruption-white-collar-crime",
+		"brazil-personal-data-protection",
+		"us-fair-housing-disability-accommodations",
+	}
+	rows, err = connection.Query(ctx, `
+		SELECT seed_key
+		FROM corpora
+		WHERE seed_key = ANY($1)
+		ORDER BY seed_key`, expectedEvaluationCorpusSeedKeys)
+	if err != nil {
+		t.Fatalf("evaluation corpus seed query error = %v", err)
+	}
+	actualEvaluationCorpusSeedKeys, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatalf("collect evaluation corpus seeds error = %v", err)
+	}
+	if !slices.Equal(actualEvaluationCorpusSeedKeys, expectedEvaluationCorpusSeedKeys) {
+		t.Fatalf(
+			"evaluation corpus seed keys = %v, want %v",
+			actualEvaluationCorpusSeedKeys,
+			expectedEvaluationCorpusSeedKeys,
 		)
 	}
 

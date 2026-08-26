@@ -34,6 +34,9 @@ class Evidence:
     cosine_distance: float | None = None
     snapshot_id: UUID | None = None
     contribution: str = "vector"
+    unit_id: UUID | None = None
+    canonical_locator: str | None = None
+    content_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

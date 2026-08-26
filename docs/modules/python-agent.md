@@ -17,6 +17,8 @@ SSE events.
 - snapshot-scoped Vector and planned Hybrid retrieval composition.
 - MCP research tools and reusable prompts through a separate local or containerized
   transport entry point.
+- fixed-snapshot, non-streaming execution of one evaluation case for the managed API
+  worker.
 
 ## Does not own
 
@@ -25,6 +27,8 @@ SSE events.
 - PDF or HTML acquisition and normalization;
 - direct React dependencies or Go package imports;
 - Neo4j projection writes and graph-release lifecycle management.
+- evaluation dataset import, review, publication, preflight, scoring, run persistence,
+  or maintainer authorization.
 
 ## Boundary model
 
@@ -69,6 +73,26 @@ Vector evidence remains the answer baseline. A graph miss, planner failure, unav
 release, or unavailable Neo4j connection is recorded as a safe stage result and does not discard
 valid vector evidence. Hybrid inspection data therefore identifies the Vector, planning, and
 graph stages separately, including their content-free measurements and evidence contributions.
+
+## Fixed-snapshot evaluation transport
+
+`POST /v1/evaluations/execute` is a private JSON transport used only by the managed
+Go evaluation worker. It accepts one explicit corpus and snapshot, question,
+interface language, frozen retrieval strategy/fingerprint, and execution identity.
+The agent executes only when `NORVII_EVALUATION_AGENT_BUILD`,
+`NORVII_CHAT_MODEL`, `NORVII_EMBEDDING_MODEL`,
+`NORVII_EVALUATION_RETRIEVAL_STRATEGY`, and
+`NORVII_EVALUATION_RETRIEVAL_FINGERPRINT` match that frozen request.
+
+This path does not resolve an active release, emit public SSE events, create a run,
+or score output. Its terminal response carries bounded answer/evidence provenance,
+outcome, and nullable telemetry for API persistence. Malformed or incomplete request
+data produces `invalid_request`; a well-formed request whose supplied execution or
+retrieval identity does not match the frozen runtime configuration, or whose generated
+model identity no longer matches it, produces `frozen_identity_unavailable`. Other
+execution failures produce
+`evaluation_unavailable`. All three errors are content-free and never return provider
+payloads, prompts, credentials, or source text.
 
 ## Verification
 

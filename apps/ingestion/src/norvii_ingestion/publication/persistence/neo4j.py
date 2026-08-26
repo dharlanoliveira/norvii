@@ -57,12 +57,13 @@ class Neo4jStore:
             )
 
     def replace_release(self, release: GraphReleaseProjection) -> None:
-        """Replace one derived graph projection without touching other releases."""
+        """Atomically replace derived projections for one corpus snapshot only."""
         parameters = {
             "release_id": str(release.release_id),
             "corpus_id": str(release.corpus_id),
             "snapshot_id": str(release.snapshot_id),
             "manifest_sha256": release.manifest_sha256,
+            "build_version": release.build_version,
             "legal_units": release.legal_units,
             "entities": release.entities,
             "assertions": release.assertions,
@@ -90,34 +91,47 @@ class GraphReleaseProjection:
     corpus_id: UUID
     snapshot_id: UUID
     manifest_sha256: str
+    build_version: str
     legal_units: tuple[dict[str, object], ...]
     entities: tuple[dict[str, object], ...]
     assertions: tuple[dict[str, object], ...]
 
 
 _REPLACE_RELEASE = """
-OPTIONAL MATCH (old:NorviiGraphRelease {id: $release_id})
-WITH collect(old) AS old_releases, $release_id AS release_id, $corpus_id AS corpus_id,
+OPTIONAL MATCH (superseded:NorviiGraphRelease {
+  corpus_id: $corpus_id, snapshot_id: $snapshot_id
+})
+WITH [release IN collect(superseded) | release.id] AS superseded_release_ids,
+     collect(superseded) AS superseded_releases,
+     $release_id AS release_id, $corpus_id AS corpus_id,
      $snapshot_id AS snapshot_id, $manifest_sha256 AS manifest_sha256,
+     $build_version AS build_version,
      $legal_units AS legal_units, $entities AS entities, $assertions AS assertions
-FOREACH (old_release IN old_releases | DETACH DELETE old_release)
-WITH release_id, corpus_id, snapshot_id, manifest_sha256, legal_units, entities, assertions
-OPTIONAL MATCH (old_node {release_id: release_id})
-WHERE old_node:NorviiGraphLegalUnit
-   OR old_node:NorviiGraphLegalEntity
-   OR old_node:NorviiGraphNormativeAssertion
-WITH collect(old_node) AS old_nodes, release_id, corpus_id, snapshot_id, manifest_sha256,
+FOREACH (release IN superseded_releases | DETACH DELETE release)
+WITH superseded_release_ids, release_id, corpus_id, snapshot_id, manifest_sha256, build_version,
      legal_units, entities, assertions
-FOREACH (old_node IN old_nodes | DETACH DELETE old_node)
-WITH release_id, corpus_id, snapshot_id, manifest_sha256, legal_units, entities, assertions
+OPTIONAL MATCH (superseded_node)
+WHERE superseded_node.release_id IN superseded_release_ids
+  AND (
+    superseded_node:NorviiGraphLegalUnit
+    OR superseded_node:NorviiGraphLegalEntity
+    OR superseded_node:NorviiGraphNormativeAssertion
+  )
+WITH collect(superseded_node) AS superseded_nodes, release_id, corpus_id, snapshot_id,
+     manifest_sha256, build_version, legal_units, entities, assertions
+FOREACH (node IN superseded_nodes | DETACH DELETE node)
+WITH release_id, corpus_id, snapshot_id, manifest_sha256, build_version, legal_units, entities,
+     assertions
 MERGE (release:NorviiGraphRelease {id: release_id})
 SET release.corpus_id = corpus_id, release.snapshot_id = snapshot_id,
-    release.manifest_sha256 = manifest_sha256, release.status = 'ready'
+    release.manifest_sha256 = manifest_sha256, release.build_version = build_version,
+    release.status = 'ready'
 WITH release, legal_units, entities, assertions
 UNWIND legal_units AS legal_unit
 MERGE (unit:NorviiGraphLegalUnit {release_id: release.id, legal_unit_id: legal_unit.id})
 SET unit.document_id = legal_unit.document_id, unit.locator = legal_unit.locator,
-    unit.kind = legal_unit.kind
+    unit.canonical_locator = legal_unit.canonical_locator,
+    unit.content_sha256 = legal_unit.content_sha256, unit.kind = legal_unit.kind
 MERGE (unit)-[:IN_GRAPH_RELEASE]->(release)
 WITH release, legal_units, entities, assertions
 UNWIND legal_units AS child_unit
@@ -160,6 +174,9 @@ SET assertion_node.predicate = assertion.predicate,
     assertion_node.source_title = assertion.source_title,
     assertion_node.establishing_locator = assertion.establishing_locator,
     assertion_node.evidence_locator = assertion.evidence_locator,
+    assertion_node.evidence_canonical_locator = assertion.evidence_canonical_locator,
+    assertion_node.evidence_content_sha256 = assertion.evidence_content_sha256,
+    assertion_node.evidence_unit_id = assertion.evidence_unit_id,
     assertion_node.start_offset = assertion.start_offset,
     assertion_node.end_offset = assertion.end_offset,
     assertion_node.excerpt = assertion.excerpt

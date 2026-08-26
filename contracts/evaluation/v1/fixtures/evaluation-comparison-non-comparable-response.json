@@ -1,0 +1,25 @@
+{
+  "comparisonState": "non_comparable",
+  "leftRunId": "40000000-0000-4000-8000-000000000031",
+  "rightRunId": "40000000-0000-4000-8000-000000000033",
+  "left": {
+    "retrievalStrategy": "vector",
+    "retrievalConfigurationFingerprint": "4444444444444444444444444444444444444444444444444444444444444444",
+    "agentBuild": "synthetic-agent-build-left",
+    "chatModelIdentity": "synthetic-chat-model-left",
+    "embeddingModelIdentity": "synthetic-embedding-model-left"
+  },
+  "right": {
+    "retrievalStrategy": "vector",
+    "retrievalConfigurationFingerprint": "7777777777777777777777777777777777777777777777777777777777777777",
+    "agentBuild": "synthetic-agent-build-right",
+    "chatModelIdentity": "synthetic-chat-model-right",
+    "embeddingModelIdentity": "synthetic-embedding-model-right"
+  },
+  "differences": [
+    {
+      "field": "snapshot_manifest_sha256"
+    }
+  ],
+  "metrics": []
+}

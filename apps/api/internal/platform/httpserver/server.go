@@ -26,6 +26,7 @@ type Problem struct {
 	Code    string
 	Message string
 	Fields  map[string]string
+	Details map[string]any
 	Cause   error
 }
 
@@ -123,6 +124,9 @@ func WriteError(writer http.ResponseWriter, request *http.Request, problem Probl
 	}}
 	if len(problem.Fields) > 0 {
 		payload["error"].(map[string]any)["fields"] = problem.Fields
+	}
+	for key, value := range problem.Details {
+		payload["error"].(map[string]any)[key] = value
 	}
 	WriteJSON(writer, problem.Status, payload)
 }

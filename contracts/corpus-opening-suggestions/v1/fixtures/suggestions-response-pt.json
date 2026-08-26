@@ -1,0 +1,33 @@
+{
+  "corpusId": "10000000-0000-4000-8000-000000000011",
+  "activeSnapshotId": "20000000-0000-4000-8000-000000000011",
+  "activeSnapshotManifestSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "interfaceLanguage": "pt",
+  "suggestions": [
+    {
+      "caseId": "brazil-data-protection-001-pt",
+      "rank": 1,
+      "question": "Qual obrigacao sintetica se aplica ao controlador?"
+    },
+    {
+      "caseId": "brazil-data-protection-002-pt",
+      "rank": 2,
+      "question": "Quando um aviso sintetico deve ser fornecido?"
+    },
+    {
+      "caseId": "brazil-data-protection-003-pt",
+      "rank": 3,
+      "question": "Qual agente sintetico recebe a solicitacao?"
+    },
+    {
+      "caseId": "brazil-data-protection-004-pt",
+      "rank": 4,
+      "question": "Qual condicao sintetica limita a atividade de tratamento?"
+    },
+    {
+      "caseId": "brazil-data-protection-005-pt",
+      "rank": 5,
+      "question": "Qual salvaguarda sintetica deve ser observada?"
+    }
+  ]
+}

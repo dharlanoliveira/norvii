@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from itertools import pairwise
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from norvii_ingestion.semantic import SemanticExtraction
 
 _EMBEDDING_DIMENSIONS = 1536
+_CANONICAL_LEGAL_LOCATOR = re.compile(r"^[a-z][a-z-]*:[a-z0-9.-]+(?:/[a-z][a-z-]*:[a-z0-9.-]+)*$")
 
 
 class UnitKind(StrEnum):
@@ -32,6 +34,9 @@ class UnitKind(StrEnum):
     RECITAL = "recital"
     PAGE = "page"
     BLOCK = "block"
+
+
+_STRUCTURAL_UNIT_KINDS = frozenset({UnitKind.DOCUMENT, UnitKind.PAGE, UnitKind.BLOCK})
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +55,7 @@ class DocumentUnit:
     end_page: int | None
     locator: str
     content_sha256: Sha256
+    canonical_locator: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +82,16 @@ class DocumentArtifact:
         self._validate_sibling_order(children_by_parent)
         self._reject_cycles(units_by_id)
 
+    def resolve_canonical_legal_locator(self, locator: str) -> DocumentUnit:
+        """Resolve one normalized atomic alias within this immutable document only."""
+        normalized = _normalize_canonical_legal_locator(locator)
+        matches = [unit for unit in self.units if unit.canonical_locator == normalized]
+        if not matches:
+            raise ValueError("canonical legal locator does not exist in this document")
+        if len(matches) != 1:
+            raise ValueError("canonical legal locator is ambiguous in this document")
+        return matches[0]
+
     def _validate_document_identity(self) -> None:
         if not self.text:
             raise ValueError("document text must not be empty")
@@ -91,6 +107,11 @@ class DocumentArtifact:
         locators = {unit.locator for unit in self.units}
         if len(locators) != len(self.units) or "" in locators:
             raise ValueError("document unit locators must be non-empty and unique")
+        canonical_locators = [
+            unit.canonical_locator for unit in self.units if unit.canonical_locator is not None
+        ]
+        if len(canonical_locators) != len(set(canonical_locators)):
+            raise ValueError("document canonical legal locators must be unique")
         return units_by_id
 
     def _validate_root(self) -> None:
@@ -131,6 +152,7 @@ class DocumentArtifact:
             raise ValueError("document unit offsets are outside document bounds")
         if unit.content_sha256 != _hash_text(self.text[unit.start_offset : unit.end_offset]):
             raise ValueError("document unit content hash does not match its text span")
+        self._validate_canonical_legal_locator(unit)
         if unit.parent_id is not None:
             parent = units_by_id.get(unit.parent_id)
             if parent is None:
@@ -145,6 +167,15 @@ class DocumentArtifact:
             and (unit.start_page <= 0 or unit.end_page < unit.start_page)
         ):
             raise ValueError("document unit page range is invalid")
+
+    @staticmethod
+    def _validate_canonical_legal_locator(unit: DocumentUnit) -> None:
+        if unit.canonical_locator is None:
+            return
+        if unit.kind in _STRUCTURAL_UNIT_KINDS:
+            raise ValueError("structural document units must not have canonical legal locators")
+        if not _CANONICAL_LEGAL_LOCATOR.fullmatch(unit.canonical_locator):
+            raise ValueError("document canonical legal locator format is invalid")
 
     @staticmethod
     def _reject_cycles(units_by_id: dict[UUID, DocumentUnit]) -> None:
@@ -219,3 +250,10 @@ class PublicationCommand:
 
 def _hash_text(text: str) -> Sha256:
     return Sha256(hashlib.sha256(text.encode("utf-8")).hexdigest())
+
+
+def _normalize_canonical_legal_locator(locator: str) -> str:
+    normalized = "".join(locator.split()).casefold()
+    if not _CANONICAL_LEGAL_LOCATOR.fullmatch(normalized):
+        raise ValueError("canonical legal locator must be one atomic normalized alias")
+    return normalized

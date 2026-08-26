@@ -13,12 +13,18 @@ from pypdf.errors import PdfReadError
 
 from norvii_ingestion.domain.artifacts import DocumentArtifact, DocumentUnit, UnitKind
 from norvii_ingestion.domain.models import Sha256
+from norvii_ingestion.extraction.legal_locator import canonical_legal_locator
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 _LEGAL_MARKER = re.compile(
-    r"^(?P<marker>(?:Article|Artigo|Art\.)\s+[^\n]+|(?:Section|Se\u00e7\u00e3o)\s+[^\n]+)",
+    r"^(?P<marker>"
+    r"(?:\d+\s+U\.S\.C\.\s+\u00a7\s*\d+(?:\.\d+)*(?:\([A-Za-z0-9]+\))*"
+    r"|\d+\s+CFR\s+\u00a7\s*\d+(?:\.\d+)*(?:\([A-Za-z0-9]+\))*)"
+    r"|(?:Article|Artigo|Art\.)\s+[^\n]+"
+    r"|(?:Section|Se\u00e7\u00e3o)\s+[^\n]+"
+    r")",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -78,6 +84,7 @@ class _UnitSpec:
     marker: str | None = None
     start_page: int | None = None
     end_page: int | None = None
+    canonical_locator: str | None = None
 
 
 class PdfExtractor:
@@ -169,6 +176,8 @@ class PdfExtractor:
             kind = (
                 UnitKind.SECTION
                 if marker.casefold().startswith(("section ", "se\u00e7\u00e3o "))
+                or "u.s.c." in marker.casefold()
+                or "cfr" in marker.casefold()
                 else UnitKind.ARTICLE
             )
             locator = f"page-{page.number}-{kind.value}-{ordinal + 1}"
@@ -186,6 +195,7 @@ class PdfExtractor:
                         marker=marker,
                         start_page=page.number,
                         end_page=page.number,
+                        canonical_locator=canonical_legal_locator(kind.value, marker, None),
                     ),
                 )
             )
@@ -206,6 +216,7 @@ class PdfExtractor:
             end_page=spec.end_page,
             locator=spec.locator,
             content_sha256=Sha256.from_bytes(text[spec.start : spec.end].encode()),
+            canonical_locator=spec.canonical_locator,
         )
 
     @staticmethod

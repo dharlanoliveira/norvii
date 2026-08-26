@@ -19,6 +19,7 @@ import {
   type ChatReference,
   type RetrievalStrategy,
 } from "../../api/chat";
+import type { CorpusOpeningSuggestion } from "../../api/contract";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import { StrategyComparison } from "./StrategyComparison";
 import {
@@ -30,12 +31,14 @@ const defaultChatProvider = createHttpChatProvider();
 
 interface ResearchChatProps {
   readonly corpusId: string;
+  readonly openingSuggestions?: readonly CorpusOpeningSuggestion[] | undefined;
   readonly provider?: ChatProvider | undefined;
   readonly onReferenceSelect?: ((reference: ChatReference) => void) | undefined;
 }
 
 export function ResearchChat({
   corpusId,
+  openingSuggestions = [],
   provider = defaultChatProvider,
   onReferenceSelect,
 }: ResearchChatProps) {
@@ -96,7 +99,10 @@ export function ResearchChat({
               onReferenceSelect={onReferenceSelect}
               provider={provider}
             />
-            <ChatViewportFooter interfaceLanguage={interfaceLanguage} />
+            <ChatViewportFooter
+              interfaceLanguage={interfaceLanguage}
+              openingSuggestions={openingSuggestions}
+            />
           </ThreadPrimitive.Viewport>
         </ThreadPrimitive.Root>
       </section>
@@ -194,8 +200,10 @@ function ChatStrategyComparison({
 
 function ChatViewportFooter({
   interfaceLanguage,
+  openingSuggestions,
 }: {
   readonly interfaceLanguage: "en" | "pt";
+  readonly openingSuggestions: readonly CorpusOpeningSuggestion[];
 }) {
   const isEmpty = useAuiState((state) => state.thread.isEmpty);
 
@@ -204,42 +212,45 @@ function ChatViewportFooter({
       className={`chat-viewport__footer${isEmpty ? " chat-viewport__footer--empty" : ""}`}
     >
       <ChatComposer interfaceLanguage={interfaceLanguage} />
-      {isEmpty ? <ChatStarterQuestions /> : null}
+      {isEmpty ? (
+        <ChatStarterQuestions openingSuggestions={openingSuggestions} />
+      ) : null}
     </ThreadPrimitive.ViewportFooter>
   );
 }
 
-function ChatStarterQuestions() {
+function ChatStarterQuestions({
+  openingSuggestions,
+}: {
+  readonly openingSuggestions: readonly CorpusOpeningSuggestion[];
+}) {
   const { t } = useTranslation();
   const aui = useAui();
   const isRunning = useAuiState((state) => state.thread.isRunning);
-  const questions = [
-    t("chat.starterQuestions.processingAgents"),
-    t("chat.starterQuestions.processingScope"),
-    t("chat.starterQuestions.fundamentalRights"),
-    t("chat.starterQuestions.chapterContents"),
-    t("chat.starterQuestions.publicBodies"),
-  ];
+
+  if (openingSuggestions.length === 0) {
+    return null;
+  }
 
   return (
     <div
       aria-label={t("chat.starterQuestionsLabel")}
       className="chat-starter-questions"
     >
-      {questions.map((question) => (
+      {openingSuggestions.map((suggestion) => (
         <button
           className="chat-starter-question"
           disabled={isRunning}
-          key={question}
+          key={suggestion.rank}
           type="button"
           onClick={() => {
             aui.thread.append({
-              content: [{ type: "text", text: question }],
+              content: [{ type: "text", text: suggestion.question }],
               role: "user",
             });
           }}
         >
-          {question}
+          {suggestion.question}
         </button>
       ))}
     </div>

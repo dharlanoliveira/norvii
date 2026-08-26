@@ -1,0 +1,79 @@
+{
+  "id": "50000000-0000-4000-8000-000000000031",
+  "datasetCaseId": "60000000-0000-4000-8000-000000000031",
+  "position": 1,
+  "state": "completed",
+  "attemptCount": 1,
+  "finishedAt": "2026-08-26T19:00:30Z",
+  "runId": "40000000-0000-4000-8000-000000000031",
+  "corpusId": "10000000-0000-4000-8000-000000000031",
+  "snapshotId": "20000000-0000-4000-8000-000000000031",
+  "datasetRevisionId": "30000000-0000-4000-8000-000000000031",
+  "question": "What is the synthetic requirement?",
+  "referenceAnswer": "The synthetic reference answer identifies the required record.",
+  "expectedOutcome": "answer",
+  "expectedEvidence": [
+    {
+      "kind": "expected",
+      "position": 1,
+      "corpusId": "10000000-0000-4000-8000-000000000031",
+      "snapshotId": "20000000-0000-4000-8000-000000000031",
+      "sourceId": "70000000-0000-4000-8000-000000000031",
+      "sourceRevisionId": "71000000-0000-4000-8000-000000000031",
+      "documentId": "72000000-0000-4000-8000-000000000031",
+      "legalUnitId": "73000000-0000-4000-8000-000000000031",
+      "canonicalLocator": "synthetic:section-1",
+      "displayLocator": "Synthetic section 1",
+      "contentSha256": "5555555555555555555555555555555555555555555555555555555555555555"
+    }
+  ],
+  "actualEvidence": [
+    {
+      "kind": "retrieved",
+      "position": 1,
+      "corpusId": "10000000-0000-4000-8000-000000000031",
+      "snapshotId": "20000000-0000-4000-8000-000000000031",
+      "sourceId": "70000000-0000-4000-8000-000000000031",
+      "sourceRevisionId": "71000000-0000-4000-8000-000000000031",
+      "documentId": "72000000-0000-4000-8000-000000000031",
+      "legalUnitId": "73000000-0000-4000-8000-000000000031",
+      "canonicalLocator": "synthetic:section-1",
+      "displayLocator": "Synthetic section 1",
+      "startOffset": 0,
+      "endOffset": 42,
+      "contentSha256": "5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    {
+      "kind": "cited",
+      "position": 2,
+      "markerPosition": 1,
+      "corpusId": "10000000-0000-4000-8000-000000000031",
+      "snapshotId": "20000000-0000-4000-8000-000000000031",
+      "sourceId": "70000000-0000-4000-8000-000000000031",
+      "sourceRevisionId": "71000000-0000-4000-8000-000000000031",
+      "documentId": "72000000-0000-4000-8000-000000000031",
+      "legalUnitId": "73000000-0000-4000-8000-000000000031",
+      "canonicalLocator": "synthetic:section-1",
+      "displayLocator": "Synthetic section 1",
+      "startOffset": 0,
+      "endOffset": 42,
+      "contentSha256": "5555555555555555555555555555555555555555555555555555555555555555"
+    }
+  ],
+  "answer": "The synthetic answer cites the required record.",
+  "graphGroundingState": "not_requested",
+  "latencyMilliseconds": 42,
+  "inputTokens": 7,
+  "outputTokens": 11,
+  "metrics": [
+    {
+      "name": "citation_validity",
+      "state": "scored",
+      "value": 1,
+      "numerator": 1,
+      "denominator": 1,
+      "rationale": "The cited marker resolved to evidence in the selected snapshot.",
+      "scorerVersion": "v1"
+    }
+  ]
+}
