@@ -23,7 +23,9 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
             try:
                 self.assertEqual(0, start_result.returncode, start_result.stderr)
                 self.assertIn("Norvii is ready", start_result.stdout)
-                self.assertIn("Initial sources: en=ready, pt=ready", start_result.stdout)
+                self.assertIn(
+                    "Initial sources: en=ready, pt=ready", start_result.stdout
+                )
                 first_process_identities = {
                     path.name: path.read_text(encoding="utf-8")
                     for path in sorted((root / ".log").glob("*.pid"))
@@ -46,7 +48,9 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
                 self.assertIn("API is running", status_result.stdout)
                 self.assertIn("Agent is running", status_result.stdout)
                 self.assertIn("Ingestion is running", status_result.stdout)
+                self.assertIn("Evaluation worker is running", status_result.stdout)
                 self.assertIn("MCP is running", status_result.stdout)
+                self.assertTrue((root / ".log" / "evaluation-worker.ready").is_file())
 
                 pid_files = sorted((root / ".log").glob("*.pid"))
                 initial_identities = [path.read_text() for path in pid_files]
@@ -81,8 +85,10 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
                 )
                 self.assertIn("neo4j container log", (logs / "neo4j.log").read_text())
                 self.assertIn("mcp container log", (logs / "mcp.log").read_text())
+                self.assertIn("persistence-mcp-up", (logs / "mcp.log").read_text())
                 self.assertIn(
-                    "persistence-mcp-up", (logs / "mcp.log").read_text()
+                    "evaluation worker ready",
+                    (logs / "evaluation-worker.log").read_text(),
                 )
                 self.assertEqual(
                     1,
@@ -96,6 +102,7 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
             self.assertEqual(0, stop_result.returncode, stop_result.stderr)
             self.assertIn("Norvii is stopped", stop_result.stdout)
             self.assertFalse(list((root / ".log").glob("*.pid")))
+            self.assertFalse((root / ".log" / "evaluation-worker.ready").exists())
             self.assertIn("persistence-stop", (root / "command-trace.log").read_text())
 
     def test_start_failure_names_the_component_log(self) -> None:
@@ -210,6 +217,22 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
         self.write_executable(
             binary_directory / "go",
             """
+            if [[ "$*" == *"./cmd/evaluation-worker"* ]]; then
+              ready_file=""
+              while [[ "$#" -gt 0 ]]; do
+                if [[ "$1" == "--ready-file" ]]; then
+                  ready_file="$2"
+                  shift 2
+                  continue
+                fi
+                shift
+              done
+              mkdir -p "$(dirname "$ready_file")"
+              printf '%s\\n' 'evaluation worker ready' > "$ready_file"
+              printf '%s\\n' 'evaluation worker ready'
+              trap 'rm -f "$ready_file"; exit 0' TERM INT
+              while true; do sleep 1; done
+            fi
             exec python3 -c 'from http.server import BaseHTTPRequestHandler, HTTPServer
             class Handler(BaseHTTPRequestHandler):
                 def do_GET(self):
