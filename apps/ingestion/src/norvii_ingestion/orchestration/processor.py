@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from time import monotonic
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING, Protocol
 
 from norvii_ingestion.acquisition.https import (
     AcquisitionError,
@@ -40,8 +40,6 @@ if TYPE_CHECKING:
     from norvii_ingestion.release.coordinator import GraphReleaseCoordinator
     from norvii_ingestion.semantic.extraction import SemanticExtraction, SemanticExtractor
 
-
-_StageResult = TypeVar("_StageResult")
 
 _FAILURE_MAPPINGS: tuple[tuple[type[Exception], FailureCategory], ...] = (
     (UnsafeUrlError, FailureCategory.UNSAFE_URL),
@@ -305,12 +303,12 @@ class IngestionProcessor:
         )
         return extraction
 
-    def _run_stage(
+    def _run_stage[StageResult](
         self,
         work: IngestionWork,
         stage: str,
-        operation: Callable[[], _StageResult],
-    ) -> _StageResult:
+        operation: Callable[[], StageResult],
+    ) -> StageResult:
         self._logger.info("ingestion_stage_started", **self._work_fields(work), stage=stage)
         started = monotonic()
         result = operation()

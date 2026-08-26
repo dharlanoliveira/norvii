@@ -568,7 +568,7 @@ def _atomic_labels(value: object) -> tuple[str, ...]:
     label = _label(value)
     parts = tuple(
         part.strip()
-        for part in re.split(r"\s*(?:,|;|\band\b|\be\b)\s*", label, flags=re.IGNORECASE)
+        for part in re.split(r"[,;]|\b(?:and|e)\b", label, flags=re.IGNORECASE)
         if part.strip()
     )
     return parts if len(parts) > 1 else (label,)

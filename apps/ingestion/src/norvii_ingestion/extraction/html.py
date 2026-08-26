@@ -16,7 +16,7 @@ _LEGAL_MARKER = re.compile(
     r"^(?P<marker>"
     r"(?:Title|T\u00edtulo|Chapter|Cap\u00edtulo|Section|Se\u00e7\u00e3o)\s+[^\n]+"
     r"|(?:Article|Artigo)\s+\d+[A-Za-z]?[.\u00ba\u00b0]?"
-    r"|Art\.\s*\d+(?:-[A-Za-z])?[\u00ba\u00b0]?"
+    r"|Art\.\s*\d+(?:-[A-Za-z])?[\u00ba\u00b0o]?"
     r"|Recital\s+\d+"
     r"|\u00a7\s*\d+[\u00bao]?"
     r"|(?:\(\d+\)|\d+\.)\s+"
