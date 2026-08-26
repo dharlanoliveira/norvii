@@ -181,14 +181,42 @@ func TestCorpusIngestionSchemaIsCanonicalSeededAndRepeatable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed count query error = %v", err)
 	}
-	if corpusCount != 4 || sourceCount != 12 || originCount != 12 || workCount != 2 {
+	if corpusCount != 4 || sourceCount != 12 || originCount != 12 || workCount != 12 {
 		t.Fatalf(
-			"seed counts = corpora:%d sources:%d origins:%d work:%d, want 4/12/12/2",
+			"seed counts = corpora:%d sources:%d origins:%d work:%d, want 4/12/12/12",
 			corpusCount,
 			sourceCount,
 			originCount,
 			workCount,
 		)
+	}
+
+	var queuedEvaluationSourceCount int
+	err = connection.QueryRow(ctx, `
+		SELECT count(*)
+		FROM sources AS source
+		JOIN ingestion_work AS work
+		  ON work.source_id = source.id
+		 AND work.corpus_id = source.corpus_id
+		WHERE source.seed_key = ANY($1)
+		  AND work.reason = 'initial'
+		  AND work.status = 'pending'`, []string{
+		"brazil-anti-corruption-law",
+		"brazil-penal-code",
+		"brazil-anti-money-laundering-law",
+		"coaf-resolution-36",
+		"cgu-leniency-guidance",
+		"us-fair-housing-act-3604",
+		"hud-assistance-animals",
+		"hud-doj-reasonable-accommodations",
+		"hud-report-housing-discrimination",
+		"ecfr-24-100-204",
+	}).Scan(&queuedEvaluationSourceCount)
+	if err != nil {
+		t.Fatalf("evaluation source queue query error = %v", err)
+	}
+	if queuedEvaluationSourceCount != 10 {
+		t.Fatalf("queued evaluation sources = %d, want 10", queuedEvaluationSourceCount)
 	}
 
 	expectedEvaluationCorpusSeedKeys := []string{
