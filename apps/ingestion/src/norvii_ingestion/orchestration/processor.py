@@ -176,7 +176,7 @@ class IngestionProcessor:
             )
 
             stage = "document_extraction"
-            artifact = self._run_stage(work, stage, lambda: self._extract(work, content))
+            artifact = self._run_stage(work, stage, lambda: self._extract(content, media_type))
             self._logger.info(
                 "ingestion_document_extracted",
                 **self._work_fields(work),
@@ -337,8 +337,8 @@ class IngestionProcessor:
             return work.pdf_content, "application/pdf", None
         raise UnsupportedContentError("The source origin is unavailable.")
 
-    def _extract(self, work: IngestionWork, content: bytes) -> DocumentArtifact:
-        if work.claim.source_kind is SourceKind.PDF:
+    def _extract(self, content: bytes, media_type: str) -> DocumentArtifact:
+        if media_type == "application/pdf":
             return self._extractors.pdf.extract(content)
         return self._extractors.html.extract(content)
 

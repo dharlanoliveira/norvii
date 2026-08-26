@@ -79,7 +79,7 @@ def test_acquirer_pins_validated_address_and_ignores_proxy_environment() -> None
         "Mozilla/5.0 (compatible; Norvii/1.0; +https://github.com/dharlanoliveira/norvii)"
     )
     assert connection.requests[0][2]["Accept"] == (
-        "application/xhtml+xml, text/html;q=0.9, text/plain;q=0.8"
+        "application/pdf, application/xhtml+xml;q=0.9, text/html;q=0.8, text/plain;q=0.7"
     )
     assert connection.requests[0][2]["Accept-Language"] == "eng, en;q=0.9"
     assert connection.requests[0][2]["Accept-Max-Cs-Size"] == "1024"
@@ -155,6 +155,27 @@ def test_acquirer_categorizes_timeout_and_unsupported_media() -> None:
         acquirer.acquire("https://example.org/timeout")
     with pytest.raises(UnsupportedContentError):
         acquirer.acquire("https://example.org/binary")
+
+
+@pytest.mark.parametrize(
+    ("header", "expected_media_type"),
+    [
+        ("application/pdf", "application/pdf"),
+        ("Application/PDF; charset=binary", "application/pdf"),
+    ],
+)
+def test_acquirer_accepts_pdf_content_type(header: str, expected_media_type: str) -> None:
+    acquirer = HttpsAcquirer(
+        _config(),
+        resolver=lambda _host, _port: ("93.184.216.34",),
+        connection_factory=lambda *_args: FakeConnection(
+            FakeResponse(headers={"Content-Type": header})
+        ),
+    )
+
+    acquisition = acquirer.acquire("https://example.org/official-law.pdf")
+
+    assert acquisition.media_type == expected_media_type
 
 
 def test_acquirer_records_an_allowlisted_connection_reset_reason() -> None:
