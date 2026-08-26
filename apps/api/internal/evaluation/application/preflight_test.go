@@ -14,12 +14,7 @@ import (
 func TestPreflightServiceCheckRejectsEveryGateWithoutModelWork(t *testing.T) {
 	t.Parallel()
 
-	for _, testCase := range []struct {
-		name      string
-		configure func(*preflightCatalogFake, *PreflightRequest)
-		want      error
-		catalogs  int
-	}{
+	for _, testCase := range []preflightGateCase{
 		{
 			name: "draft dataset", configure: func(catalog *preflightCatalogFake, _ *PreflightRequest) {
 				catalog.publication.PublicationState = domain.PublicationStateDraft
@@ -44,27 +39,38 @@ func TestPreflightServiceCheckRejectsEveryGateWithoutModelWork(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			catalog, request := validPreflightInputs()
-			testCase.configure(&catalog, &request)
-
-			_, err := NewPreflightService(&catalog).Check(context.Background(), request)
-			if !errors.Is(err, testCase.want) {
-				t.Fatalf("Check() error = %v, want %v", err, testCase.want)
-			}
-			if catalog.calls != testCase.catalogs {
-				t.Fatalf("catalog calls = %d, want %d", catalog.calls, testCase.catalogs)
-			}
-			if catalog.model.calls != 0 {
-				t.Fatalf("model calls = %d, want zero after rejected preflight", catalog.model.calls)
-			}
-			compatibility, ok := err.(*CompatibilityError)
-			if !ok {
-				t.Fatalf("Check() error type = %T, want *CompatibilityError", err)
-			}
-			if len(compatibility.MissingRequirements()) > maxMissingRequirements {
-				t.Fatalf("missing requirements exceeds bound: %d", len(compatibility.MissingRequirements()))
-			}
+			assertPreflightGateRejection(t, testCase)
 		})
+	}
+}
+
+type preflightGateCase struct {
+	name      string
+	configure func(*preflightCatalogFake, *PreflightRequest)
+	want      error
+	catalogs  int
+}
+
+func assertPreflightGateRejection(t *testing.T, testCase preflightGateCase) {
+	t.Helper()
+	catalog, request := validPreflightInputs()
+	testCase.configure(&catalog, &request)
+	_, err := NewPreflightService(&catalog).Check(context.Background(), request)
+	if !errors.Is(err, testCase.want) {
+		t.Fatalf("Check() error = %v, want %v", err, testCase.want)
+	}
+	if catalog.calls != testCase.catalogs {
+		t.Fatalf("catalog calls = %d, want %d", catalog.calls, testCase.catalogs)
+	}
+	if catalog.model.calls != 0 {
+		t.Fatalf("model calls = %d, want zero after rejected preflight", catalog.model.calls)
+	}
+	compatibility, ok := err.(*CompatibilityError)
+	if !ok {
+		t.Fatalf("Check() error type = %T, want *CompatibilityError", err)
+	}
+	if len(compatibility.MissingRequirements()) > maxMissingRequirements {
+		t.Fatalf("missing requirements exceeds bound: %d", len(compatibility.MissingRequirements()))
 	}
 }
 
@@ -162,7 +168,7 @@ func TestAppendMissingRequirementsPreservesBothGateCategoriesAtTheBound(t *testi
 		snapshotMissing[index] = MissingRequirement{SourceAlias: fmt.Sprintf("source-%d", index), Reason: "source"}
 	}
 	locatorMissing := MissingRequirement{SourceAlias: "source-locator", Locator: "Article 1", Reason: "locator"}
-	combined := appendMissingRequirements(snapshotMissing, []MissingRequirement{locatorMissing})
+	combined := appendMissingRequirements(missingRequirementGroups{current: snapshotMissing, additional: []MissingRequirement{locatorMissing}})
 
 	if len(combined) != maxMissingRequirements || combined[maxMissingRequirements-1] != locatorMissing {
 		t.Fatalf("combined missing requirements = %#v, want bounded diagnostics including the locator gate", combined)

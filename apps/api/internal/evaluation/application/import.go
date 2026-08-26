@@ -25,20 +25,20 @@ type DatasetImportResult struct {
 	Starters   int
 }
 
-// DatasetStore persists one fully validated immutable asset. Implementations must make
+// datasetStorer persists one fully validated immutable asset. Implementations must make
 // an identical corpus/content hash idempotent and must not publish or modify snapshots.
-type DatasetStore interface {
+type datasetStorer interface {
 	StoreDataset(context.Context, DatasetAsset) (DatasetImportResult, error)
 }
 
 // DatasetImportService coordinates deterministic validation and immutable persistence.
 type DatasetImportService struct {
 	validator *Importer
-	store     DatasetStore
+	store     datasetStorer
 }
 
 // NewDatasetImportService constructs an import application service around caller-owned boundaries.
-func NewDatasetImportService(validator *Importer, store DatasetStore) *DatasetImportService {
+func NewDatasetImportService(validator *Importer, store datasetStorer) *DatasetImportService {
 	return &DatasetImportService{validator: validator, store: store}
 }
 

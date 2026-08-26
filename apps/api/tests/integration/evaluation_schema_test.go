@@ -573,8 +573,19 @@ func insertEvaluationCasePair(
 	firstPosition int,
 ) (uuid.UUID, uuid.UUID) {
 	return insertEvaluationCasePairWithOutcome(
-		t, ctx, transaction, revisionID, englishCaseIDText, portugueseCaseIDText, firstPosition, "answer", "",
+		t, ctx, transaction, revisionID, evaluationCasePairIDs{english: englishCaseIDText, portuguese: portugueseCaseIDText}, firstPosition,
+		evaluationCasePairOutcome{expectedOutcome: "answer"},
 	)
+}
+
+type evaluationCasePairIDs struct {
+	english    string
+	portuguese string
+}
+
+type evaluationCasePairOutcome struct {
+	expectedOutcome    string
+	expectedReasonCode string
 }
 
 func insertEvaluationCasePairWithOutcome(
@@ -582,17 +593,17 @@ func insertEvaluationCasePairWithOutcome(
 	ctx context.Context,
 	transaction pgx.Tx,
 	revisionID uuid.UUID,
-	englishCaseIDText, portugueseCaseIDText string,
+	caseIDs evaluationCasePairIDs,
 	firstPosition int,
-	expectedOutcome, expectedReasonCode string,
+	outcome evaluationCasePairOutcome,
 ) (uuid.UUID, uuid.UUID) {
 	t.Helper()
 	var persistedReasonCode *string
-	if expectedReasonCode != "" {
-		persistedReasonCode = &expectedReasonCode
+	if outcome.expectedReasonCode != "" {
+		persistedReasonCode = &outcome.expectedReasonCode
 	}
-	englishCaseID := uuid.MustParse(englishCaseIDText)
-	portugueseCaseID := uuid.MustParse(portugueseCaseIDText)
+	englishCaseID := uuid.MustParse(caseIDs.english)
+	portugueseCaseID := uuid.MustParse(caseIDs.portuguese)
 	englishExternalID := "case-" + englishCaseID.String()
 	portugueseExternalID := "case-" + portugueseCaseID.String()
 	for _, fixture := range []struct {
@@ -615,7 +626,7 @@ func insertEvaluationCasePairWithOutcome(
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, 'Synthetic question', 'Synthetic answer',
 				'fixture', 'pt-BR', $8, $9, $10, $11)`,
 			fixture.id, revisionID, uuid.MustParse(evaluationLGPDCorpusID), fixture.position, fixture.externalID,
-			fixture.queryLanguage, fixture.assetLanguage, expectedOutcome, persistedReasonCode, fixture.reciprocalID, fixture.checksum,
+			fixture.queryLanguage, fixture.assetLanguage, outcome.expectedOutcome, persistedReasonCode, fixture.reciprocalID, fixture.checksum,
 		); err != nil {
 			t.Fatalf("insert evaluation case %s: %v", fixture.externalID, err)
 		}
@@ -628,21 +639,49 @@ func insertEvaluationStarterSelection(
 	ctx context.Context,
 	transaction pgx.Tx,
 	selectionIDText string,
-	revisionID, evaluationCaseID uuid.UUID,
-	rank int,
-	queryLanguage, caseChecksum string,
+	arguments ...any,
 ) {
 	t.Helper()
+	selection, ok := evaluationStarterSelectionFromArguments(arguments)
+	if !ok {
+		t.Fatalf("insert evaluation starter selection: invalid selection arguments")
+	}
 	if _, err := transaction.Exec(ctx, `
 		INSERT INTO evaluation_dataset_starter_case (
 			id, dataset_revision_id, corpus_id, evaluation_case_id, rank, query_language,
 			case_checksum, is_review_eligible
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
-		uuid.MustParse(selectionIDText), revisionID, uuid.MustParse(evaluationLGPDCorpusID), evaluationCaseID,
-		rank, queryLanguage, caseChecksum,
+		uuid.MustParse(selectionIDText), selection.revisionID, uuid.MustParse(evaluationLGPDCorpusID), selection.evaluationCaseID,
+		selection.rank, selection.queryLanguage, selection.caseChecksum,
 	); err != nil {
 		t.Fatalf("insert evaluation starter selection: %v", err)
 	}
+}
+
+type evaluationStarterSelection struct {
+	revisionID       uuid.UUID
+	evaluationCaseID uuid.UUID
+	rank             int
+	queryLanguage    string
+	caseChecksum     string
+}
+
+func evaluationStarterSelectionFromArguments(arguments []any) (evaluationStarterSelection, bool) {
+	if len(arguments) != 5 {
+		return evaluationStarterSelection{}, false
+	}
+	revisionID, revisionOK := arguments[0].(uuid.UUID)
+	evaluationCaseID, caseOK := arguments[1].(uuid.UUID)
+	rank, rankOK := arguments[2].(int)
+	queryLanguage, languageOK := arguments[3].(string)
+	caseChecksum, checksumOK := arguments[4].(string)
+	if !revisionOK || !caseOK || !rankOK || !languageOK || !checksumOK {
+		return evaluationStarterSelection{}, false
+	}
+	return evaluationStarterSelection{
+		revisionID: revisionID, evaluationCaseID: evaluationCaseID, rank: rank,
+		queryLanguage: queryLanguage, caseChecksum: caseChecksum,
+	}, true
 }
 
 func expectDeferredConstraintFailure(t *testing.T, ctx context.Context, transaction pgx.Tx) {

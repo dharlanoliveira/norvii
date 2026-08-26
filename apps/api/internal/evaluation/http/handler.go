@@ -15,6 +15,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const evaluationDataUnavailableMessage = "Evaluation data is temporarily unavailable."
+
 type service interface {
 	Start(context.Context, application.StartRunRequest) (application.Run, error)
 	Get(context.Context, uuid.UUID) (application.Run, error)
@@ -27,7 +29,7 @@ type inspectionService interface {
 	Check(context.Context, application.PreflightRequest) (application.PreflightResult, error)
 }
 
-type comparisonService interface {
+type comparer interface {
 	Compare(context.Context, application.ComparisonRequest) (application.ComparisonResult, error)
 }
 
@@ -61,7 +63,7 @@ func (authorizer *TokenAuthorizer) Authorize(request *http.Request) bool {
 type Handler struct {
 	service    service
 	inspection inspectionService
-	comparison comparisonService
+	comparison comparer
 	authorizer Authorizer
 }
 
@@ -75,7 +77,7 @@ func NewHandler(service service, authorizer Authorizer, inspections ...inspectio
 }
 
 // WithComparison attaches the read-only immutable comparison service to this handler.
-func (handler *Handler) WithComparison(comparison comparisonService) *Handler {
+func (handler *Handler) WithComparison(comparison comparer) *Handler {
 	if handler != nil {
 		handler.comparison = comparison
 	}
@@ -188,7 +190,7 @@ func (handler *Handler) listDatasets(writer http.ResponseWriter, request *http.R
 		return
 	}
 	if handler.inspection == nil {
-		writeProblem(writer, request, http.StatusServiceUnavailable, "unavailable", "Evaluation data is temporarily unavailable.", nil)
+		writeProblem(writer, request, http.StatusServiceUnavailable, "unavailable", evaluationDataUnavailableMessage, nil)
 		return
 	}
 	entries, err := handler.inspection.List(request.Context())
@@ -208,7 +210,7 @@ func (handler *Handler) getDataset(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	if handler.inspection == nil {
-		writeProblem(writer, request, http.StatusServiceUnavailable, "unavailable", "Evaluation data is temporarily unavailable.", nil)
+		writeProblem(writer, request, http.StatusServiceUnavailable, "unavailable", evaluationDataUnavailableMessage, nil)
 		return
 	}
 	datasetRevisionID, ok := pathID(writer, request, "datasetRevisionId")
@@ -228,7 +230,7 @@ func (handler *Handler) preflightDataset(writer http.ResponseWriter, request *ht
 		return
 	}
 	if handler.inspection == nil {
-		writeProblem(writer, request, http.StatusServiceUnavailable, "unavailable", "Evaluation data is temporarily unavailable.", nil)
+		writeProblem(writer, request, http.StatusServiceUnavailable, "unavailable", evaluationDataUnavailableMessage, nil)
 		return
 	}
 	datasetRevisionID, ok := pathID(writer, request, "datasetRevisionId")
@@ -336,7 +338,7 @@ func writeRunError(writer http.ResponseWriter, request *http.Request, err error)
 	case errors.Is(err, application.ErrRunNotFound):
 		writeProblem(writer, request, http.StatusNotFound, "not_found", "The evaluation run was not found.", nil)
 	default:
-		writeProblem(writer, request, http.StatusServiceUnavailable, "unavailable", "Evaluation data is temporarily unavailable.", nil)
+		writeProblem(writer, request, http.StatusServiceUnavailable, "unavailable", evaluationDataUnavailableMessage, nil)
 	}
 }
 
@@ -345,7 +347,7 @@ func writeDatasetError(writer http.ResponseWriter, request *http.Request, err er
 	case errors.Is(err, application.ErrDatasetNotFound):
 		writeProblem(writer, request, http.StatusNotFound, "not_found", "The evaluation dataset was not found.", nil)
 	default:
-		writeProblem(writer, request, http.StatusServiceUnavailable, "unavailable", "Evaluation data is temporarily unavailable.", nil)
+		writeProblem(writer, request, http.StatusServiceUnavailable, "unavailable", evaluationDataUnavailableMessage, nil)
 	}
 }
 

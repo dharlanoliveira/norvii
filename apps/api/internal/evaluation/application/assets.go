@@ -20,10 +20,14 @@ import (
 )
 
 const (
-	maxManifestBytes = 256 * 1024
-	maxJSONLBytes    = 2 * 1024 * 1024
-	maxJSONLLine     = 64 * 1024
-	maxCaseCount     = 256
+	maxManifestBytes              = 256 * 1024
+	maxJSONLBytes                 = 2 * 1024 * 1024
+	maxJSONLLine                  = 64 * 1024
+	maxCaseCount                  = 256
+	brazilLGPDCorpusKey           = "brazil-lgpd"
+	brazilAntiCorruptionCorpusKey = "brazil-anti-corruption"
+	manifestFileSuffix            = ".manifest.json"
+	jsonlFileSuffix               = ".jsonl"
 )
 
 var (
@@ -71,8 +75,8 @@ type AssetRequest struct {
 // The fixed corpus bindings prevent legal assets from being redirected into another corpus.
 func OwnedAssetRequests() []AssetRequest {
 	return []AssetRequest{
-		assetRequestFor("brazil-lgpd", brazilLGPDCorpusID, "brazil-lgpd"),
-		assetRequestFor("brazil-anti-corruption", brazilAntiCorruptionCorpusID, "brazil-anti-corruption"),
+		assetRequestFor(brazilLGPDCorpusKey, brazilLGPDCorpusID, brazilLGPDCorpusKey),
+		assetRequestFor(brazilAntiCorruptionCorpusKey, brazilAntiCorruptionCorpusID, brazilAntiCorruptionCorpusKey),
 		assetRequestFor("us-fair-housing-disability-accommodations", usFairHousingCorpusID, "us-fair-housing"),
 	}
 }
@@ -82,8 +86,8 @@ func assetRequestFor(corpusKey string, corpusID uuid.UUID, datasetKey string) As
 	directory := "data/corpora/" + corpusKey + "/evaluation/"
 	return AssetRequest{
 		CorpusID: corpusID, CorpusKey: corpusKey, ExpectedDatasetKey: datasetKey,
-		ManifestPath: directory + datasetID + ".manifest.json",
-		JSONLPath:    directory + datasetID + ".jsonl",
+		ManifestPath: directory + datasetID + manifestFileSuffix,
+		JSONLPath:    directory + datasetID + jsonlFileSuffix,
 	}
 }
 
@@ -500,7 +504,7 @@ func safeAssetPaths(corpusKey, manifestPath, jsonlPath string) bool {
 	}
 	prefix := "data/corpora/" + corpusKey + "/evaluation/"
 	return strings.HasPrefix(manifestPath, prefix) && strings.HasPrefix(jsonlPath, prefix) &&
-		strings.HasSuffix(manifestPath, ".manifest.json") && strings.HasSuffix(jsonlPath, ".jsonl")
+		strings.HasSuffix(manifestPath, manifestFileSuffix) && strings.HasSuffix(jsonlPath, jsonlFileSuffix)
 }
 
 func matchesSupportedCorpus(request AssetRequest) bool {
@@ -513,10 +517,10 @@ func matchesSupportedCorpus(request AssetRequest) bool {
 // information-security corpus.
 func supportedAssetCorpusFor(corpusKey string) (supportedAssetCorpus, bool) {
 	switch corpusKey {
-	case "brazil-lgpd":
-		return supportedAssetCorpus{corpusID: brazilLGPDCorpusID, datasetKey: "brazil-lgpd"}, true
-	case "brazil-anti-corruption":
-		return supportedAssetCorpus{corpusID: brazilAntiCorruptionCorpusID, datasetKey: "brazil-anti-corruption"}, true
+	case brazilLGPDCorpusKey:
+		return supportedAssetCorpus{corpusID: brazilLGPDCorpusID, datasetKey: brazilLGPDCorpusKey}, true
+	case brazilAntiCorruptionCorpusKey:
+		return supportedAssetCorpus{corpusID: brazilAntiCorruptionCorpusID, datasetKey: brazilAntiCorruptionCorpusKey}, true
 	case "us-fair-housing-disability-accommodations":
 		return supportedAssetCorpus{corpusID: usFairHousingCorpusID, datasetKey: "us-fair-housing"}, true
 	default:
@@ -530,7 +534,7 @@ func isNilAssetReader(reader AssetReader) bool {
 }
 
 func matchesAssetFilenames(request AssetRequest, datasetID string) bool {
-	return path.Base(request.ManifestPath) == datasetID+".manifest.json" && path.Base(request.JSONLPath) == datasetID+".jsonl"
+	return path.Base(request.ManifestPath) == datasetID+manifestFileSuffix && path.Base(request.JSONLPath) == datasetID+jsonlFileSuffix
 }
 
 func validatePairedOutcomes(cases []domain.Case) error {

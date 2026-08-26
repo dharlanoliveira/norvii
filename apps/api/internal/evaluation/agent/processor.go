@@ -8,19 +8,19 @@ import (
 	"github.com/dharlanoliveira/norvii/apps/api/internal/evaluation/application"
 )
 
-// executionClient is the narrow fixed-snapshot agent port used by the managed worker.
-type executionClient interface {
+// executor is the narrow fixed-snapshot agent port used by the managed worker.
+type executor interface {
 	Execute(context.Context, Request) (Result, error)
 }
 
 // Processor translates one leased case to the fixed-snapshot agent protocol and accepts only
 // results matching the identity frozen when the run was created.
 type Processor struct {
-	client executionClient
+	client executor
 }
 
 // NewProcessor constructs a worker case processor without any public-chat dependency.
-func NewProcessor(client executionClient) (*Processor, error) {
+func NewProcessor(client executor) (*Processor, error) {
 	if client == nil {
 		return nil, application.ErrInvalidWorkerInput
 	}

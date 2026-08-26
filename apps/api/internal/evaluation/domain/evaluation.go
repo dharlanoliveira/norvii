@@ -334,37 +334,57 @@ func ValidateStarterSelections(revision DatasetRevision, cases []Case, selection
 	if len(selections) == 0 {
 		return nil
 	}
-
-	caseByID := make(map[uuid.UUID]Case, len(cases))
-	for _, evaluationCase := range cases {
-		caseByID[evaluationCase.ID] = evaluationCase
-	}
+	caseByID := casesByID(cases)
 	selectionByCaseID := make(map[uuid.UUID]StarterSelection, len(selections))
 	selectionByRankLanguage := make(map[starterRankLanguage]struct{}, len(selections))
 	for _, selection := range selections {
-		if selection.ID == uuid.Nil || selection.DatasetRevisionID != revision.ID || selection.CorpusID != revision.CorpusID {
-			return starterOwnershipError(selection.CorpusID, revision.CorpusID)
-		}
-		if selection.Rank < 1 || selection.Rank > 5 || !validQueryLanguage(selection.QueryLanguage) || !selection.ReviewEligible {
-			return ErrInvalidStarterSelection
-		}
-		if err := selection.CaseChecksum.Validate(); err != nil {
+		if err := validateStarterSelection(revision, selection, caseByID, selectionByCaseID, selectionByRankLanguage); err != nil {
 			return err
 		}
-		evaluationCase, found := caseByID[selection.CaseID]
-		if !found || evaluationCase.QueryLanguage != selection.QueryLanguage || evaluationCase.Checksum != selection.CaseChecksum {
-			return ErrInvalidStarterSelection
-		}
-		if _, duplicate := selectionByCaseID[selection.CaseID]; duplicate {
-			return ErrInvalidStarterSelection
-		}
-		key := starterRankLanguage{rank: selection.Rank, language: selection.QueryLanguage}
-		if _, duplicate := selectionByRankLanguage[key]; duplicate {
-			return ErrInvalidStarterSelection
-		}
 		selectionByCaseID[selection.CaseID] = selection
-		selectionByRankLanguage[key] = struct{}{}
+		selectionByRankLanguage[starterRankLanguage{rank: selection.Rank, language: selection.QueryLanguage}] = struct{}{}
 	}
+	return validateStarterSelectionPairs(cases, selections, caseByID, selectionByCaseID)
+}
+
+func casesByID(cases []Case) map[uuid.UUID]Case {
+	indexed := make(map[uuid.UUID]Case, len(cases))
+	for _, evaluationCase := range cases {
+		indexed[evaluationCase.ID] = evaluationCase
+	}
+	return indexed
+}
+
+func validateStarterSelection(
+	revision DatasetRevision,
+	selection StarterSelection,
+	caseByID map[uuid.UUID]Case,
+	selectionByCaseID map[uuid.UUID]StarterSelection,
+	selectionByRankLanguage map[starterRankLanguage]struct{},
+) error {
+	if selection.ID == uuid.Nil || selection.DatasetRevisionID != revision.ID || selection.CorpusID != revision.CorpusID {
+		return starterOwnershipError(selection.CorpusID, revision.CorpusID)
+	}
+	if selection.Rank < 1 || selection.Rank > 5 || !validQueryLanguage(selection.QueryLanguage) || !selection.ReviewEligible {
+		return ErrInvalidStarterSelection
+	}
+	if err := selection.CaseChecksum.Validate(); err != nil {
+		return err
+	}
+	evaluationCase, found := caseByID[selection.CaseID]
+	if !found || evaluationCase.QueryLanguage != selection.QueryLanguage || evaluationCase.Checksum != selection.CaseChecksum {
+		return ErrInvalidStarterSelection
+	}
+	if _, duplicate := selectionByCaseID[selection.CaseID]; duplicate {
+		return ErrInvalidStarterSelection
+	}
+	if _, duplicate := selectionByRankLanguage[starterRankLanguage{rank: selection.Rank, language: selection.QueryLanguage}]; duplicate {
+		return ErrInvalidStarterSelection
+	}
+	return nil
+}
+
+func validateStarterSelectionPairs(cases []Case, selections []StarterSelection, caseByID map[uuid.UUID]Case, selectionByCaseID map[uuid.UUID]StarterSelection) error {
 	for _, selection := range selections {
 		evaluationCase := caseByID[selection.CaseID]
 		pairedCase := findCaseByExternalID(cases, evaluationCase.ReciprocalExternalID)

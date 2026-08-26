@@ -115,4 +115,6 @@ func cloneInt64(value *int64) *int64 {
 	return &copy
 }
 
-var _ application.ComparisonStore = (*Repository)(nil)
+var _ interface {
+	ComparisonRun(context.Context, uuid.UUID) (application.ComparisonRun, error)
+} = (*Repository)(nil)

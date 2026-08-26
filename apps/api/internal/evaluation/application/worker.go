@@ -138,27 +138,49 @@ func (worker *Worker) releaseForRetry(ctx context.Context, evaluationCase Claime
 }
 
 func validateTerminalCaseResult(result TerminalCaseResult) error {
-	if result.State != RunCaseCompleted && result.State != RunCaseAbstained && result.State != RunCaseFailed && result.State != RunCaseCancelled {
+	if !terminalWorkerCaseState(result.State) {
 		return ErrInvalidWorkerInput
 	}
-	if result.State == RunCaseCompleted && strings.TrimSpace(result.Answer) == "" {
+	if invalidTerminalCaseContent(result) {
 		return ErrInvalidWorkerInput
 	}
-	if (result.State == RunCaseFailed || result.State == RunCaseCancelled) != (strings.TrimSpace(result.SafeFailureCode) != "") {
+	if !validMeasurements(result.LatencyMilliseconds, result.InputTokens, result.OutputTokens) {
 		return ErrInvalidWorkerInput
 	}
-	for _, measurement := range []*int64{result.LatencyMilliseconds, result.InputTokens, result.OutputTokens} {
-		if measurement != nil && *measurement < 0 {
-			return ErrInvalidWorkerInput
-		}
-	}
-	if len(result.Metrics) > 0 && strings.TrimSpace(result.ScoringPolicyVersion) == "" {
+	if !validTerminalMetrics(result.Metrics, result.ScoringPolicyVersion) {
 		return ErrInvalidWorkerInput
-	}
-	for _, metric := range result.Metrics {
-		if metric.Name == "" || metric.State == "" || strings.TrimSpace(metric.Rationale) == "" {
-			return ErrInvalidWorkerInput
-		}
 	}
 	return nil
+}
+
+func terminalWorkerCaseState(state RunCaseState) bool {
+	return state == RunCaseCompleted || state == RunCaseAbstained || state == RunCaseFailed || state == RunCaseCancelled
+}
+
+func invalidTerminalCaseContent(result TerminalCaseResult) bool {
+	if result.State == RunCaseCompleted && strings.TrimSpace(result.Answer) == "" {
+		return true
+	}
+	return (result.State == RunCaseFailed || result.State == RunCaseCancelled) != (strings.TrimSpace(result.SafeFailureCode) != "")
+}
+
+func validMeasurements(measurements ...*int64) bool {
+	for _, measurement := range measurements {
+		if measurement != nil && *measurement < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func validTerminalMetrics(metrics []Metric, scoringPolicyVersion string) bool {
+	if len(metrics) > 0 && strings.TrimSpace(scoringPolicyVersion) == "" {
+		return false
+	}
+	for _, metric := range metrics {
+		if metric.Name == "" || metric.State == "" || strings.TrimSpace(metric.Rationale) == "" {
+			return false
+		}
+	}
+	return true
 }

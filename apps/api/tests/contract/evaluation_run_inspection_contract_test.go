@@ -12,43 +12,61 @@ import (
 func TestEvaluationRunInspectionFixturesSeparateEvidenceAndKeepDiagnosticsSafe(t *testing.T) {
 	var summary evaluationcontract.EvaluationRunSummaryResponse
 	decodeDatasetInspectionFixture(t, "evaluation-run-summary-response.json", &summary)
-	if !validDatasetFixtureUUID(summary.ID) || !validDatasetFixtureUUID(summary.CorpusID) || !validDatasetFixtureUUID(summary.SnapshotID) ||
-		!validDatasetFixtureHash(summary.DatasetRevision.ContentSHA256) || !validDatasetFixtureHash(summary.SnapshotManifestSHA256) ||
-		!validDatasetFixtureHash(summary.OrderedCaseSetSHA256) || summary.Aggregate.Total != 2 || summary.Aggregate.Failed != 1 {
+	assertRunSummaryFixture(t, summary)
+
+	var result evaluationcontract.EvaluationRunCaseResponse
+	decodeDatasetInspectionFixture(t, "evaluation-run-case-response.json", &result)
+	assertRunCaseFixture(t, result)
+	assertEvaluationFixtureDoesNotExposeProviderData(t, summary, result)
+}
+
+func assertRunSummaryFixture(t *testing.T, summary evaluationcontract.EvaluationRunSummaryResponse) {
+	t.Helper()
+	if !validDatasetFixtureUUID(summary.ID) || !validDatasetFixtureUUID(summary.CorpusID) || !validDatasetFixtureUUID(summary.SnapshotID) || !validDatasetFixtureHash(summary.DatasetRevision.ContentSHA256) || !validDatasetFixtureHash(summary.SnapshotManifestSHA256) || !validDatasetFixtureHash(summary.OrderedCaseSetSHA256) || summary.Aggregate.Total != 2 || summary.Aggregate.Failed != 1 {
 		t.Fatalf("invalid run summary fixture: %#v", summary)
 	}
-	if len(summary.Aggregate.Metrics) != 1 || strings.TrimSpace(summary.Aggregate.Metrics[0].Rationale) == "" ||
-		summary.Aggregate.Metrics[0].Numerator == nil || summary.Aggregate.Metrics[0].Denominator == nil {
+	if len(summary.Aggregate.Metrics) != 1 || strings.TrimSpace(summary.Aggregate.Metrics[0].Rationale) == "" || summary.Aggregate.Metrics[0].Numerator == nil || summary.Aggregate.Metrics[0].Denominator == nil {
 		t.Fatalf("run metric is missing rationale or arithmetic: %#v", summary.Aggregate.Metrics)
 	}
 	if len(summary.Cases) != 2 || summary.Cases[1].FailureCode != "provider_unavailable" {
 		t.Fatalf("run cases do not preserve safe failure state: %#v", summary.Cases)
 	}
+}
 
-	var result evaluationcontract.EvaluationRunCaseResponse
-	decodeDatasetInspectionFixture(t, "evaluation-run-case-response.json", &result)
-	if len(result.ExpectedEvidence) != 1 || len(result.ActualEvidence) != 2 || result.ExpectedEvidence[0].Kind != "expected" ||
-		result.ActualEvidence[0].Kind != "retrieved" || result.ActualEvidence[1].Kind != "cited" {
+func assertRunCaseFixture(t *testing.T, result evaluationcontract.EvaluationRunCaseResponse) {
+	t.Helper()
+	if len(result.ExpectedEvidence) != 1 || len(result.ActualEvidence) != 2 || result.ExpectedEvidence[0].Kind != "expected" || result.ActualEvidence[0].Kind != "retrieved" || result.ActualEvidence[1].Kind != "cited" {
 		t.Fatalf("case evidence is not explicitly separated: expected=%#v actual=%#v", result.ExpectedEvidence, result.ActualEvidence)
 	}
+	assertFixtureEvidenceProvenance(t, result)
+	assertFixtureTelemetry(t, result)
+	assertFixtureEvidenceOffsets(t, result)
+	if len(result.Metrics) != 1 || strings.TrimSpace(result.Metrics[0].Rationale) == "" {
+		t.Fatalf("case metric rationale is absent: %#v", result.Metrics)
+	}
+}
+
+func assertFixtureEvidenceProvenance(t *testing.T, result evaluationcontract.EvaluationRunCaseResponse) {
+	t.Helper()
 	for _, item := range append(result.ExpectedEvidence, result.ActualEvidence...) {
 		if item.CorpusID != result.CorpusID || item.SnapshotID != result.SnapshotID || !validDatasetFixtureUUID(item.SourceID) || !validDatasetFixtureHash(item.ContentSHA256) {
 			t.Fatalf("evidence does not preserve immutable run provenance: %#v", item)
 		}
 	}
-	if result.GraphGroundingState != "not_requested" || result.LatencyMilliseconds == nil || *result.LatencyMilliseconds != 42 ||
-		result.InputTokens == nil || *result.InputTokens != 7 || result.OutputTokens == nil || *result.OutputTokens != 11 {
+}
+
+func assertFixtureTelemetry(t *testing.T, result evaluationcontract.EvaluationRunCaseResponse) {
+	t.Helper()
+	if result.GraphGroundingState != "not_requested" || result.LatencyMilliseconds == nil || *result.LatencyMilliseconds != 42 || result.InputTokens == nil || *result.InputTokens != 7 || result.OutputTokens == nil || *result.OutputTokens != 11 {
 		t.Fatalf("case telemetry or graph grounding is absent: %#v", result)
 	}
-	if result.ExpectedEvidence[0].DisplayLocator != "Synthetic section 1" || result.ActualEvidence[0].DisplayLocator != "Synthetic section 1" ||
-		result.ActualEvidence[0].StartOffset == nil || *result.ActualEvidence[0].StartOffset != 0 ||
-		result.ActualEvidence[0].EndOffset == nil || *result.ActualEvidence[0].EndOffset != 42 {
+}
+
+func assertFixtureEvidenceOffsets(t *testing.T, result evaluationcontract.EvaluationRunCaseResponse) {
+	t.Helper()
+	if result.ExpectedEvidence[0].DisplayLocator != "Synthetic section 1" || result.ActualEvidence[0].DisplayLocator != "Synthetic section 1" || result.ActualEvidence[0].StartOffset == nil || *result.ActualEvidence[0].StartOffset != 0 || result.ActualEvidence[0].EndOffset == nil || *result.ActualEvidence[0].EndOffset != 42 {
 		t.Fatalf("case evidence display locator or offsets are absent: expected=%#v actual=%#v", result.ExpectedEvidence, result.ActualEvidence)
 	}
-	if len(result.Metrics) != 1 || strings.TrimSpace(result.Metrics[0].Rationale) == "" {
-		t.Fatalf("case metric rationale is absent: %#v", result.Metrics)
-	}
-	assertEvaluationFixtureDoesNotExposeProviderData(t, summary, result)
 }
 
 func TestEvaluationComparisonFixturesPreventDeltasForMismatchedIdentities(t *testing.T) {

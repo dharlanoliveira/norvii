@@ -93,7 +93,15 @@ func TestEvaluationRunRepositoryRecoversLeasesAndPreservesTerminalResults(t *tes
 	if state != "leased" || metricCount != 0 {
 		t.Fatalf("partial completed case = state %q with %d metrics, want leased without metrics", state, metricCount)
 	}
-	if err := repository.Complete(ctx, recovered[0], evaluationapplication.TerminalCaseResult{
+	assertEvaluationRunCompleted(t, ctx, transaction, repository, fixture, runID, runCaseID, recovered[0])
+
+	assertEvaluationRunFailedAndCancelled(t, ctx, transaction, repository, fixture)
+	assertEvaluationRunAbstained(t, ctx, transaction, repository, fixture)
+}
+
+func assertEvaluationRunCompleted(t *testing.T, ctx context.Context, transaction pgx.Tx, repository *evaluationpostgres.Repository, fixture evaluationResolutionFixture, runID, runCaseID uuid.UUID, claim evaluationapplication.ClaimedCase) {
+	t.Helper()
+	if err := repository.Complete(ctx, claim, evaluationapplication.TerminalCaseResult{
 		State: evaluationapplication.RunCaseCompleted, Answer: "Synthetic completed answer.",
 		LatencyMilliseconds: int64Pointer(42), InputTokens: int64Pointer(7), OutputTokens: int64Pointer(11),
 		ActualEvidence: []evaluationapplication.ActualEvidence{{
@@ -105,12 +113,11 @@ func TestEvaluationRunRepositoryRecoversLeasesAndPreservesTerminalResults(t *tes
 				ContentSHA256: evaluationdomain.SHA256(fixture.contentSHA256),
 			},
 		}},
-		Metrics:              scorerV1CompletedMetrics(42, 7, 11),
-		ScoringPolicyVersion: "v1",
+		Metrics: scorerV1CompletedMetrics(42, 7, 11), ScoringPolicyVersion: "v1",
 	}); err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
-	if err := repository.Complete(ctx, recovered[0], evaluationapplication.TerminalCaseResult{
+	if err := repository.Complete(ctx, claim, evaluationapplication.TerminalCaseResult{
 		State: evaluationapplication.RunCaseCompleted, Answer: "Replacement answer must not persist.",
 	}); !errors.Is(err, evaluationapplication.ErrLeaseLost) {
 		t.Fatalf("Complete(terminal case again) error = %v, want %v", err, evaluationapplication.ErrLeaseLost)
@@ -132,44 +139,52 @@ func TestEvaluationRunRepositoryRecoversLeasesAndPreservesTerminalResults(t *tes
 	if answer != "Synthetic completed answer." {
 		t.Fatalf("terminal answer = %q, want the first completed result", answer)
 	}
-	t.Run("database rejects terminal child inserts", func(t *testing.T) {
-		assertRejected := func(statement string, arguments ...any) {
-			t.Helper()
-			savepoint, err := transaction.Begin(ctx)
-			if err != nil {
-				t.Fatalf("begin terminal child rejection savepoint: %v", err)
-			}
-			expectPostgresErrorCode(t, evaluationSchemaExecError(savepoint.Exec(ctx, statement, arguments...)), "55000")
-			if err := savepoint.Rollback(ctx); err != nil {
-				t.Fatalf("rollback terminal child rejection savepoint: %v", err)
-			}
+	assertEvaluationTerminalChildInsertsRejected(t, ctx, transaction, runID, runCaseID, fixture)
+	assertCompletedEvaluationRunAggregate(t, ctx, transaction, repository, runID, fixture.corpusID)
+}
+
+func assertEvaluationTerminalChildInsertsRejected(t *testing.T, ctx context.Context, transaction pgx.Tx, runID, runCaseID uuid.UUID, fixture evaluationResolutionFixture) {
+	t.Helper()
+	assertRejected := func(statement string, arguments ...any) {
+		t.Helper()
+		savepoint, err := transaction.Begin(ctx)
+		if err != nil {
+			t.Fatalf("begin terminal child rejection savepoint: %v", err)
 		}
-		assertRejected(`
-			INSERT INTO evaluation_run_actual_evidence (
-				id, run_id, run_case_id, corpus_id, snapshot_id, evidence_kind, position, marker_position,
-				source_id, source_revision_id, document_id, legal_unit_id, canonical_locator,
-				start_offset, end_offset, content_sha256
-			) VALUES ($1, $2, $3, $4, $5, 'cited', 1, 1, $6, $7, $8, $9, 'article:1', 0, 21, $10)`,
-			uuid.New(), runID, runCaseID, fixture.corpusID, fixture.snapshotID, fixture.sourceID,
-			fixture.sourceRevisionID, fixture.documentID, fixture.unitID, fixture.contentSHA256,
-		)
-		assertRejected(`
-			INSERT INTO evaluation_run_metric (
-				id, run_id, run_case_id, corpus_id, component, metric_state, value, numerator,
-				denominator, rationale, scorer_version
-			) VALUES ($1, $2, $3, $4, 'late_metric', 'scored', 1, 1, 1, 'must not persist', 'v1')`,
-			uuid.New(), runID, runCaseID, fixture.corpusID,
-		)
-		assertRejected(`
-			INSERT INTO evaluation_run_expected_evidence (
-				id, run_id, run_case_id, corpus_id, snapshot_id, source_id, source_revision_id,
-				document_id, legal_unit_id, canonical_locator, display_locator, content_sha256, ordinal
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'article:1', 'Article 1', $10, 2)`,
-			uuid.New(), runID, runCaseID, fixture.corpusID, fixture.snapshotID, fixture.sourceID,
-			fixture.sourceRevisionID, fixture.documentID, fixture.unitID, fixture.contentSHA256,
-		)
-	})
-	aggregate, err := repository.Aggregate(ctx, runID, fixture.corpusID)
+		expectPostgresErrorCode(t, evaluationSchemaExecError(savepoint.Exec(ctx, statement, arguments...)), "55000")
+		if err := savepoint.Rollback(ctx); err != nil {
+			t.Fatalf("rollback terminal child rejection savepoint: %v", err)
+		}
+	}
+	assertRejected(`
+		INSERT INTO evaluation_run_actual_evidence (
+			id, run_id, run_case_id, corpus_id, snapshot_id, evidence_kind, position, marker_position,
+			source_id, source_revision_id, document_id, legal_unit_id, canonical_locator,
+			start_offset, end_offset, content_sha256
+		) VALUES ($1, $2, $3, $4, $5, 'cited', 1, 1, $6, $7, $8, $9, 'article:1', 0, 21, $10)`,
+		uuid.New(), runID, runCaseID, fixture.corpusID, fixture.snapshotID, fixture.sourceID,
+		fixture.sourceRevisionID, fixture.documentID, fixture.unitID, fixture.contentSHA256,
+	)
+	assertRejected(`
+		INSERT INTO evaluation_run_metric (
+			id, run_id, run_case_id, corpus_id, component, metric_state, value, numerator,
+			denominator, rationale, scorer_version
+		) VALUES ($1, $2, $3, $4, 'late_metric', 'scored', 1, 1, 1, 'must not persist', 'v1')`,
+		uuid.New(), runID, runCaseID, fixture.corpusID,
+	)
+	assertRejected(`
+		INSERT INTO evaluation_run_expected_evidence (
+			id, run_id, run_case_id, corpus_id, snapshot_id, source_id, source_revision_id,
+			document_id, legal_unit_id, canonical_locator, display_locator, content_sha256, ordinal
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'article:1', 'Article 1', $10, 2)`,
+		uuid.New(), runID, runCaseID, fixture.corpusID, fixture.snapshotID, fixture.sourceID,
+		fixture.sourceRevisionID, fixture.documentID, fixture.unitID, fixture.contentSHA256,
+	)
+}
+
+func assertCompletedEvaluationRunAggregate(t *testing.T, ctx context.Context, transaction pgx.Tx, repository *evaluationpostgres.Repository, runID, corpusID uuid.UUID) {
+	t.Helper()
+	aggregate, err := repository.Aggregate(ctx, runID, corpusID)
 	if err != nil {
 		t.Fatalf("Aggregate() error = %v", err)
 	}
@@ -196,101 +211,117 @@ func TestEvaluationRunRepositoryRecoversLeasesAndPreservesTerminalResults(t *tes
 	if runState != "completed" {
 		t.Fatalf("run state = %q, want completed", runState)
 	}
+}
 
-	t.Run("failed and cancelled completion discard supplied scores", func(t *testing.T) {
-		for index, terminal := range []struct {
-			name  string
-			state evaluationapplication.RunCaseState
-		}{
-			{name: "failed", state: evaluationapplication.RunCaseFailed},
-			{name: "cancelled", state: evaluationapplication.RunCaseCancelled},
-		} {
-			t.Run(terminal.name, func(t *testing.T) {
-				caseID, _ := insertEvaluationCasePair(t, ctx, transaction, fixture.revisionID, uuid.NewString(), uuid.NewString(), 3+index*2)
-				runID, runCaseID := uuid.New(), uuid.New()
-				if err := repository.CreateRun(ctx, evaluationRunRequest(fixture, runID, runCaseID, caseID, evaluationdomain.ExpectedOutcomeAnswer)); err != nil {
-					t.Fatalf("CreateRun(%s) error = %v", terminal.name, err)
-				}
-				claims, err := repository.Claim(ctx, terminal.name+"-worker", time.Minute, 1)
-				if err != nil {
-					t.Fatalf("Claim(%s) error = %v", terminal.name, err)
-				}
-				if len(claims) != 1 || claims[0].ID != runCaseID {
-					t.Fatalf("Claim(%s) = %#v, want the terminal case", terminal.name, claims)
-				}
-				if err := repository.Complete(ctx, claims[0], evaluationapplication.TerminalCaseResult{
-					State: terminal.state, SafeFailureCode: "provider_unavailable",
-					Metrics: []evaluationapplication.Metric{{
-						Name: evaluationapplication.MetricRetrievalCoverage, State: evaluationapplication.MetricStateScored,
-						Value: float64Pointer(1), Numerator: 1, Denominator: 1, Rationale: "must be discarded",
-					}},
-					ScoringPolicyVersion: "v1",
-				}); err != nil {
-					t.Fatalf("Complete(%s) error = %v", terminal.name, err)
-				}
-				aggregate, err := repository.Aggregate(ctx, runID, fixture.corpusID)
-				if err != nil {
-					t.Fatalf("Aggregate(%s) error = %v", terminal.name, err)
-				}
-				if aggregate.Total != 1 || aggregate.Eligible != 0 || aggregate.Scored != 0 ||
-					(terminal.state == evaluationapplication.RunCaseFailed && aggregate.Failed != 1) ||
-					(terminal.state == evaluationapplication.RunCaseCancelled && aggregate.Cancelled != 1) {
-					t.Fatalf("Aggregate(%s) = %#v, want an ineligible unscored terminal case", terminal.name, aggregate)
-				}
-				assertUnscoredAggregateContract(t, aggregate)
-			})
-		}
-	})
+func assertEvaluationRunFailedAndCancelled(t *testing.T, ctx context.Context, transaction pgx.Tx, repository *evaluationpostgres.Repository, fixture evaluationResolutionFixture) {
+	t.Helper()
+	for index, terminal := range []struct {
+		name  string
+		state evaluationapplication.RunCaseState
+	}{
+		{name: "failed", state: evaluationapplication.RunCaseFailed},
+		{name: "cancelled", state: evaluationapplication.RunCaseCancelled},
+	} {
+		t.Run(terminal.name, func(t *testing.T) {
+			assertEvaluationRunTerminalFailure(t, ctx, transaction, repository, fixture, terminal, index)
+		})
+	}
+}
 
-	t.Run("abstained completion requires the complete scorer-v1 set", func(t *testing.T) {
-		abstainedCaseID, _ := insertEvaluationCasePairWithOutcome(
-			t, ctx, transaction, fixture.revisionID, uuid.NewString(), uuid.NewString(), 7, "abstain", "insufficient_evidence",
-		)
-		abstainedRunID, abstainedRunCaseID := uuid.New(), uuid.New()
-		if err := repository.CreateRun(ctx, evaluationRunRequest(fixture, abstainedRunID, abstainedRunCaseID, abstainedCaseID, evaluationdomain.ExpectedOutcomeAbstain)); err != nil {
-			t.Fatalf("CreateRun(abstained) error = %v", err)
-		}
-		claims, err := repository.Claim(ctx, "abstained-worker", time.Minute, 1)
-		if err != nil {
-			t.Fatalf("Claim(abstained) error = %v", err)
-		}
-		if len(claims) != 1 || claims[0].ID != abstainedRunCaseID {
-			t.Fatalf("Claim(abstained) = %#v, want the abstained case", claims)
-		}
-		partial := evaluationapplication.TerminalCaseResult{
-			State: evaluationapplication.RunCaseAbstained,
-			Metrics: []evaluationapplication.Metric{{
-				Name: evaluationapplication.MetricExpectedAbstention, State: evaluationapplication.MetricStateScored,
-				Value: float64Pointer(1), Numerator: 1, Denominator: 1, Rationale: "agent abstained as required",
-			}},
-			ScoringPolicyVersion: "v1",
-		}
-		if err := repository.Complete(ctx, claims[0], partial); !errors.Is(err, evaluationpostgres.ErrInvalidInput) {
-			t.Fatalf("Complete(partial abstained result) error = %v, want %v", err, evaluationpostgres.ErrInvalidInput)
-		}
-		if err := repository.Complete(ctx, claims[0], evaluationapplication.TerminalCaseResult{
-			State: evaluationapplication.RunCaseAbstained, Metrics: scorerV1AbstainedMetrics(), ScoringPolicyVersion: "v1",
-		}); err != nil {
-			t.Fatalf("Complete(full abstained result) error = %v", err)
-		}
-		aggregate, err := repository.Aggregate(ctx, abstainedRunID, fixture.corpusID)
-		if err != nil {
-			t.Fatalf("Aggregate(abstained) error = %v", err)
-		}
-		if aggregate.Total != 1 || aggregate.Eligible != 1 || len(aggregate.Metrics) != len(requiredScorerV1Metrics) {
-			t.Fatalf("Aggregate(abstained) = %#v, want a complete scoreable terminal contract", aggregate)
-		}
-		assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricRetrievalCoverage, evaluationapplication.MetricStateNotApplicable)
-		assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricCitationCoverage, evaluationapplication.MetricStateNotApplicable)
-		assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricCitationValidity, evaluationapplication.MetricStateNotApplicable)
-		assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricCitationScope, evaluationapplication.MetricStateNotApplicable)
-		assertRunAggregateMetric(t, aggregate, evaluationapplication.MetricExpectedAbstention, 1, 1, 1)
-		assertRunAggregateMetric(t, aggregate, evaluationapplication.MetricExecutionState, 1, 1, 1)
-		assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricLatency, evaluationapplication.MetricStateNotApplicable)
-		assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricInputTokens, evaluationapplication.MetricStateNotApplicable)
-		assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricOutputTokens, evaluationapplication.MetricStateNotApplicable)
-		assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricSemanticSupport, evaluationapplication.MetricStateNeedsHumanReview)
-	})
+func assertEvaluationRunTerminalFailure(t *testing.T, ctx context.Context, transaction pgx.Tx, repository *evaluationpostgres.Repository, fixture evaluationResolutionFixture, terminal struct {
+	name  string
+	state evaluationapplication.RunCaseState
+}, index int) {
+	t.Helper()
+	caseID, _ := insertEvaluationCasePair(t, ctx, transaction, fixture.revisionID, uuid.NewString(), uuid.NewString(), 3+index*2)
+	runID, runCaseID := uuid.New(), uuid.New()
+	if err := repository.CreateRun(ctx, evaluationRunRequest(fixture, runID, runCaseID, caseID, evaluationdomain.ExpectedOutcomeAnswer)); err != nil {
+		t.Fatalf("CreateRun(%s) error = %v", terminal.name, err)
+	}
+	claims, err := repository.Claim(ctx, terminal.name+"-worker", time.Minute, 1)
+	if err != nil {
+		t.Fatalf("Claim(%s) error = %v", terminal.name, err)
+	}
+	if len(claims) != 1 || claims[0].ID != runCaseID {
+		t.Fatalf("Claim(%s) = %#v, want the terminal case", terminal.name, claims)
+	}
+	if err := repository.Complete(ctx, claims[0], evaluationapplication.TerminalCaseResult{
+		State: terminal.state, SafeFailureCode: "provider_unavailable",
+		Metrics: []evaluationapplication.Metric{{
+			Name: evaluationapplication.MetricRetrievalCoverage, State: evaluationapplication.MetricStateScored,
+			Value: float64Pointer(1), Numerator: 1, Denominator: 1, Rationale: "must be discarded",
+		}},
+		ScoringPolicyVersion: "v1",
+	}); err != nil {
+		t.Fatalf("Complete(%s) error = %v", terminal.name, err)
+	}
+	aggregate, err := repository.Aggregate(ctx, runID, fixture.corpusID)
+	if err != nil {
+		t.Fatalf("Aggregate(%s) error = %v", terminal.name, err)
+	}
+	if aggregate.Total != 1 || aggregate.Eligible != 0 || aggregate.Scored != 0 ||
+		(terminal.state == evaluationapplication.RunCaseFailed && aggregate.Failed != 1) ||
+		(terminal.state == evaluationapplication.RunCaseCancelled && aggregate.Cancelled != 1) {
+		t.Fatalf("Aggregate(%s) = %#v, want an ineligible unscored terminal case", terminal.name, aggregate)
+	}
+	assertUnscoredAggregateContract(t, aggregate)
+}
+
+func assertEvaluationRunAbstained(t *testing.T, ctx context.Context, transaction pgx.Tx, repository *evaluationpostgres.Repository, fixture evaluationResolutionFixture) {
+	t.Helper()
+	abstainedCaseID, _ := insertEvaluationCasePairWithOutcome(
+		t, ctx, transaction, fixture.revisionID, evaluationCasePairIDs{english: uuid.NewString(), portuguese: uuid.NewString()}, 7,
+		evaluationCasePairOutcome{expectedOutcome: "abstain", expectedReasonCode: "insufficient_evidence"},
+	)
+	abstainedRunID, abstainedRunCaseID := uuid.New(), uuid.New()
+	if err := repository.CreateRun(ctx, evaluationRunRequest(fixture, abstainedRunID, abstainedRunCaseID, abstainedCaseID, evaluationdomain.ExpectedOutcomeAbstain)); err != nil {
+		t.Fatalf("CreateRun(abstained) error = %v", err)
+	}
+	claims, err := repository.Claim(ctx, "abstained-worker", time.Minute, 1)
+	if err != nil {
+		t.Fatalf("Claim(abstained) error = %v", err)
+	}
+	if len(claims) != 1 || claims[0].ID != abstainedRunCaseID {
+		t.Fatalf("Claim(abstained) = %#v, want the abstained case", claims)
+	}
+	partial := evaluationapplication.TerminalCaseResult{
+		State: evaluationapplication.RunCaseAbstained,
+		Metrics: []evaluationapplication.Metric{{
+			Name: evaluationapplication.MetricExpectedAbstention, State: evaluationapplication.MetricStateScored,
+			Value: float64Pointer(1), Numerator: 1, Denominator: 1, Rationale: "agent abstained as required",
+		}},
+		ScoringPolicyVersion: "v1",
+	}
+	if err := repository.Complete(ctx, claims[0], partial); !errors.Is(err, evaluationpostgres.ErrInvalidInput) {
+		t.Fatalf("Complete(partial abstained result) error = %v, want %v", err, evaluationpostgres.ErrInvalidInput)
+	}
+	if err := repository.Complete(ctx, claims[0], evaluationapplication.TerminalCaseResult{
+		State: evaluationapplication.RunCaseAbstained, Metrics: scorerV1AbstainedMetrics(), ScoringPolicyVersion: "v1",
+	}); err != nil {
+		t.Fatalf("Complete(full abstained result) error = %v", err)
+	}
+	assertAbstainedEvaluationRunAggregate(t, ctx, repository, abstainedRunID, fixture.corpusID)
+}
+
+func assertAbstainedEvaluationRunAggregate(t *testing.T, ctx context.Context, repository *evaluationpostgres.Repository, runID, corpusID uuid.UUID) {
+	t.Helper()
+	aggregate, err := repository.Aggregate(ctx, runID, corpusID)
+	if err != nil {
+		t.Fatalf("Aggregate(abstained) error = %v", err)
+	}
+	if aggregate.Total != 1 || aggregate.Eligible != 1 || len(aggregate.Metrics) != len(requiredScorerV1Metrics) {
+		t.Fatalf("Aggregate(abstained) = %#v, want a complete scoreable terminal contract", aggregate)
+	}
+	assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricRetrievalCoverage, evaluationapplication.MetricStateNotApplicable)
+	assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricCitationCoverage, evaluationapplication.MetricStateNotApplicable)
+	assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricCitationValidity, evaluationapplication.MetricStateNotApplicable)
+	assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricCitationScope, evaluationapplication.MetricStateNotApplicable)
+	assertRunAggregateMetric(t, aggregate, evaluationapplication.MetricExpectedAbstention, 1, 1, 1)
+	assertRunAggregateMetric(t, aggregate, evaluationapplication.MetricExecutionState, 1, 1, 1)
+	assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricLatency, evaluationapplication.MetricStateNotApplicable)
+	assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricInputTokens, evaluationapplication.MetricStateNotApplicable)
+	assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricOutputTokens, evaluationapplication.MetricStateNotApplicable)
+	assertRunAggregateMetricState(t, aggregate, evaluationapplication.MetricSemanticSupport, evaluationapplication.MetricStateNeedsHumanReview)
 }
 
 func TestEvaluationRunInspectionRetainsHistoricalSnapshotAndImmutableCaseLedger(t *testing.T) {
@@ -372,7 +403,11 @@ func TestEvaluationRunInspectionRetainsHistoricalSnapshotAndImmutableCaseLedger(
 		t.Fatalf("GetEvaluationRunCase(before publication) error = %v", err)
 	}
 
-	// Publish a later ready source revision through the repository boundary.
+	assertEvaluationRunHistoryRemainsImmutable(t, ctx, transaction, repository, fixture, runID, runCaseID, originalReleaseVersion, historicalPublication, historicalRun, historicalCase)
+}
+
+func assertEvaluationRunHistoryRemainsImmutable(t *testing.T, ctx context.Context, transaction pgx.Tx, repository *evaluationpostgres.Repository, fixture evaluationResolutionFixture, runID, runCaseID uuid.UUID, originalReleaseVersion int, historicalPublication evaluationdomain.Publication, historicalRun evaluationapplication.Run, historicalCase evaluationapplication.RunCase) {
+	t.Helper()
 	laterSourceRevisionID, laterDocumentID, laterContentSHA256 := insertLaterReadyEvaluationDocument(t, ctx, transaction, fixture)
 	snapshotRepository := snapshotpostgres.NewRepository(transaction)
 	laterPublication, err := snapshotRepository.Publish(ctx, snapshotdomain.PublishCommand{
@@ -385,25 +420,19 @@ func TestEvaluationRunInspectionRetainsHistoricalSnapshotAndImmutableCaseLedger(
 	}
 	if !laterPublication.Created || laterPublication.Release.Version != originalReleaseVersion+1 ||
 		laterPublication.Snapshot.ID != laterPublication.Release.SnapshotID || len(laterPublication.Snapshot.Members) != 1 ||
-		laterPublication.Snapshot.Members[0].SourceRevisionID != laterSourceRevisionID ||
-		laterPublication.Snapshot.Members[0].DocumentID != laterDocumentID ||
+		laterPublication.Snapshot.Members[0].SourceRevisionID != laterSourceRevisionID || laterPublication.Snapshot.Members[0].DocumentID != laterDocumentID ||
 		laterPublication.Snapshot.Members[0].ContentSHA256 != laterContentSHA256 {
 		t.Fatalf("Publish(later snapshot) = %#v, want the later ready source revision in the next release", laterPublication)
 	}
-
 	laterDatasetRevisionID := uuid.New()
 	insertEvaluationRevision(t, ctx, transaction, laterDatasetRevisionID, evaluationLGPDCorpusID)
-	laterPublicationTime := time.Date(2026, time.August, 26, 16, 1, 0, 0, time.UTC)
-	laterPublicationService := evaluationapplication.NewPublicationService(
-		repository,
-		uuid.New,
-		func() time.Time { return laterPublicationTime },
-	)
+	laterPublicationService := evaluationapplication.NewPublicationService(repository, uuid.New, func() time.Time {
+		return time.Date(2026, time.August, 26, 16, 1, 0, 0, time.UTC)
+	})
 	laterDatasetPublication, err := laterPublicationService.Review(ctx, evaluationapplication.ReviewCommand{
 		CorpusID: fixture.corpusID, DatasetRevisionID: laterDatasetRevisionID,
 		ReviewDecision: evaluationdomain.ReviewDecisionApproved, ReviewerIdentity: "integration-test",
-		ReviewNote:       "Later revision reviewed for retention coverage.",
-		PublicationState: evaluationdomain.PublicationStateAvailable,
+		ReviewNote: "Later revision reviewed for retention coverage.", PublicationState: evaluationdomain.PublicationStateAvailable,
 	})
 	if err != nil {
 		t.Fatalf("Review(later dataset revision) error = %v", err)
@@ -412,31 +441,40 @@ func TestEvaluationRunInspectionRetainsHistoricalSnapshotAndImmutableCaseLedger(
 	if err != nil {
 		t.Fatalf("LatestPublication(later dataset revision) error = %v", err)
 	}
-	if !found || availableLaterPublication.PublicationState != evaluationdomain.PublicationStateAvailable ||
-		availableLaterPublication.ReviewDecision != evaluationdomain.ReviewDecisionApproved {
+	if !found || availableLaterPublication.PublicationState != evaluationdomain.PublicationStateAvailable || availableLaterPublication.ReviewDecision != evaluationdomain.ReviewDecisionApproved {
 		t.Fatalf("LatestPublication(later dataset revision) = %#v, want the available approved later revision %#v", availableLaterPublication, laterDatasetPublication)
 	}
 	assertEvaluationPublication(t, availableLaterPublication, laterDatasetPublication)
+	assertEvaluationActiveSnapshot(t, ctx, transaction, fixture.corpusID, laterPublication.Snapshot.ID, originalReleaseVersion+1)
+	assertEvaluationHistoricalSnapshot(t, ctx, snapshotRepository, fixture)
+	assertEvaluationHistoricalRun(t, ctx, repository, fixture, runID, runCaseID, historicalPublication, historicalRun, historicalCase)
+}
 
+func assertEvaluationActiveSnapshot(t *testing.T, ctx context.Context, transaction pgx.Tx, corpusID, snapshotID uuid.UUID, releaseVersion int) {
+	t.Helper()
 	var activeSnapshotID uuid.UUID
 	var activeReleaseVersion int
-	if err := transaction.QueryRow(ctx, `
-		SELECT snapshot_id, version FROM corpus_snapshot_releases WHERE corpus_id = $1`, fixture.corpusID,
-	).Scan(&activeSnapshotID, &activeReleaseVersion); err != nil {
+	if err := transaction.QueryRow(ctx, `SELECT snapshot_id, version FROM corpus_snapshot_releases WHERE corpus_id = $1`, corpusID).Scan(&activeSnapshotID, &activeReleaseVersion); err != nil {
 		t.Fatalf("read later snapshot publication: %v", err)
 	}
-	if activeSnapshotID != laterPublication.Snapshot.ID || activeReleaseVersion != originalReleaseVersion+1 {
-		t.Fatalf("active snapshot publication = (%s, %d), want (%s, %d)", activeSnapshotID, activeReleaseVersion, laterPublication.Snapshot.ID, originalReleaseVersion+1)
+	if activeSnapshotID != snapshotID || activeReleaseVersion != releaseVersion {
+		t.Fatalf("active snapshot publication = (%s, %d), want (%s, %d)", activeSnapshotID, activeReleaseVersion, snapshotID, releaseVersion)
 	}
+}
 
-	historicalSnapshot, err := snapshotRepository.Get(ctx, fixture.corpusID, fixture.snapshotID)
+func assertEvaluationHistoricalSnapshot(t *testing.T, ctx context.Context, repository *snapshotpostgres.Repository, fixture evaluationResolutionFixture) {
+	t.Helper()
+	historicalSnapshot, err := repository.Get(ctx, fixture.corpusID, fixture.snapshotID)
 	if err != nil {
 		t.Fatalf("Get(historical snapshot) error = %v", err)
 	}
-	if len(historicalSnapshot.Members) != 1 || historicalSnapshot.Members[0].DocumentID != fixture.documentID ||
-		historicalSnapshot.Members[0].SourceRevisionID != fixture.sourceRevisionID || historicalSnapshot.Members[0].ContentSHA256 != fixture.contentSHA256 {
+	if len(historicalSnapshot.Members) != 1 || historicalSnapshot.Members[0].DocumentID != fixture.documentID || historicalSnapshot.Members[0].SourceRevisionID != fixture.sourceRevisionID || historicalSnapshot.Members[0].ContentSHA256 != fixture.contentSHA256 {
 		t.Fatalf("Get(historical snapshot) = %#v, want the original immutable member", historicalSnapshot)
 	}
+}
+
+func assertEvaluationHistoricalRun(t *testing.T, ctx context.Context, repository *evaluationpostgres.Repository, fixture evaluationResolutionFixture, runID, runCaseID uuid.UUID, historicalPublication evaluationdomain.Publication, historicalRun evaluationapplication.Run, historicalCase evaluationapplication.RunCase) {
+	t.Helper()
 	publication, found, err := repository.LatestPublication(ctx, fixture.corpusID, fixture.revisionID)
 	if err != nil {
 		t.Fatalf("LatestPublication(historical dataset revision) error = %v", err)
@@ -445,7 +483,6 @@ func TestEvaluationRunInspectionRetainsHistoricalSnapshotAndImmutableCaseLedger(
 		t.Fatalf("LatestPublication(historical dataset revision) = %#v, want unchanged publication %#v", publication, historicalPublication)
 	}
 	assertEvaluationPublication(t, publication, historicalPublication)
-
 	run, err := repository.GetEvaluationRun(ctx, runID)
 	if err != nil {
 		t.Fatalf("GetEvaluationRun(after publication) error = %v", err)
@@ -460,8 +497,7 @@ func TestEvaluationRunInspectionRetainsHistoricalSnapshotAndImmutableCaseLedger(
 	if !reflect.DeepEqual(result, historicalCase) {
 		t.Fatalf("GetEvaluationRunCase() after publication = %#v, want unchanged historical case %#v", result, historicalCase)
 	}
-	if result.SnapshotID != fixture.snapshotID || len(result.ExpectedEvidence) != 1 || result.ExpectedEvidence[0].SnapshotID != fixture.snapshotID ||
-		result.ExpectedEvidence[0].ContentSHA256 != fixture.contentSHA256 || result.Answer != "Historical completed answer." {
+	if result.SnapshotID != fixture.snapshotID || len(result.ExpectedEvidence) != 1 || result.ExpectedEvidence[0].SnapshotID != fixture.snapshotID || result.ExpectedEvidence[0].ContentSHA256 != fixture.contentSHA256 || result.Answer != "Historical completed answer." {
 		t.Fatalf("GetEvaluationRunCase() = %#v, want the original immutable ledger and expected evidence", result)
 	}
 }

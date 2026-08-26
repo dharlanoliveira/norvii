@@ -18,15 +18,7 @@ func TestComparisonServiceRejectsEveryMismatchedStableKey(t *testing.T) {
 		AgentBuild: "agent-b", ChatModelIdentity: "chat-b", EmbeddingModelIdentity: "embedding-b",
 	}
 
-	result, err := NewComparisonService(comparisonStore{runs: map[uuid.UUID]ComparisonRun{
-		left.ID: left, right.ID: right,
-	}}).Compare(context.Background(), ComparisonRequest{LeftRunID: left.ID, RightRunID: right.ID})
-	if err != nil {
-		t.Fatalf("Compare() error = %v", err)
-	}
-	if result.State != ComparisonStateComparable || len(result.Differences) != 0 {
-		t.Fatalf("Compare() = %#v, want comparable runs with different model/configuration identities", result)
-	}
+	assertComparableExperimentVariation(t, left, right)
 
 	for _, mismatch := range []struct {
 		name  string
@@ -42,26 +34,50 @@ func TestComparisonServiceRejectsEveryMismatchedStableKey(t *testing.T) {
 		{"scoring policy", "scoring_policy_version", func(key *ComparisonKey) { key.ScoringPolicyVersion = "v2" }},
 	} {
 		t.Run(mismatch.name, func(t *testing.T) {
-			mismatched := right
-			mismatched.Cases = cloneComparisonCases(right.Cases)
-			mismatch.apply(&mismatched.Key)
-			if mismatch.field == "scoring_policy_version" {
-				for caseIndex := range mismatched.Cases {
-					for metricIndex := range mismatched.Cases[caseIndex].Metrics {
-						mismatched.Cases[caseIndex].Metrics[metricIndex].ScorerVersion = mismatched.Key.ScoringPolicyVersion
-					}
-				}
-			}
-			result, err := NewComparisonService(comparisonStore{runs: map[uuid.UUID]ComparisonRun{
-				left.ID: left, mismatched.ID: mismatched,
-			}}).Compare(context.Background(), ComparisonRequest{LeftRunID: left.ID, RightRunID: mismatched.ID})
-			if err != nil {
-				t.Fatalf("Compare() error = %v", err)
-			}
-			if result.State != ComparisonStateNonComparable || len(result.Metrics) != 0 || len(result.Differences) != 1 || result.Differences[0].Field != mismatch.field {
-				t.Fatalf("Compare() = %#v, want explicit %q incompatibility without metrics", result, mismatch.field)
-			}
+			assertStableKeyMismatch(t, left, right, mismatch.field, mismatch.apply)
 		})
+	}
+}
+
+func assertComparableExperimentVariation(t *testing.T, left, right ComparisonRun) {
+	t.Helper()
+	result, err := compareTestRuns(left, right)
+	if err != nil {
+		t.Fatalf("Compare() error = %v", err)
+	}
+	if result.State != ComparisonStateComparable || len(result.Differences) != 0 {
+		t.Fatalf("Compare() = %#v, want comparable runs with different model/configuration identities", result)
+	}
+}
+
+func assertStableKeyMismatch(t *testing.T, left, right ComparisonRun, field string, apply func(*ComparisonKey)) {
+	t.Helper()
+	mismatched := right
+	mismatched.Cases = cloneComparisonCases(right.Cases)
+	apply(&mismatched.Key)
+	if field == "scoring_policy_version" {
+		setComparisonScorerVersion(mismatched.Cases, mismatched.Key.ScoringPolicyVersion)
+	}
+	result, err := compareTestRuns(left, mismatched)
+	if err != nil {
+		t.Fatalf("Compare() error = %v", err)
+	}
+	if result.State != ComparisonStateNonComparable || len(result.Metrics) != 0 || len(result.Differences) != 1 || result.Differences[0].Field != field {
+		t.Fatalf("Compare() = %#v, want explicit %q incompatibility without metrics", result, field)
+	}
+}
+
+func compareTestRuns(left, right ComparisonRun) (ComparisonResult, error) {
+	return NewComparisonService(comparisonStore{runs: map[uuid.UUID]ComparisonRun{left.ID: left, right.ID: right}}).Compare(
+		context.Background(), ComparisonRequest{LeftRunID: left.ID, RightRunID: right.ID},
+	)
+}
+
+func setComparisonScorerVersion(cases []ComparisonCase, version string) {
+	for caseIndex := range cases {
+		for metricIndex := range cases[caseIndex].Metrics {
+			cases[caseIndex].Metrics[metricIndex].ScorerVersion = version
+		}
 	}
 }
 

@@ -431,18 +431,23 @@ func finalizeRunIfTerminal(ctx context.Context, transaction pgx.Tx, runID, corpu
 	if err := persistRunAggregateMetrics(ctx, transaction, runID, corpusID); err != nil {
 		return err
 	}
-	state := "completed"
-	if completed+abstained == 0 {
-		state = "failed"
-	} else if failed+cancelled > 0 {
-		state = "completed_with_failures"
-	}
+	state := terminalRunState(completed, abstained, failed, cancelled)
 	if _, err := transaction.Exec(ctx, `
 		UPDATE evaluation_run SET state = $3, completed_at = now()
 		WHERE id = $1 AND corpus_id = $2 AND state = 'running'`, runID, corpusID, state); err != nil {
 		return fmt.Errorf("finalize evaluation run: %w", err)
 	}
 	return nil
+}
+
+func terminalRunState(completed, abstained, failed, cancelled int64) string {
+	if completed+abstained == 0 {
+		return "failed"
+	}
+	if failed+cancelled > 0 {
+		return "completed_with_failures"
+	}
+	return "completed"
 }
 
 func (request CreateRunRequest) validate() error {

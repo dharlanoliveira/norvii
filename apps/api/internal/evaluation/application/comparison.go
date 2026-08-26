@@ -77,9 +77,9 @@ type ComparisonRun struct {
 	Cases      []ComparisonCase
 }
 
-// ComparisonStore reads immutable historical records. It must not resolve an active snapshot or
+// comparisonRunReader reads immutable historical records. It must not resolve an active snapshot or
 // recompute metrics from mutable catalog data.
-type ComparisonStore interface {
+type comparisonRunReader interface {
 	ComparisonRun(context.Context, uuid.UUID) (ComparisonRun, error)
 }
 
@@ -134,10 +134,10 @@ type ComparisonResult struct {
 }
 
 // ComparisonService compares immutable run records loaded by the caller-owned persistence store.
-type ComparisonService struct{ store ComparisonStore }
+type ComparisonService struct{ store comparisonRunReader }
 
 // NewComparisonService constructs a read-only historical comparison capability.
-func NewComparisonService(store ComparisonStore) *ComparisonService {
+func NewComparisonService(store comparisonRunReader) *ComparisonService {
 	return &ComparisonService{store: store}
 }
 
@@ -195,44 +195,63 @@ func validateComparisonCases(cases []ComparisonCase, scoringPolicyVersion string
 	}
 	seenCases := make(map[uuid.UUID]struct{}, len(cases))
 	for _, evaluationCase := range cases {
-		if evaluationCase.DatasetCaseID == uuid.Nil || !terminalComparisonCaseState(evaluationCase.State) {
-			return ErrInvalidComparisonRun
-		}
-		if _, found := seenCases[evaluationCase.DatasetCaseID]; found {
-			return ErrInvalidComparisonRun
-		}
-		seenCases[evaluationCase.DatasetCaseID] = struct{}{}
-		if len(evaluationCase.Metrics) != len(requiredComparisonMetrics) {
-			return ErrInvalidComparisonRun
-		}
-		seenMetrics := make(map[MetricName]struct{}, len(evaluationCase.Metrics))
-		for _, metric := range evaluationCase.Metrics {
-			if _, required := requiredComparisonMetrics[metric.Name]; !required || metric.ScorerVersion != scoringPolicyVersion {
-				return ErrInvalidComparisonRun
-			}
-			if _, found := seenMetrics[metric.Name]; found {
-				return ErrInvalidComparisonRun
-			}
-			seenMetrics[metric.Name] = struct{}{}
-			if terminalFailure(evaluationCase.State) && metric.State == MetricStateScored {
-				return ErrInvalidComparisonRun
-			}
-			if metric.State == MetricStateScored {
-				if !scoredComparisonMetric(metric) {
-					return ErrInvalidComparisonRun
-				}
-				continue
-			}
-			if metric.State != MetricStateNotApplicable && metric.State != MetricStateNotScored && metric.State != MetricStateNeedsHumanReview ||
-				metric.Numerator != nil || metric.Denominator != nil {
-				return ErrInvalidComparisonRun
-			}
-		}
-		if len(seenMetrics) != len(requiredComparisonMetrics) {
-			return ErrInvalidComparisonRun
+		if err := validateComparisonCase(evaluationCase, scoringPolicyVersion, seenCases); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func validateComparisonCase(evaluationCase ComparisonCase, scoringPolicyVersion string, seenCases map[uuid.UUID]struct{}) error {
+	if evaluationCase.DatasetCaseID == uuid.Nil || !terminalComparisonCaseState(evaluationCase.State) {
+		return ErrInvalidComparisonRun
+	}
+	if _, found := seenCases[evaluationCase.DatasetCaseID]; found {
+		return ErrInvalidComparisonRun
+	}
+	seenCases[evaluationCase.DatasetCaseID] = struct{}{}
+	return validateComparisonMetrics(evaluationCase, scoringPolicyVersion)
+}
+
+func validateComparisonMetrics(evaluationCase ComparisonCase, scoringPolicyVersion string) error {
+	if len(evaluationCase.Metrics) != len(requiredComparisonMetrics) {
+		return ErrInvalidComparisonRun
+	}
+	seenMetrics := make(map[MetricName]struct{}, len(evaluationCase.Metrics))
+	for _, metric := range evaluationCase.Metrics {
+		if err := validateComparisonMetric(evaluationCase.State, metric, scoringPolicyVersion, seenMetrics); err != nil {
+			return err
+		}
+	}
+	if len(seenMetrics) != len(requiredComparisonMetrics) {
+		return ErrInvalidComparisonRun
+	}
+	return nil
+}
+
+func validateComparisonMetric(caseState RunCaseState, metric ComparisonMetric, scoringPolicyVersion string, seen map[MetricName]struct{}) error {
+	if _, required := requiredComparisonMetrics[metric.Name]; !required || metric.ScorerVersion != scoringPolicyVersion {
+		return ErrInvalidComparisonRun
+	}
+	if _, found := seen[metric.Name]; found {
+		return ErrInvalidComparisonRun
+	}
+	seen[metric.Name] = struct{}{}
+	if terminalFailure(caseState) && metric.State == MetricStateScored {
+		return ErrInvalidComparisonRun
+	}
+	if metric.State == MetricStateScored && !scoredComparisonMetric(metric) {
+		return ErrInvalidComparisonRun
+	}
+	if metric.State != MetricStateScored && !validUnscoredComparisonMetric(metric) {
+		return ErrInvalidComparisonRun
+	}
+	return nil
+}
+
+func validUnscoredComparisonMetric(metric ComparisonMetric) bool {
+	return (metric.State == MetricStateNotApplicable || metric.State == MetricStateNotScored || metric.State == MetricStateNeedsHumanReview) &&
+		metric.Numerator == nil && metric.Denominator == nil
 }
 
 var requiredComparisonMetrics = map[MetricName]struct{}{

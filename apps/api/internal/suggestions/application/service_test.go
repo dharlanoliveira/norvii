@@ -15,12 +15,7 @@ import (
 func TestServicePublish(t *testing.T) {
 	t.Parallel()
 
-	for _, testCase := range []struct {
-		name      string
-		configure func(*catalogFake, *activeSnapshotFake, *projectionAppenderFake, *PublishCommand)
-		want      error
-		wantWrite int
-	}{
+	for _, testCase := range []publishServiceCase{
 		{name: "publishes reviewed compatible projection", configure: func(_ *catalogFake, _ *activeSnapshotFake, _ *projectionAppenderFake, _ *PublishCommand) {}, wantWrite: 1},
 		{
 			name: "rejects invalid command before reads", configure: func(_ *catalogFake, _ *activeSnapshotFake, _ *projectionAppenderFake, command *PublishCommand) {
@@ -66,29 +61,48 @@ func TestServicePublish(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			catalog, active, writer, command := validServiceInputs()
-			testCase.configure(&catalog, &active, &writer, &command)
-			service := NewService(&catalog, &active, &writer, func() uuid.UUID { return fixtureID(30) })
-
-			projection, err := service.Publish(context.Background(), command)
-			if !errors.Is(err, testCase.want) {
-				t.Fatalf("Publish() error = %v, want %v", err, testCase.want)
-			}
-			if writer.calls != testCase.wantWrite {
-				t.Fatalf("AppendProjection() calls = %d, want %d", writer.calls, testCase.wantWrite)
-			}
-			if testCase.wantWrite == 1 {
-				if projection.Set.ID != fixtureID(30) || len(projection.Items) != 2 || !reflect.DeepEqual(writer.projection, projection) {
-					t.Fatalf("Publish() projection = %#v, writer projection = %#v", projection, writer.projection)
-				}
-			}
-			if errors.Is(testCase.want, ErrInvalidCommand) && (active.calls != 0 || catalog.calls != 0) {
-				t.Fatalf("invalid command called dependencies: active=%d catalog=%d", active.calls, catalog.calls)
-			}
-			if errors.Is(testCase.want, ErrStaleActiveRelease) && active.calls == 0 {
-				t.Fatal("stale release was not checked against active snapshot")
-			}
+			assertPublishServiceCase(t, testCase)
 		})
+	}
+}
+
+type publishServiceCase struct {
+	name      string
+	configure func(*catalogFake, *activeSnapshotFake, *projectionAppenderFake, *PublishCommand)
+	want      error
+	wantWrite int
+}
+
+func assertPublishServiceCase(t *testing.T, testCase publishServiceCase) {
+	t.Helper()
+	catalog, active, writer, command := validServiceInputs()
+	testCase.configure(&catalog, &active, &writer, &command)
+	service := NewService(&catalog, &active, &writer, func() uuid.UUID { return fixtureID(30) })
+	projection, err := service.Publish(context.Background(), command)
+	if !errors.Is(err, testCase.want) {
+		t.Fatalf("Publish() error = %v, want %v", err, testCase.want)
+	}
+	if writer.calls != testCase.wantWrite {
+		t.Fatalf("AppendProjection() calls = %d, want %d", writer.calls, testCase.wantWrite)
+	}
+	assertPublishProjection(t, testCase.wantWrite, projection, writer)
+	assertPublishDependencyCalls(t, testCase.want, active, catalog)
+}
+
+func assertPublishProjection(t *testing.T, wantWrites int, projection domain.Projection, writer projectionAppenderFake) {
+	t.Helper()
+	if wantWrites == 1 && (projection.Set.ID != fixtureID(30) || len(projection.Items) != 2 || !reflect.DeepEqual(writer.projection, projection)) {
+		t.Fatalf("Publish() projection = %#v, writer projection = %#v", projection, writer.projection)
+	}
+}
+
+func assertPublishDependencyCalls(t *testing.T, want error, active activeSnapshotFake, catalog catalogFake) {
+	t.Helper()
+	if errors.Is(want, ErrInvalidCommand) && (active.calls != 0 || catalog.calls != 0) {
+		t.Fatalf("invalid command called dependencies: active=%d catalog=%d", active.calls, catalog.calls)
+	}
+	if errors.Is(want, ErrStaleActiveRelease) && active.calls == 0 {
+		t.Fatal("stale release was not checked against active snapshot")
 	}
 }
 

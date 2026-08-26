@@ -206,28 +206,43 @@ func TestScoreCaseV1TelemetryAndFailureOutcomes(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			actual, err := MaterializeCaseResult(corpusID, snapshotID, testCase.result)
-			if err != nil {
-				t.Fatalf("MaterializeCaseResult() error = %v", err)
-			}
-			score, err := ScoreCaseV1(domain.ExpectedOutcomeAnswer, nil, actual)
-			if err != nil {
-				t.Fatalf("ScoreCaseV1() error = %v", err)
-			}
-			if testCase.wantState != "" {
-				for _, metric := range score.Metrics {
-					if metric.State != testCase.wantState || metric.Value != nil || metric.Numerator != 0 || metric.Denominator != 0 {
-						t.Fatalf("metric = %#v, want not_scored without a synthetic value", metric)
-					}
-				}
-				return
-			}
-			assertMetric(t, score, MetricLatency, testCase.wantMetric)
-			if testCase.wantMetric.state == MetricStateScored {
-				assertMetric(t, score, MetricInputTokens, metricExpectation{state: MetricStateScored, numerator: 7, denominator: 1})
-				assertMetric(t, score, MetricOutputTokens, metricExpectation{state: MetricStateScored, numerator: 11, denominator: 1})
-			}
+			assertTelemetryOutcome(t, corpusID, snapshotID, testCase)
 		})
+	}
+}
+
+func assertTelemetryOutcome(t *testing.T, corpusID, snapshotID uuid.UUID, testCase struct {
+	name       string
+	result     AgentCaseResult
+	wantState  MetricState
+	wantMetric metricExpectation
+}) {
+	t.Helper()
+	actual, err := MaterializeCaseResult(corpusID, snapshotID, testCase.result)
+	if err != nil {
+		t.Fatalf("MaterializeCaseResult() error = %v", err)
+	}
+	score, err := ScoreCaseV1(domain.ExpectedOutcomeAnswer, nil, actual)
+	if err != nil {
+		t.Fatalf("ScoreCaseV1() error = %v", err)
+	}
+	if testCase.wantState != "" {
+		assertAllMetricsNotScored(t, score, testCase.wantState)
+		return
+	}
+	assertMetric(t, score, MetricLatency, testCase.wantMetric)
+	if testCase.wantMetric.state == MetricStateScored {
+		assertMetric(t, score, MetricInputTokens, metricExpectation{state: MetricStateScored, numerator: 7, denominator: 1})
+		assertMetric(t, score, MetricOutputTokens, metricExpectation{state: MetricStateScored, numerator: 11, denominator: 1})
+	}
+}
+
+func assertAllMetricsNotScored(t *testing.T, score CaseScore, want MetricState) {
+	t.Helper()
+	for _, metric := range score.Metrics {
+		if metric.State != want || metric.Value != nil || metric.Numerator != 0 || metric.Denominator != 0 {
+			t.Fatalf("metric = %#v, want not_scored without a synthetic value", metric)
+		}
 	}
 }
 

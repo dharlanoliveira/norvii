@@ -20,13 +20,7 @@ func TestImporterValidatesEveryOwnedDatasetWithoutNetwork(t *testing.T) {
 	})
 	importer := NewImporter(reader)
 
-	testCases := []struct {
-		name         string
-		request      AssetRequest
-		wantCases    int
-		wantSources  int
-		wantStarters int
-	}{
+	for _, testCase := range []ownedDatasetExpectation{
 		{
 			name: "Brazil LGPD", request: assetRequest("brazil-lgpd", "brazil-lgpd"),
 			wantCases: 18, wantSources: 1, wantStarters: 10,
@@ -39,30 +33,46 @@ func TestImporterValidatesEveryOwnedDatasetWithoutNetwork(t *testing.T) {
 			name: "United States fair housing", request: assetRequest("us-fair-housing-disability-accommodations", "us-fair-housing"),
 			wantCases: 18, wantSources: 5, wantStarters: 10,
 		},
-	}
-
-	for _, testCase := range testCases {
+	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			asset, err := importer.Validate(testCase.request)
-			if err != nil {
-				t.Fatalf("Validate() error = %v", err)
-			}
-			if len(asset.Cases) != testCase.wantCases || len(asset.Sources) != testCase.wantSources || len(asset.StarterSelections) != testCase.wantStarters {
-				t.Fatalf("asset counts = cases:%d sources:%d starters:%d, want %d/%d/%d", len(asset.Cases), len(asset.Sources), len(asset.StarterSelections), testCase.wantCases, testCase.wantSources, testCase.wantStarters)
-			}
-			if len(asset.ExpectedEvidence) == 0 {
-				t.Fatal("asset expected evidence is empty")
-			}
-			for _, evidence := range asset.ExpectedEvidence {
-				if evidence.CanonicalLocator == evidence.DisplayLocator || evidence.CanonicalLocator == "" {
-					t.Fatalf("expected evidence locator mapping = %+v, want a distinct exact canonical locator", evidence)
-				}
-			}
-			assertCompoundSelectorAtomicMappings(t, asset)
-			if err := domain.ValidateStarterSelections(asset.Revision, asset.Cases, asset.StarterSelections); err != nil {
-				t.Fatalf("validated starter selections = %v", err)
-			}
+			assertOwnedDataset(t, importer, testCase)
 		})
+	}
+}
+
+type ownedDatasetExpectation struct {
+	name         string
+	request      AssetRequest
+	wantCases    int
+	wantSources  int
+	wantStarters int
+}
+
+func assertOwnedDataset(t *testing.T, importer *Importer, want ownedDatasetExpectation) {
+	t.Helper()
+	asset, err := importer.Validate(want.request)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if len(asset.Cases) != want.wantCases || len(asset.Sources) != want.wantSources || len(asset.StarterSelections) != want.wantStarters {
+		t.Fatalf("asset counts = cases:%d sources:%d starters:%d, want %d/%d/%d", len(asset.Cases), len(asset.Sources), len(asset.StarterSelections), want.wantCases, want.wantSources, want.wantStarters)
+	}
+	assertExpectedEvidenceLocators(t, asset)
+	assertCompoundSelectorAtomicMappings(t, asset)
+	if err := domain.ValidateStarterSelections(asset.Revision, asset.Cases, asset.StarterSelections); err != nil {
+		t.Fatalf("validated starter selections = %v", err)
+	}
+}
+
+func assertExpectedEvidenceLocators(t *testing.T, asset DatasetAsset) {
+	t.Helper()
+	if len(asset.ExpectedEvidence) == 0 {
+		t.Fatal("asset expected evidence is empty")
+	}
+	for _, evidence := range asset.ExpectedEvidence {
+		if evidence.CanonicalLocator == evidence.DisplayLocator || evidence.CanonicalLocator == "" {
+			t.Fatalf("expected evidence locator mapping = %+v, want a distinct exact canonical locator", evidence)
+		}
 	}
 }
 

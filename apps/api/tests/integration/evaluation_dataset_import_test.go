@@ -22,14 +22,29 @@ func TestEvaluationDatasetImporterImportsOwnedAssetsIdempotently(t *testing.T) {
 		evaluationpostgres.NewDatasetImporter(connection),
 	)
 
-	first := make([]application.DatasetImportResult, 0, 3)
+	first := importEvaluationDatasets(t, ctx, service, "first")
+	assertRepeatedEvaluationDatasetImports(t, ctx, service, first)
+	assertEvaluationDatasetAssetsReadTwice(t, reader)
+	assertImportedEvaluationDatasetCounts(t, ctx, connection)
+	assertImportedLanguagePairs(t, ctx, connection)
+	assertImportedEvaluationEvidenceCounts(t, ctx, connection)
+}
+
+func importEvaluationDatasets(t *testing.T, ctx context.Context, service *application.DatasetImportService, phase string) []application.DatasetImportResult {
+	t.Helper()
+	results := make([]application.DatasetImportResult, 0, 3)
 	for _, request := range application.OwnedAssetRequests() {
 		result, err := service.Import(ctx, request)
 		if err != nil {
-			t.Fatalf("first Import(%s) error = %v", request.CorpusKey, err)
+			t.Fatalf("%s Import(%s) error = %v", phase, request.CorpusKey, err)
 		}
-		first = append(first, result)
+		results = append(results, result)
 	}
+	return results
+}
+
+func assertRepeatedEvaluationDatasetImports(t *testing.T, ctx context.Context, service *application.DatasetImportService, first []application.DatasetImportResult) {
+	t.Helper()
 	for index, request := range application.OwnedAssetRequests() {
 		result, err := service.Import(ctx, request)
 		if err != nil {
@@ -42,13 +57,20 @@ func TestEvaluationDatasetImporterImportsOwnedAssetsIdempotently(t *testing.T) {
 			t.Fatalf("repeat import result = %+v, want stable identity and count %+v", result, first[index])
 		}
 	}
+}
+
+func assertEvaluationDatasetAssetsReadTwice(t *testing.T, reader *repositoryDatasetReader) {
+	t.Helper()
 	for assetPath := range expectedDatasetAssetPaths {
 		if reader.opened[assetPath] != 2 {
 			t.Fatalf("local asset reads for %s = %d, want two and no external reader", assetPath, reader.opened[assetPath])
 		}
 	}
+}
 
-	var revisions, cases, evidence, canonicalEvidence int
+func assertImportedEvaluationDatasetCounts(t *testing.T, ctx context.Context, connection *pgx.Conn) {
+	t.Helper()
+	var revisions, cases int
 	if err := connection.QueryRow(ctx, `
 		SELECT count(*)
 		FROM evaluation_dataset_revision
@@ -64,7 +86,11 @@ func TestEvaluationDatasetImporterImportsOwnedAssetsIdempotently(t *testing.T) {
 	if revisions != 3 || cases != 52 {
 		t.Fatalf("imported revision/case counts = %d/%d, want 3/52", revisions, cases)
 	}
-	assertImportedLanguagePairs(t, ctx, connection)
+}
+
+func assertImportedEvaluationEvidenceCounts(t *testing.T, ctx context.Context, connection *pgx.Conn) {
+	t.Helper()
+	var evidence, canonicalEvidence int
 	if err := connection.QueryRow(ctx, `
 		SELECT count(*), count(*) FILTER (WHERE canonical_locator IS NOT NULL AND canonical_locator <> display_locator)
 		FROM evaluation_case_expected_evidence

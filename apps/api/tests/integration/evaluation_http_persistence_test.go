@@ -26,76 +26,105 @@ func TestEvaluationHTTPPersistsOnlyAuthorizedPreflightApprovedRuns(t *testing.T)
 	ctx, connection := openEvaluationSchemaConnection(t)
 
 	t.Run("denies every route before persistence", func(t *testing.T) {
-		transaction := beginEvaluationSchemaTransaction(t, ctx, connection)
-		defer rollbackEvaluationSchemaTransaction(t, ctx, transaction)
-		fixture := seedEvaluationHTTPFixture(t, ctx, transaction)
-		mux := evaluationHTTPMux(transaction)
-		body := evaluationHTTPStartBody(fixture)
-		for _, request := range []*http.Request{
-			httptest.NewRequest(http.MethodPost, "/api/v1/evaluations", strings.NewReader(body)),
-			httptest.NewRequest(http.MethodGet, "/api/v1/evaluations/"+uuid.NewString(), nil),
-			httptest.NewRequest(http.MethodGet, "/api/v1/evaluations/"+uuid.NewString()+"/cases/"+uuid.NewString(), nil),
-		} {
-			response := httptest.NewRecorder()
-			mux.ServeHTTP(response, request)
-			if response.Code != http.StatusUnauthorized || response.Header().Get("WWW-Authenticate") != "Bearer" {
-				t.Fatalf("%s %s = %d %q, want denied maintainer route", request.Method, request.URL.Path, response.Code, response.Body.String())
-			}
-			assertBoundedEvaluationHTTPError(t, response.Body.String())
-		}
-		assertEvaluationRunCount(t, ctx, transaction, 0)
+		assertEvaluationHTTPUnauthorizedRoutes(t, ctx, connection)
 	})
-
 	t.Run("rejected preflight leaves no run and exposes a safe error", func(t *testing.T) {
-		transaction := beginEvaluationSchemaTransaction(t, ctx, connection)
-		defer rollbackEvaluationSchemaTransaction(t, ctx, transaction)
-		fixture := seedEvaluationHTTPFixture(t, ctx, transaction)
-		if _, err := transaction.Exec(ctx, `DELETE FROM corpus_snapshot_documents WHERE snapshot_id = $1`, fixture.snapshotID); err != nil {
-			t.Fatalf("remove required snapshot membership: %v", err)
-		}
-		response := authorizedEvaluationHTTPPost(evaluationHTTPMux(transaction), evaluationHTTPStartBody(fixture))
-		if response.Code != http.StatusUnprocessableEntity {
-			t.Fatalf("rejected preflight status = %d: %s", response.Code, response.Body.String())
-		}
-		assertBoundedEvaluationHTTPError(t, response.Body.String())
-		assertEvaluationRunCount(t, ctx, transaction, 0)
+		assertEvaluationHTTPRejectedPreflight(t, ctx, connection)
 	})
-
 	t.Run("stores and reads the historical execution identity unchanged", func(t *testing.T) {
-		transaction := beginEvaluationSchemaTransaction(t, ctx, connection)
-		defer rollbackEvaluationSchemaTransaction(t, ctx, transaction)
-		fixture := seedEvaluationHTTPFixture(t, ctx, transaction)
-		mux := evaluationHTTPMux(transaction)
-		response := authorizedEvaluationHTTPPost(mux, evaluationHTTPStartBody(fixture))
-		if response.Code != http.StatusCreated {
-			t.Fatalf("start evaluation status = %d: %s", response.Code, response.Body.String())
-		}
-		var started struct {
-			RunID uuid.UUID `json:"runId"`
-		}
-		if err := json.Unmarshal(response.Body.Bytes(), &started); err != nil || started.RunID == uuid.Nil {
-			t.Fatalf("decode started run: %v, payload=%s", err, response.Body.String())
-		}
-		var agentBuild, chatModel, embeddingModel, fingerprint string
-		if err := transaction.QueryRow(ctx, `
-			SELECT agent_build, chat_model_identity, embedding_model_identity, retrieval_configuration_fingerprint
-			FROM evaluation_run WHERE id = $1`, started.RunID,
-		).Scan(&agentBuild, &chatModel, &embeddingModel, &fingerprint); err != nil {
-			t.Fatalf("read persisted evaluation identity: %v", err)
-		}
-		if agentBuild != "historical-agent" || chatModel != "historical-chat" || embeddingModel != "historical-embedding" || fingerprint != evaluationHTTPFingerprint {
-			t.Fatalf("persisted execution identity = %q %q %q %q", agentBuild, chatModel, embeddingModel, fingerprint)
-		}
-		getRequest := httptest.NewRequest(http.MethodGet, "/api/v1/evaluations/"+started.RunID.String(), nil)
-		getRequest.Header.Set("Authorization", "Bearer test-maintainer")
-		getResponse := httptest.NewRecorder()
-		mux.ServeHTTP(getResponse, getRequest)
-		if getResponse.Code != http.StatusOK || !strings.Contains(getResponse.Body.String(), "historical-agent") ||
-			!strings.Contains(getResponse.Body.String(), "historical-chat") || !strings.Contains(getResponse.Body.String(), "historical-embedding") ||
-			!strings.Contains(getResponse.Body.String(), evaluationHTTPFingerprint) {
-			t.Fatalf("historical run inspection = %d %s", getResponse.Code, getResponse.Body.String())
-		}
+		assertEvaluationHTTPHistoricalIdentity(t, ctx, connection)
 	})
+}
+
+func assertEvaluationHTTPUnauthorizedRoutes(t *testing.T, ctx context.Context, connection *pgx.Conn) {
+	t.Helper()
+	transaction := beginEvaluationSchemaTransaction(t, ctx, connection)
+	defer rollbackEvaluationSchemaTransaction(t, ctx, transaction)
+	fixture := seedEvaluationHTTPFixture(t, ctx, transaction)
+	mux := evaluationHTTPMux(transaction)
+	body := evaluationHTTPStartBody(fixture)
+	requests := []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/api/v1/evaluations", strings.NewReader(body)),
+		httptest.NewRequest(http.MethodGet, "/api/v1/evaluations/"+uuid.NewString(), nil),
+		httptest.NewRequest(http.MethodGet, "/api/v1/evaluations/"+uuid.NewString()+"/cases/"+uuid.NewString(), nil),
+	}
+	for _, request := range requests {
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		assertEvaluationHTTPUnauthorizedResponse(t, request, response)
+	}
+	assertEvaluationRunCount(t, ctx, transaction, 0)
+}
+
+func assertEvaluationHTTPUnauthorizedResponse(t *testing.T, request *http.Request, response *httptest.ResponseRecorder) {
+	t.Helper()
+	if response.Code != http.StatusUnauthorized || response.Header().Get("WWW-Authenticate") != "Bearer" {
+		t.Fatalf("%s %s = %d %q, want denied maintainer route", request.Method, request.URL.Path, response.Code, response.Body.String())
+	}
+	assertBoundedEvaluationHTTPError(t, response.Body.String())
+}
+
+func assertEvaluationHTTPRejectedPreflight(t *testing.T, ctx context.Context, connection *pgx.Conn) {
+	t.Helper()
+	transaction := beginEvaluationSchemaTransaction(t, ctx, connection)
+	defer rollbackEvaluationSchemaTransaction(t, ctx, transaction)
+	fixture := seedEvaluationHTTPFixture(t, ctx, transaction)
+	if _, err := transaction.Exec(ctx, `DELETE FROM corpus_snapshot_documents WHERE snapshot_id = $1`, fixture.snapshotID); err != nil {
+		t.Fatalf("remove required snapshot membership: %v", err)
+	}
+	response := authorizedEvaluationHTTPPost(evaluationHTTPMux(transaction), evaluationHTTPStartBody(fixture))
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("rejected preflight status = %d: %s", response.Code, response.Body.String())
+	}
+	assertBoundedEvaluationHTTPError(t, response.Body.String())
+	assertEvaluationRunCount(t, ctx, transaction, 0)
+}
+
+func assertEvaluationHTTPHistoricalIdentity(t *testing.T, ctx context.Context, connection *pgx.Conn) {
+	t.Helper()
+	transaction := beginEvaluationSchemaTransaction(t, ctx, connection)
+	defer rollbackEvaluationSchemaTransaction(t, ctx, transaction)
+	fixture := seedEvaluationHTTPFixture(t, ctx, transaction)
+	mux := evaluationHTTPMux(transaction)
+	response := authorizedEvaluationHTTPPost(mux, evaluationHTTPStartBody(fixture))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("start evaluation status = %d: %s", response.Code, response.Body.String())
+	}
+	var started struct {
+		RunID uuid.UUID `json:"runId"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &started); err != nil || started.RunID == uuid.Nil {
+		t.Fatalf("decode started run: %v, payload=%s", err, response.Body.String())
+	}
+	assertPersistedEvaluationHTTPIdentity(t, ctx, transaction, started.RunID)
+	assertHistoricalEvaluationHTTPResponse(t, mux, started.RunID)
+}
+
+func assertPersistedEvaluationHTTPIdentity(t *testing.T, ctx context.Context, transaction pgx.Tx, runID uuid.UUID) {
+	t.Helper()
+	var agentBuild, chatModel, embeddingModel, fingerprint string
+	if err := transaction.QueryRow(ctx, `
+		SELECT agent_build, chat_model_identity, embedding_model_identity, retrieval_configuration_fingerprint
+		FROM evaluation_run WHERE id = $1`, runID,
+	).Scan(&agentBuild, &chatModel, &embeddingModel, &fingerprint); err != nil {
+		t.Fatalf("read persisted evaluation identity: %v", err)
+	}
+	if agentBuild != "historical-agent" || chatModel != "historical-chat" || embeddingModel != "historical-embedding" || fingerprint != evaluationHTTPFingerprint {
+		t.Fatalf("persisted execution identity = %q %q %q %q", agentBuild, chatModel, embeddingModel, fingerprint)
+	}
+}
+
+func assertHistoricalEvaluationHTTPResponse(t *testing.T, mux *http.ServeMux, runID uuid.UUID) {
+	t.Helper()
+	getRequest := httptest.NewRequest(http.MethodGet, "/api/v1/evaluations/"+runID.String(), nil)
+	getRequest.Header.Set("Authorization", "Bearer test-maintainer")
+	getResponse := httptest.NewRecorder()
+	mux.ServeHTTP(getResponse, getRequest)
+	if getResponse.Code != http.StatusOK || !strings.Contains(getResponse.Body.String(), "historical-agent") ||
+		!strings.Contains(getResponse.Body.String(), "historical-chat") || !strings.Contains(getResponse.Body.String(), "historical-embedding") ||
+		!strings.Contains(getResponse.Body.String(), evaluationHTTPFingerprint) {
+		t.Fatalf("historical run inspection = %d %s", getResponse.Code, getResponse.Body.String())
+	}
 }
 
 func TestEvaluationDatasetInspectionHTTPPreservesPersistedStarterMetadataAndPreflightSafety(t *testing.T) {
@@ -107,34 +136,41 @@ func TestEvaluationDatasetInspectionHTTPPreservesPersistedStarterMetadataAndPref
 	insertEvaluationHTTPStarterPair(t, ctx, transaction, fixture)
 	mux := evaluationHTTPMux(transaction)
 
+	assertEvaluationHTTPDatasetCatalogList(t, mux, fixture)
+	assertEvaluationHTTPDatasetCatalogDetail(t, mux, fixture)
+	assertEvaluationHTTPDatasetPreflightSafety(t, ctx, transaction, mux, fixture)
+}
+
+func assertEvaluationHTTPDatasetCatalogList(t *testing.T, mux *http.ServeMux, fixture evaluationPreflightFixture) {
+	t.Helper()
 	listRequest := httptest.NewRequest(http.MethodGet, "/api/v1/evaluation-datasets", nil)
 	listRequest.Header.Set("Authorization", "Bearer test-maintainer")
 	listResponse := httptest.NewRecorder()
 	mux.ServeHTTP(listResponse, listRequest)
-	if listResponse.Code != http.StatusOK ||
-		strings.Contains(listResponse.Body.String(), "starters") || strings.Contains(listResponse.Body.String(), "Synthetic question") {
+	if listResponse.Code != http.StatusOK || strings.Contains(listResponse.Body.String(), "starters") || strings.Contains(listResponse.Body.String(), "Synthetic question") {
 		t.Fatalf("catalog list = %d %s", listResponse.Code, listResponse.Body.String())
 	}
 	var catalog []evaluationcontract.DatasetCatalogResponse
 	decodeEvaluationHTTPResponse(t, listResponse, &catalog)
-	var fixtureEntry *evaluationcontract.DatasetCatalogResponse
 	for index := range catalog {
 		if catalog[index].Revision.ID == fixture.revisionID.String() {
-			fixtureEntry = &catalog[index]
-			break
+			entry := catalog[index]
+			if entry.Review == nil || entry.Review.Decision != "approved" || entry.Review.PublicationState != "available" {
+				t.Fatalf("catalog response = %#v, want persisted fixture revision and review", catalog)
+			}
+			return
 		}
 	}
-	if fixtureEntry == nil || fixtureEntry.Review == nil || fixtureEntry.Review.Decision != "approved" ||
-		fixtureEntry.Review.PublicationState != "available" {
-		t.Fatalf("catalog response = %#v, want persisted fixture revision and review", catalog)
-	}
+	t.Fatalf("catalog response = %#v, want persisted fixture revision and review", catalog)
+}
 
+func assertEvaluationHTTPDatasetCatalogDetail(t *testing.T, mux *http.ServeMux, fixture evaluationPreflightFixture) {
+	t.Helper()
 	detailRequest := httptest.NewRequest(http.MethodGet, "/api/v1/evaluation-datasets/"+fixture.revisionID.String(), nil)
 	detailRequest.Header.Set("Authorization", "Bearer test-maintainer")
 	detailResponse := httptest.NewRecorder()
 	mux.ServeHTTP(detailResponse, detailRequest)
-	if detailResponse.Code != http.StatusOK || strings.Contains(detailResponse.Body.String(), "Synthetic question") ||
-		strings.Contains(detailResponse.Body.String(), "Synthetic answer") {
+	if detailResponse.Code != http.StatusOK || strings.Contains(detailResponse.Body.String(), "Synthetic question") || strings.Contains(detailResponse.Body.String(), "Synthetic answer") {
 		t.Fatalf("catalog detail = %d %s", detailResponse.Code, detailResponse.Body.String())
 	}
 	var detail evaluationcontract.DatasetDetailResponse
@@ -152,28 +188,23 @@ func TestEvaluationDatasetInspectionHTTPPreservesPersistedStarterMetadataAndPref
 			t.Fatalf("persisted %s starter = %#v, want case=%s rank=1 review eligible", language, starter, caseID)
 		}
 	}
+}
 
+func assertEvaluationHTTPDatasetPreflightSafety(t *testing.T, ctx context.Context, transaction pgx.Tx, mux *http.ServeMux, fixture evaluationPreflightFixture) {
+	t.Helper()
 	preflightPath := "/api/v1/evaluation-datasets/" + fixture.revisionID.String() + "/preflight?corpusId=" + fixture.corpusID.String() + "&snapshotId=" + fixture.snapshotID.String()
-	preflightRequest := httptest.NewRequest(http.MethodGet, preflightPath, nil)
-	preflightRequest.Header.Set("Authorization", "Bearer test-maintainer")
-	preflightResponse := httptest.NewRecorder()
-	mux.ServeHTTP(preflightResponse, preflightRequest)
+	preflightResponse := evaluationHTTPGet(mux, preflightPath)
 	if preflightResponse.Code != http.StatusOK {
 		t.Fatalf("successful preflight = %d %s", preflightResponse.Code, preflightResponse.Body.String())
 	}
 	var preflight evaluationcontract.DatasetPreflightResponse
 	decodeEvaluationHTTPResponse(t, preflightResponse, &preflight)
-	if !preflight.Compatible || len(preflight.MissingRequirements) != 0 || preflight.DatasetRevisionID != fixture.revisionID.String() ||
-		preflight.CorpusID != fixture.corpusID.String() || preflight.SnapshotID != fixture.snapshotID.String() {
+	if !preflight.Compatible || len(preflight.MissingRequirements) != 0 || preflight.DatasetRevisionID != fixture.revisionID.String() || preflight.CorpusID != fixture.corpusID.String() || preflight.SnapshotID != fixture.snapshotID.String() {
 		t.Fatalf("successful preflight payload = %#v", preflight)
 	}
 	assertEvaluationRunCount(t, ctx, transaction, 0)
 
-	absentPath := "/api/v1/evaluation-datasets/" + uuid.NewString() + "/preflight?corpusId=" + fixture.corpusID.String() + "&snapshotId=" + fixture.snapshotID.String()
-	absentRequest := httptest.NewRequest(http.MethodGet, absentPath, nil)
-	absentRequest.Header.Set("Authorization", "Bearer test-maintainer")
-	absentResponse := httptest.NewRecorder()
-	mux.ServeHTTP(absentResponse, absentRequest)
+	absentResponse := evaluationHTTPGet(mux, "/api/v1/evaluation-datasets/"+uuid.NewString()+"/preflight?corpusId="+fixture.corpusID.String()+"&snapshotId="+fixture.snapshotID.String())
 	if absentResponse.Code != http.StatusNotFound {
 		t.Fatalf("absent preflight = %d %s", absentResponse.Code, absentResponse.Body.String())
 	}
@@ -187,23 +218,25 @@ func TestEvaluationDatasetInspectionHTTPPreservesPersistedStarterMetadataAndPref
 	if _, err := transaction.Exec(ctx, `DELETE FROM corpus_snapshot_documents WHERE snapshot_id = $1`, fixture.snapshotID); err != nil {
 		t.Fatalf("remove required snapshot membership: %v", err)
 	}
-	rejectedRequest := httptest.NewRequest(http.MethodGet, preflightPath, nil)
-	rejectedRequest.Header.Set("Authorization", "Bearer test-maintainer")
-	rejectedResponse := httptest.NewRecorder()
-	mux.ServeHTTP(rejectedResponse, rejectedRequest)
-	if rejectedResponse.Code != http.StatusUnprocessableEntity ||
-		strings.Contains(rejectedResponse.Body.String(), "Synthetic question") || strings.Contains(rejectedResponse.Body.String(), "Synthetic answer") {
+	rejectedResponse := evaluationHTTPGet(mux, preflightPath)
+	if rejectedResponse.Code != http.StatusUnprocessableEntity || strings.Contains(rejectedResponse.Body.String(), "Synthetic question") || strings.Contains(rejectedResponse.Body.String(), "Synthetic answer") {
 		t.Fatalf("rejected preflight = %d %s", rejectedResponse.Code, rejectedResponse.Body.String())
 	}
 	var rejected evaluationcontract.DatasetPreflightErrorResponse
 	decodeEvaluationHTTPResponse(t, rejectedResponse, &rejected)
-	if rejected.Error.Code != "snapshot_incompatible" || len(rejected.Error.MissingRequirements) != 2 ||
-		rejected.Error.MissingRequirements[0].Reason != "The required source is not a member of the selected snapshot." ||
-		rejected.Error.MissingRequirements[1].Reason != "The locator did not resolve uniquely." {
+	if rejected.Error.Code != "snapshot_incompatible" || len(rejected.Error.MissingRequirements) != 2 || rejected.Error.MissingRequirements[0].Reason != "The required source is not a member of the selected snapshot." || rejected.Error.MissingRequirements[1].Reason != "The locator did not resolve uniquely." {
 		t.Fatalf("rejected preflight payload = %#v, want source and locator diagnostics", rejected)
 	}
 	assertBoundedEvaluationHTTPError(t, rejectedResponse.Body.String())
 	assertEvaluationRunCount(t, ctx, transaction, 0)
+}
+
+func evaluationHTTPGet(mux *http.ServeMux, path string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set("Authorization", "Bearer test-maintainer")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	return response
 }
 
 func seedEvaluationHTTPFixture(t *testing.T, ctx context.Context, transaction pgx.Tx) evaluationPreflightFixture {

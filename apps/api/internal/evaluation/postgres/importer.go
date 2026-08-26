@@ -13,17 +13,17 @@ import (
 
 const datasetImporterVersion = "evaluation-dataset-importer-v1"
 
-type importDatabase interface {
+type transactionBeginner interface {
 	Begin(context.Context) (pgx.Tx, error)
 }
 
 // DatasetImporter persists validated immutable evaluation assets in PostgreSQL.
 type DatasetImporter struct {
-	database importDatabase
+	database transactionBeginner
 }
 
 // NewDatasetImporter constructs an immutable asset writer around caller-owned persistence.
-func NewDatasetImporter(database importDatabase) *DatasetImporter {
+func NewDatasetImporter(database transactionBeginner) *DatasetImporter {
 	return &DatasetImporter{database: database}
 }
 
@@ -249,4 +249,6 @@ func importResult(asset application.DatasetAsset, created bool) application.Data
 	}
 }
 
-var _ application.DatasetStore = (*DatasetImporter)(nil)
+var _ interface {
+	StoreDataset(context.Context, application.DatasetAsset) (application.DatasetImportResult, error)
+} = (*DatasetImporter)(nil)

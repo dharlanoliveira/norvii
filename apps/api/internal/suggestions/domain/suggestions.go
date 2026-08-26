@@ -241,6 +241,18 @@ func validateStarterCases(corpusID, datasetRevisionID uuid.UUID, starterCases []
 	if len(starterCases) == 0 || len(starterCases) > 10 {
 		return nil, ErrInvalidSelection
 	}
+	items, byExternalID, ranks, err := collectStarterCaseItems(corpusID, datasetRevisionID, starterCases)
+	if err != nil {
+		return nil, err
+	}
+	if !validStarterRanks(starterCases, ranks) || !validStarterReciprocals(starterCases, byExternalID) {
+		return nil, ErrInvalidSelection
+	}
+	sortStarterItems(items)
+	return items, nil
+}
+
+func collectStarterCaseItems(corpusID, datasetRevisionID uuid.UUID, starterCases []StarterCase) ([]OpeningSuggestionItem, map[string]StarterCase, map[int]struct{}, error) {
 	byExternalID := make(map[string]StarterCase, len(starterCases))
 	seenCaseIDs := make(map[uuid.UUID]struct{}, len(starterCases))
 	seenRankLanguages := make(map[rankLanguage]struct{}, len(starterCases))
@@ -248,17 +260,17 @@ func validateStarterCases(corpusID, datasetRevisionID uuid.UUID, starterCases []
 	items := make([]OpeningSuggestionItem, 0, len(starterCases))
 	for _, starterCase := range starterCases {
 		if err := validateStarterCase(corpusID, datasetRevisionID, starterCase); err != nil {
-			return nil, err
+			return nil, nil, nil, err
 		}
 		if _, duplicate := byExternalID[starterCase.ExternalCaseID]; duplicate {
-			return nil, ErrInvalidSelection
+			return nil, nil, nil, ErrInvalidSelection
 		}
 		if _, duplicate := seenCaseIDs[starterCase.ID]; duplicate {
-			return nil, ErrInvalidSelection
+			return nil, nil, nil, ErrInvalidSelection
 		}
 		key := rankLanguage{rank: starterCase.Rank, language: starterCase.QueryLanguage}
 		if _, duplicate := seenRankLanguages[key]; duplicate {
-			return nil, ErrInvalidSelection
+			return nil, nil, nil, ErrInvalidSelection
 		}
 		byExternalID[starterCase.ExternalCaseID] = starterCase
 		seenCaseIDs[starterCase.ID] = struct{}{}
@@ -271,28 +283,39 @@ func validateStarterCases(corpusID, datasetRevisionID uuid.UUID, starterCases []
 			Question: starterCase.Question,
 		})
 	}
+	return items, byExternalID, seenRanks, nil
+}
+
+func validStarterRanks(starterCases []StarterCase, seenRanks map[int]struct{}) bool {
 	if len(starterCases) != len(seenRanks)*2 || len(seenRanks) > 5 {
-		return nil, ErrInvalidSelection
+		return false
 	}
 	for rank := 1; rank <= len(seenRanks); rank++ {
 		if _, found := seenRanks[rank]; !found {
-			return nil, ErrInvalidSelection
+			return false
 		}
 	}
+	return true
+}
+
+func validStarterReciprocals(starterCases []StarterCase, byExternalID map[string]StarterCase) bool {
 	for _, starterCase := range starterCases {
 		reciprocal, found := byExternalID[starterCase.ReciprocalExternalCaseID]
 		if !found || reciprocal.ReciprocalExternalCaseID != starterCase.ExternalCaseID ||
 			reciprocal.QueryLanguage == starterCase.QueryLanguage || reciprocal.Rank != starterCase.Rank {
-			return nil, ErrInvalidSelection
+			return false
 		}
 	}
+	return true
+}
+
+func sortStarterItems(items []OpeningSuggestionItem) {
 	sort.Slice(items, func(left, right int) bool {
 		if items[left].Rank != items[right].Rank {
 			return items[left].Rank < items[right].Rank
 		}
 		return items[left].QueryLanguage < items[right].QueryLanguage
 	})
-	return items, nil
 }
 
 func validateStarterCase(corpusID, datasetRevisionID uuid.UUID, starterCase StarterCase) error {
@@ -324,34 +347,45 @@ func validateEvidence(
 	for _, starterCase := range starterCases {
 		caseIDs[starterCase.ID] = struct{}{}
 	}
+	requirementByID, err := validateEvidenceRequirements(corpusID, datasetRevisionID, caseIDs, requirements)
+	if err != nil {
+		return err
+	}
+	return validateEvidenceResolutions(corpusID, datasetRevisionID, snapshotID, requirementByID, resolutions)
+}
+
+func validateEvidenceRequirements(corpusID, datasetRevisionID uuid.UUID, caseIDs map[uuid.UUID]struct{}, requirements []ExpectedEvidenceRequirement) (map[uuid.UUID]ExpectedEvidenceRequirement, error) {
 	requirementByID := make(map[uuid.UUID]ExpectedEvidenceRequirement, len(requirements))
-	requirementCountByCase := make(map[uuid.UUID]int, len(starterCases))
+	requirementCountByCase := make(map[uuid.UUID]int, len(caseIDs))
 	for _, requirement := range requirements {
 		if requirement.ID == uuid.Nil || requirement.CorpusID != corpusID || requirement.DatasetRevisionID != datasetRevisionID {
 			if requirement.CorpusID != corpusID {
-				return ErrCorpusMismatch
+				return nil, ErrCorpusMismatch
 			}
-			return ErrUnresolvedExpectedEvidence
+			return nil, ErrUnresolvedExpectedEvidence
 		}
 		if _, selected := caseIDs[requirement.CaseID]; !selected {
-			return ErrUnresolvedExpectedEvidence
+			return nil, ErrUnresolvedExpectedEvidence
 		}
 		if _, duplicate := requirementByID[requirement.ID]; duplicate {
-			return ErrUnresolvedExpectedEvidence
+			return nil, ErrUnresolvedExpectedEvidence
 		}
 		requirementByID[requirement.ID] = requirement
 		requirementCountByCase[requirement.CaseID]++
 	}
 	for caseID := range caseIDs {
 		if requirementCountByCase[caseID] == 0 {
-			return ErrUnresolvedExpectedEvidence
+			return nil, ErrUnresolvedExpectedEvidence
 		}
 	}
+	return requirementByID, nil
+}
+
+func validateEvidenceResolutions(corpusID, datasetRevisionID, snapshotID uuid.UUID, requirements map[uuid.UUID]ExpectedEvidenceRequirement, resolutions []ExpectedEvidenceResolution) error {
 	resolvedRequirementIDs := make(map[uuid.UUID]struct{}, len(resolutions))
 	for _, resolution := range resolutions {
-		requirement, found := requirementByID[resolution.ExpectedEvidenceID]
-		if !found || resolution.CorpusID != corpusID || resolution.DatasetRevisionID != datasetRevisionID ||
-			resolution.CaseID != requirement.CaseID || resolution.SnapshotID != snapshotID {
+		requirement, found := requirements[resolution.ExpectedEvidenceID]
+		if !found || resolution.CorpusID != corpusID || resolution.DatasetRevisionID != datasetRevisionID || resolution.CaseID != requirement.CaseID || resolution.SnapshotID != snapshotID {
 			if resolution.CorpusID != corpusID {
 				return ErrCorpusMismatch
 			}
@@ -362,7 +396,7 @@ func validateEvidence(
 		}
 		resolvedRequirementIDs[resolution.ExpectedEvidenceID] = struct{}{}
 	}
-	if len(resolvedRequirementIDs) != len(requirementByID) {
+	if len(resolvedRequirementIDs) != len(requirements) {
 		return ErrUnresolvedExpectedEvidence
 	}
 	return nil

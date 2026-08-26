@@ -44,6 +44,11 @@ type MissingRequirement struct {
 	Reason      string `json:"reason"`
 }
 
+type missingRequirementGroups struct {
+	current    []MissingRequirement
+	additional []MissingRequirement
+}
+
 // CompatibilityError reports a safe preflight failure and supports errors.Is with its cause.
 type CompatibilityError struct {
 	cause   error
@@ -181,7 +186,7 @@ func (service *PreflightService) Check(ctx context.Context, request PreflightReq
 		return PreflightResult{}, err
 	}
 	if len(missingSnapshot) > 0 || len(missingLocators) > 0 {
-		missing := appendMissingRequirements(missingSnapshot, missingLocators)
+		missing := appendMissingRequirements(missingRequirementGroups{current: missingSnapshot, additional: missingLocators})
 		if len(missingSnapshot) > 0 {
 			return PreflightResult{}, compatibilityError(ErrSnapshotIncompatible, missing)
 		}
@@ -252,17 +257,17 @@ func appendMissing(current []MissingRequirement, requirement MissingRequirement)
 	return append(current, requirement)
 }
 
-func appendMissingRequirements(current []MissingRequirement, additional []MissingRequirement) []MissingRequirement {
-	if len(additional) > 0 && len(current) >= maxMissingRequirements {
-		combined := slices.Clone(current)
+func appendMissingRequirements(groups missingRequirementGroups) []MissingRequirement {
+	if len(groups.additional) > 0 && len(groups.current) >= maxMissingRequirements {
+		combined := slices.Clone(groups.current)
 		// Preserve both gate categories when each individual check reached the shared bound.
-		combined[maxMissingRequirements-1] = additional[0]
+		combined[maxMissingRequirements-1] = groups.additional[0]
 		return combined
 	}
-	for _, requirement := range additional {
-		current = appendMissing(current, requirement)
+	for _, requirement := range groups.additional {
+		groups.current = appendMissing(groups.current, requirement)
 	}
-	return current
+	return groups.current
 }
 
 func compatibilityError(cause error, missing []MissingRequirement) *CompatibilityError {

@@ -32,67 +32,78 @@ func TestEvaluationLocatorResolutionIsBoundToOneCorpusSnapshot(t *testing.T) {
 		bindEvaluationFixtureSource(t, ctx, repository, fixtures[index])
 	}
 
-	for index, fixture := range fixtures {
+	for index := range fixtures {
+		fixture := fixtures[index]
 		t.Run(fmt.Sprintf("fixture corpus %d resolves only its named snapshot", index+1), func(t *testing.T) {
-			resolved, err := repository.ResolveLocator(ctx, fixture.request())
-			if err != nil {
-				t.Fatalf("ResolveLocator() error = %v", err)
-			}
-			assertResolvedEvaluationFixture(t, resolved, fixture)
-
-			foreignSnapshot := fixtures[(index+1)%len(fixtures)].snapshotID
-			foreignRequest := fixture.request()
-			foreignRequest.SnapshotID = foreignSnapshot
-			if _, err := repository.ResolveLocator(ctx, foreignRequest); !errors.Is(err, evaluationpostgres.ErrLocatorNotFound) {
-				t.Fatalf("ResolveLocator(foreign snapshot) error = %v, want ErrLocatorNotFound", err)
-			}
-
-			nonmemberRequest := fixture.request()
-			nonmemberRequest.SnapshotID = fixture.nonmemberSnapshotID
-			if _, err := repository.ResolveLocator(ctx, nonmemberRequest); !errors.Is(err, evaluationpostgres.ErrLocatorNotFound) {
-				t.Fatalf("ResolveLocator(nonmember snapshot) error = %v, want ErrLocatorNotFound", err)
-			}
-
-			absentRequest := fixture.request()
-			absentRequest.CanonicalLocator = "article:404"
-			absentRequest.DisplayLocator = "Article 404"
-			if _, err := repository.ResolveLocator(ctx, absentRequest); !errors.Is(err, evaluationpostgres.ErrLocatorNotFound) {
-				t.Fatalf("ResolveLocator(absent canonical locator) error = %v, want ErrLocatorNotFound", err)
-			}
+			assertEvaluationLocatorResolution(t, ctx, repository, fixtures, index, fixture)
 		})
 	}
 
 	t.Run("binding rejects foreign source, duplicate alias, and unknown alias", func(t *testing.T) {
-		fixture := fixtures[0]
-		foreign := fixture.binding()
-		foreign.CorpusSourceID = fixtures[1].sourceID
-		if _, err := repository.BindSource(ctx, foreign); !errors.Is(err, evaluationpostgres.ErrSourceAlreadyBound) {
-			t.Fatalf("BindSource(already bound alias) error = %v, want ErrSourceAlreadyBound", err)
-		}
-
-		unboundFixture := newEvaluationResolutionFixture(evaluationLGPDCorpusID, "20000000-0000-4000-8000-000000000001")
-		unboundFixture.sourceAlias = "unbound-source"
-		seedEvaluationDatasetRequirement(t, ctx, transaction, unboundFixture)
-		foreign = unboundFixture.binding()
-		foreign.CorpusSourceID = fixtures[1].sourceID
-		if _, err := repository.BindSource(ctx, foreign); !errors.Is(err, evaluationpostgres.ErrCorpusSourceNotFound) {
-			t.Fatalf("BindSource(foreign corpus source) error = %v, want ErrCorpusSourceNotFound", err)
-		}
-
-		unknown := fixture.binding()
-		unknown.SourceAlias = "missing-source"
-		if _, err := repository.BindSource(ctx, unknown); !errors.Is(err, evaluationpostgres.ErrSourceRequirementNotFound) {
-			t.Fatalf("BindSource(unknown alias) error = %v, want ErrSourceRequirementNotFound", err)
-		}
+		assertEvaluationFixtureSourceBindingErrors(t, ctx, transaction, repository, fixtures)
 	})
 
 	t.Run("resolution rejects compound canonical locators", func(t *testing.T) {
-		request := fixtures[0].request()
-		request.CanonicalLocator = "article:1,article:2"
-		if _, err := repository.ResolveLocator(ctx, request); !errors.Is(err, evaluationpostgres.ErrInvalidInput) {
-			t.Fatalf("ResolveLocator(compound locator) error = %v, want ErrInvalidInput", err)
-		}
+		assertCompoundEvaluationLocatorRejected(t, ctx, repository, fixtures[0])
 	})
+}
+
+func assertEvaluationLocatorResolution(t *testing.T, ctx context.Context, repository *evaluationpostgres.Repository, fixtures []evaluationResolutionFixture, index int, fixture evaluationResolutionFixture) {
+	t.Helper()
+	resolved, err := repository.ResolveLocator(ctx, fixture.request())
+	if err != nil {
+		t.Fatalf("ResolveLocator() error = %v", err)
+	}
+	assertResolvedEvaluationFixture(t, resolved, fixture)
+	assertEvaluationLocatorNotFound(t, ctx, repository, fixture, fixtures[(index+1)%len(fixtures)].snapshotID, "foreign snapshot")
+	assertEvaluationLocatorNotFound(t, ctx, repository, fixture, fixture.nonmemberSnapshotID, "nonmember snapshot")
+	absentRequest := fixture.request()
+	absentRequest.CanonicalLocator = "article:404"
+	absentRequest.DisplayLocator = "Article 404"
+	if _, err := repository.ResolveLocator(ctx, absentRequest); !errors.Is(err, evaluationpostgres.ErrLocatorNotFound) {
+		t.Fatalf("ResolveLocator(absent canonical locator) error = %v, want ErrLocatorNotFound", err)
+	}
+}
+
+func assertEvaluationLocatorNotFound(t *testing.T, ctx context.Context, repository *evaluationpostgres.Repository, fixture evaluationResolutionFixture, snapshotID uuid.UUID, description string) {
+	t.Helper()
+	request := fixture.request()
+	request.SnapshotID = snapshotID
+	if _, err := repository.ResolveLocator(ctx, request); !errors.Is(err, evaluationpostgres.ErrLocatorNotFound) {
+		t.Fatalf("ResolveLocator(%s) error = %v, want ErrLocatorNotFound", description, err)
+	}
+}
+
+func assertEvaluationFixtureSourceBindingErrors(t *testing.T, ctx context.Context, transaction pgx.Tx, repository *evaluationpostgres.Repository, fixtures []evaluationResolutionFixture) {
+	t.Helper()
+	fixture := fixtures[0]
+	foreign := fixture.binding()
+	foreign.CorpusSourceID = fixtures[1].sourceID
+	if _, err := repository.BindSource(ctx, foreign); !errors.Is(err, evaluationpostgres.ErrSourceAlreadyBound) {
+		t.Fatalf("BindSource(already bound alias) error = %v, want ErrSourceAlreadyBound", err)
+	}
+	unboundFixture := newEvaluationResolutionFixture(evaluationLGPDCorpusID, "20000000-0000-4000-8000-000000000001")
+	unboundFixture.sourceAlias = "unbound-source"
+	seedEvaluationDatasetRequirement(t, ctx, transaction, unboundFixture)
+	foreign = unboundFixture.binding()
+	foreign.CorpusSourceID = fixtures[1].sourceID
+	if _, err := repository.BindSource(ctx, foreign); !errors.Is(err, evaluationpostgres.ErrCorpusSourceNotFound) {
+		t.Fatalf("BindSource(foreign corpus source) error = %v, want ErrCorpusSourceNotFound", err)
+	}
+	unknown := fixture.binding()
+	unknown.SourceAlias = "missing-source"
+	if _, err := repository.BindSource(ctx, unknown); !errors.Is(err, evaluationpostgres.ErrSourceRequirementNotFound) {
+		t.Fatalf("BindSource(unknown alias) error = %v, want ErrSourceRequirementNotFound", err)
+	}
+}
+
+func assertCompoundEvaluationLocatorRejected(t *testing.T, ctx context.Context, repository *evaluationpostgres.Repository, fixture evaluationResolutionFixture) {
+	t.Helper()
+	request := fixture.request()
+	request.CanonicalLocator = "article:1,article:2"
+	if _, err := repository.ResolveLocator(ctx, request); !errors.Is(err, evaluationpostgres.ErrInvalidInput) {
+		t.Fatalf("ResolveLocator(compound locator) error = %v, want ErrInvalidInput", err)
+	}
 }
 
 type evaluationResolutionFixture struct {

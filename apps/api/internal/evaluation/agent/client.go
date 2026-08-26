@@ -32,6 +32,8 @@ var (
 const (
 	evaluationPath       = "/v1/evaluations/execute"
 	maxResponseBodyBytes = 256 * 1024
+	jsonMediaType        = "application/json"
+	contentTypeHeader    = "Content-Type"
 	strategyVector       = "vector"
 	strategyHybrid       = "hybrid"
 	graphNotRequested    = "not_requested"
@@ -138,20 +140,20 @@ func (client *Client) Execute(ctx context.Context, request Request) (Result, err
 	if err != nil {
 		return Result{}, fmt.Errorf("create evaluation agent request: %w", err)
 	}
-	httpRequest.Header.Set("Accept", "application/json")
-	httpRequest.Header.Set("Content-Type", "application/json")
+	httpRequest.Header.Set("Accept", jsonMediaType)
+	httpRequest.Header.Set(contentTypeHeader, jsonMediaType)
 	response, err := client.client.Do(httpRequest)
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode == http.StatusConflict && jsonContentType(response.Header.Get("Content-Type")) {
+	if response.StatusCode == http.StatusConflict && jsonContentType(response.Header.Get(contentTypeHeader)) {
 		return Result{}, frozenIdentityError(response.Body)
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return Result{}, fmt.Errorf("%w: agent returned status %d", ErrUnavailable, response.StatusCode)
 	}
-	if !jsonContentType(response.Header.Get("Content-Type")) {
+	if !jsonContentType(response.Header.Get(contentTypeHeader)) {
 		return Result{}, ErrInvalidResponse
 	}
 
@@ -376,5 +378,5 @@ func cloneMeasurement(value *int64) *int64 {
 
 func jsonContentType(value string) bool {
 	mediaType, _, err := mime.ParseMediaType(value)
-	return err == nil && mediaType == "application/json"
+	return err == nil && mediaType == jsonMediaType
 }

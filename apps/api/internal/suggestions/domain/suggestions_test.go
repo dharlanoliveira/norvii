@@ -12,11 +12,7 @@ import (
 func TestNewProjection(t *testing.T) {
 	t.Parallel()
 
-	for _, testCase := range []struct {
-		name   string
-		mutate func(*PublicationInput)
-		want   error
-	}{
+	for _, testCase := range []projectionCase{
 		{name: "reviewed available selection", mutate: func(_ *PublicationInput) {}},
 		{name: "unavailable publication", mutate: func(input *PublicationInput) { input.DatasetPublication.PublicationState = "draft" }, want: ErrUnavailableDataset},
 		{name: "unapproved publication", mutate: func(input *PublicationInput) { input.DatasetPublication.ReviewDecision = "pending" }, want: ErrUnavailableDataset},
@@ -37,26 +33,42 @@ func TestNewProjection(t *testing.T) {
 		{name: "resolution for another snapshot", mutate: func(input *PublicationInput) { input.ResolvedEvidence[0].SnapshotID = testID(77) }, want: ErrUnresolvedExpectedEvidence},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			input := validInput()
-			testCase.mutate(&input)
-			projection, err := NewProjection(input)
-			if !errors.Is(err, testCase.want) {
-				t.Fatalf("NewProjection() error = %v, want %v", err, testCase.want)
-			}
-			if testCase.want == nil {
-				if len(projection.Items) != 2 || projection.Items[0].QueryLanguage != QueryLanguageEnglish || projection.Items[1].QueryLanguage != QueryLanguagePortuguese {
-					t.Fatalf("projection items = %#v, want rank-ordered reciprocal safe items", projection.Items)
-				}
-				for _, item := range projection.Items {
-					if item.SuggestionSetID != projection.Set.ID || item.SuggestionSetID == uuid.Nil {
-						t.Fatalf("projection item suggestion set ID = %s, want parent set ID %s", item.SuggestionSetID, projection.Set.ID)
-					}
-				}
-				if projection.Items[0].Public() != (PublicOpeningSuggestion{CaseID: "case-001-en", Rank: 1, Question: "What is required?"}) {
-					t.Fatalf("Public() returned unsafe or incorrect item: %#v", projection.Items[0].Public())
-				}
-			}
+			assertProjectionCase(t, testCase)
 		})
+	}
+}
+
+type projectionCase struct {
+	name   string
+	mutate func(*PublicationInput)
+	want   error
+}
+
+func assertProjectionCase(t *testing.T, testCase projectionCase) {
+	t.Helper()
+	input := validInput()
+	testCase.mutate(&input)
+	projection, err := NewProjection(input)
+	if !errors.Is(err, testCase.want) {
+		t.Fatalf("NewProjection() error = %v, want %v", err, testCase.want)
+	}
+	if testCase.want == nil {
+		assertSafeProjection(t, projection)
+	}
+}
+
+func assertSafeProjection(t *testing.T, projection Projection) {
+	t.Helper()
+	if len(projection.Items) != 2 || projection.Items[0].QueryLanguage != QueryLanguageEnglish || projection.Items[1].QueryLanguage != QueryLanguagePortuguese {
+		t.Fatalf("projection items = %#v, want rank-ordered reciprocal safe items", projection.Items)
+	}
+	for _, item := range projection.Items {
+		if item.SuggestionSetID != projection.Set.ID || item.SuggestionSetID == uuid.Nil {
+			t.Fatalf("projection item suggestion set ID = %s, want parent set ID %s", item.SuggestionSetID, projection.Set.ID)
+		}
+	}
+	if projection.Items[0].Public() != (PublicOpeningSuggestion{CaseID: "case-001-en", Rank: 1, Question: "What is required?"}) {
+		t.Fatalf("Public() returned unsafe or incorrect item: %#v", projection.Items[0].Public())
 	}
 }
 
