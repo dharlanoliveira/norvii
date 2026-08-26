@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type {
   EvaluationDatasetCatalogEntry,
   EvaluationDatasetDetail,
+  EvaluationDatasetPreflightRequest,
   EvaluationDatasetPreflightResponse,
   EvaluationMissingRequirement,
 } from "../../api/evaluationCatalog";
@@ -59,122 +60,19 @@ export function DatasetReadinessView({
   snapshotOptions,
   onStartRun,
 }: DatasetReadinessViewProps) {
-  const { t } = useTranslation();
-  const [catalogState, setCatalogState] = useState<CatalogState>({
-    status: "loading",
-  });
-  const [detailState, setDetailState] = useState<DetailState>({
-    status: "idle",
-  });
-  const [preflightState, setPreflightState] = useState<PreflightState>({
-    status: "idle",
-  });
-  const [datasetRevisionId, setDatasetRevisionId] = useState("");
+  const catalogState = useEvaluationDatasetCatalog(client);
+  const datasetDetail = useSelectedDatasetDetail(client);
+  const preflight = useEvaluationDatasetPreflight(client);
   const [snapshotSelection, setSnapshotSelection] = useState("");
-  const preflightController = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void client
-      .listDatasets(controller.signal)
-      .then((datasets) => {
-        if (!controller.signal.aborted) {
-          setCatalogState({ status: "ready", datasets });
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setCatalogState({ status: "failed" });
-      });
-    return () => controller.abort();
-  }, [client]);
-
-  useEffect(() => {
-    if (datasetRevisionId === "") return undefined;
-
-    const controller = new AbortController();
-    void client
-      .getDataset(datasetRevisionId, controller.signal)
-      .then((detail) => {
-        if (!controller.signal.aborted) {
-          setDetailState({ status: "ready", detail });
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setDetailState({ status: "failed" });
-      });
-    return () => controller.abort();
-  }, [client, datasetRevisionId]);
-
-  useEffect(() => {
-    return () => preflightController.current?.abort();
-  }, []);
-
-  const detail = detailState.status === "ready" ? detailState.detail : null;
-  const corpusSnapshotOptions = snapshotOptions.filter(
-    (option) => option.corpusId === detail?.revision.corpusId,
-  );
-  const selectedSnapshot = corpusSnapshotOptions.find(
-    (option) => snapshotOptionValue(option) === snapshotSelection,
-  );
-  const canCheckCompatibility =
-    detail?.available === true && selectedSnapshot !== undefined;
-  const canStartRun =
-    onStartRun !== undefined &&
-    detail !== null &&
-    selectedSnapshot !== undefined &&
-    preflightState.status === "compatible" &&
-    preflightState.selection.datasetRevisionId === detail.revision.id &&
-    preflightState.selection.corpusId === selectedSnapshot.corpusId &&
-    preflightState.selection.snapshotId === selectedSnapshot.snapshotId;
-
-  const checkCompatibility = (): void => {
-    if (!canCheckCompatibility) return;
-
-    preflightController.current?.abort();
-    const controller = new AbortController();
-    preflightController.current = controller;
-    setPreflightState({ status: "checking" });
-    void client
-      .preflightDataset(
-        {
-          datasetRevisionId: detail.revision.id,
-          corpusId: selectedSnapshot.corpusId,
-          snapshotId: selectedSnapshot.snapshotId,
-        },
-        controller.signal,
-      )
-      .then((selection) => {
-        if (!controller.signal.aborted) {
-          setPreflightState({ status: "compatible", selection });
-        }
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        if (isCompatibilityError(error)) {
-          setPreflightState({
-            status: "incompatible",
-            requirements: error.missingRequirements ?? [],
-          });
-          return;
-        }
-        setPreflightState({ status: "failed" });
-      });
-  };
-
-  const selectDatasetRevision = (selectedRevisionId: string): void => {
-    preflightController.current?.abort();
-    setDatasetRevisionId(selectedRevisionId);
+  const selectDatasetRevision = (revisionId: string): void => {
+    preflight.reset();
+    datasetDetail.select(revisionId);
     setSnapshotSelection("");
-    setPreflightState({ status: "idle" });
-    setDetailState(
-      selectedRevisionId === "" ? { status: "idle" } : { status: "loading" },
-    );
   };
 
   const selectSnapshot = (selectedSnapshotValue: string): void => {
-    preflightController.current?.abort();
+    preflight.reset();
     setSnapshotSelection(selectedSnapshotValue);
-    setPreflightState({ status: "idle" });
   };
 
   return (
@@ -182,105 +80,309 @@ export function DatasetReadinessView({
       className="evaluation-readiness"
       aria-labelledby="evaluation-heading"
     >
+      <DatasetReadinessHeader />
+      <DatasetCatalogControl
+        state={catalogState}
+        selectedRevisionId={datasetDetail.revisionId}
+        onSelect={selectDatasetRevision}
+      />
+      <DatasetDetailContent state={datasetDetail.state} />
+      {datasetDetail.state.status === "ready" ? (
+        <DatasetSnapshotSelection
+          detail={datasetDetail.state.detail}
+          snapshotOptions={snapshotOptions}
+          selection={snapshotSelection}
+          preflightState={preflight.state}
+          onSelect={selectSnapshot}
+          onCheck={preflight.check}
+          onStartRun={onStartRun}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function useEvaluationDatasetCatalog(
+  client: EvaluationCatalogClient,
+): CatalogState {
+  const [state, setState] = useState<CatalogState>({ status: "loading" });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void client
+      .listDatasets(controller.signal)
+      .then((datasets) => {
+        if (!controller.signal.aborted) setState({ status: "ready", datasets });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setState({ status: "failed" });
+      });
+    return () => controller.abort();
+  }, [client]);
+
+  return state;
+}
+
+function useSelectedDatasetDetail(client: EvaluationCatalogClient) {
+  const [revisionId, setRevisionId] = useState("");
+  const [state, setState] = useState<DetailState>({ status: "idle" });
+
+  useEffect(() => {
+    if (revisionId === "") return undefined;
+
+    const controller = new AbortController();
+    void client
+      .getDataset(revisionId, controller.signal)
+      .then((detail) => {
+        if (!controller.signal.aborted) setState({ status: "ready", detail });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setState({ status: "failed" });
+      });
+    return () => controller.abort();
+  }, [client, revisionId]);
+
+  const select = (selectedRevisionId: string): void => {
+    setRevisionId(selectedRevisionId);
+    setState(
+      selectedRevisionId === "" ? { status: "idle" } : { status: "loading" },
+    );
+  };
+
+  return { revisionId, state, select };
+}
+
+function useEvaluationDatasetPreflight(client: EvaluationCatalogClient) {
+  const [state, setState] = useState<PreflightState>({ status: "idle" });
+  const controllerReference = useRef<AbortController | null>(null);
+
+  useEffect(() => () => controllerReference.current?.abort(), []);
+
+  const reset = (): void => {
+    controllerReference.current?.abort();
+    setState({ status: "idle" });
+  };
+
+  const check = (request: EvaluationDatasetPreflightRequest): void => {
+    controllerReference.current?.abort();
+    const controller = new AbortController();
+    controllerReference.current = controller;
+    setState({ status: "checking" });
+    void client
+      .preflightDataset(request, controller.signal)
+      .then((selection) => {
+        if (!controller.signal.aborted)
+          setState({ status: "compatible", selection });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setState(preflightFailureState(error));
+      });
+  };
+
+  return { state, reset, check };
+}
+
+function DatasetReadinessHeader() {
+  const { t } = useTranslation();
+
+  return (
+    <>
       <header className="evaluation-readiness__header">
         <p className="kicker">{t("evaluation.kicker")}</p>
         <h1 id="evaluation-heading">{t("evaluation.title")}</h1>
         <p>{t("evaluation.introduction")}</p>
       </header>
-
       <p className="evaluation-readiness__notice" role="note">
         {t("evaluation.notice")}
       </p>
+    </>
+  );
+}
 
-      {catalogState.status === "loading" ? (
-        <output>{t("evaluation.loading")}</output>
-      ) : null}
-      {catalogState.status === "failed" ? (
-        <p role="alert">{t("evaluation.catalogFailed")}</p>
-      ) : null}
-      {catalogState.status === "ready" ? (
-        <label className="evaluation-readiness__control">
-          <span>{t("evaluation.datasetRevision")}</span>
-          <select
-            value={datasetRevisionId}
-            onChange={(event) => selectDatasetRevision(event.target.value)}
-          >
-            <option value="">{t("evaluation.selectDataset")}</option>
-            {catalogState.datasets.map((dataset) => (
-              <option key={dataset.revision.id} value={dataset.revision.id}>
-                {dataset.revision.datasetKey} -{" "}
-                {dataset.revision.semanticRevision}
-                {dataset.available ? "" : ` (${t("evaluation.unavailable")})`}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
+function DatasetCatalogControl({
+  state,
+  selectedRevisionId,
+  onSelect,
+}: {
+  readonly state: CatalogState;
+  readonly selectedRevisionId: string;
+  readonly onSelect: (revisionId: string) => void;
+}) {
+  const { t } = useTranslation();
+  if (state.status === "loading")
+    return <output>{t("evaluation.loading")}</output>;
+  if (state.status === "failed")
+    return <p role="alert">{t("evaluation.catalogFailed")}</p>;
 
-      {detailState.status === "loading" ? (
-        <output>{t("evaluation.detailLoading")}</output>
-      ) : null}
-      {detailState.status === "failed" ? (
-        <p role="alert">{t("evaluation.detailFailed")}</p>
-      ) : null}
-      {detail !== null ? <DatasetReadinessDetail detail={detail} /> : null}
+  return (
+    <label className="evaluation-readiness__control">
+      <span>{t("evaluation.datasetRevision")}</span>
+      <select
+        value={selectedRevisionId}
+        onChange={(event) => onSelect(event.target.value)}
+      >
+        <option value="">{t("evaluation.selectDataset")}</option>
+        {state.datasets.map((dataset) => (
+          <option key={dataset.revision.id} value={dataset.revision.id}>
+            {dataset.revision.datasetKey} - {dataset.revision.semanticRevision}
+            {dataset.available ? "" : ` (${t("evaluation.unavailable")})`}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
-      {detail !== null ? (
-        <section
-          className="evaluation-readiness__selection"
-          aria-labelledby="evaluation-snapshot-selection"
-        >
-          <h2 id="evaluation-snapshot-selection">
-            {t("evaluation.snapshotSelection")}
-          </h2>
-          <label className="evaluation-readiness__control">
-            <span>{t("evaluation.snapshot")}</span>
-            <select
-              value={snapshotSelection}
-              onChange={(event) => selectSnapshot(event.target.value)}
-            >
-              <option value="">{t("evaluation.selectSnapshot")}</option>
-              {corpusSnapshotOptions.map((option) => (
-                <option
-                  key={snapshotOptionValue(option)}
-                  value={snapshotOptionValue(option)}
-                >
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {selectedSnapshot !== undefined ? (
-            <SelectedSnapshotIdentity snapshot={selectedSnapshot} />
-          ) : null}
-          <button
-            type="button"
-            disabled={
-              !canCheckCompatibility || preflightState.status === "checking"
-            }
-            onClick={checkCompatibility}
-          >
-            {preflightState.status === "checking"
-              ? t("evaluation.checkingCompatibility")
-              : t("evaluation.checkCompatibility")}
-          </button>
-          <PreflightResult state={preflightState} />
-          {onStartRun !== undefined ? (
-            <button
-              type="button"
-              disabled={!canStartRun}
-              onClick={() => {
-                if (preflightState.status === "compatible") {
-                  onStartRun(preflightState.selection);
-                }
-              }}
-            >
-              {t("evaluation.startRun")}
-            </button>
-          ) : null}
-        </section>
-      ) : null}
+function DatasetDetailContent({ state }: { readonly state: DetailState }) {
+  const { t } = useTranslation();
+  if (state.status === "loading")
+    return <output>{t("evaluation.detailLoading")}</output>;
+  if (state.status === "failed")
+    return <p role="alert">{t("evaluation.detailFailed")}</p>;
+  if (state.status === "ready")
+    return <DatasetReadinessDetail detail={state.detail} />;
+  return null;
+}
+
+function DatasetSnapshotSelection({
+  detail,
+  snapshotOptions,
+  selection,
+  preflightState,
+  onSelect,
+  onCheck,
+  onStartRun,
+}: {
+  readonly detail: EvaluationDatasetDetail;
+  readonly snapshotOptions: readonly EvaluationSnapshotOption[];
+  readonly selection: string;
+  readonly preflightState: PreflightState;
+  readonly onSelect: (selection: string) => void;
+  readonly onCheck: (request: EvaluationDatasetPreflightRequest) => void;
+  readonly onStartRun: DatasetReadinessViewProps["onStartRun"];
+}) {
+  const { t } = useTranslation();
+  const options = snapshotOptions.filter(
+    (option) => option.corpusId === detail.revision.corpusId,
+  );
+  const selectedSnapshot = options.find(
+    (option) => snapshotOptionValue(option) === selection,
+  );
+
+  return (
+    <section
+      className="evaluation-readiness__selection"
+      aria-labelledby="evaluation-snapshot-selection"
+    >
+      <h2 id="evaluation-snapshot-selection">
+        {t("evaluation.snapshotSelection")}
+      </h2>
+      <SnapshotOptionControl
+        options={options}
+        selection={selection}
+        onSelect={onSelect}
+      />
+      {selectedSnapshot === undefined ? null : (
+        <SelectedSnapshotIdentity snapshot={selectedSnapshot} />
+      )}
+      <DatasetPreflightControls
+        detail={detail}
+        selectedSnapshot={selectedSnapshot}
+        state={preflightState}
+        onCheck={onCheck}
+        onStartRun={onStartRun}
+      />
     </section>
+  );
+}
+
+function SnapshotOptionControl({
+  options,
+  selection,
+  onSelect,
+}: {
+  readonly options: readonly EvaluationSnapshotOption[];
+  readonly selection: string;
+  readonly onSelect: (selection: string) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <label className="evaluation-readiness__control">
+      <span>{t("evaluation.snapshot")}</span>
+      <select
+        value={selection}
+        onChange={(event) => onSelect(event.target.value)}
+      >
+        <option value="">{t("evaluation.selectSnapshot")}</option>
+        {options.map((option) => (
+          <option
+            key={snapshotOptionValue(option)}
+            value={snapshotOptionValue(option)}
+          >
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function DatasetPreflightControls({
+  detail,
+  selectedSnapshot,
+  state,
+  onCheck,
+  onStartRun,
+}: {
+  readonly detail: EvaluationDatasetDetail;
+  readonly selectedSnapshot: EvaluationSnapshotOption | undefined;
+  readonly state: PreflightState;
+  readonly onCheck: (request: EvaluationDatasetPreflightRequest) => void;
+  readonly onStartRun: DatasetReadinessViewProps["onStartRun"];
+}) {
+  const { t } = useTranslation();
+  const canCheck = detail.available && selectedSnapshot !== undefined;
+  const canStartRun = canStartEvaluationRun(
+    onStartRun,
+    detail,
+    selectedSnapshot,
+    state,
+  );
+  const check = (): void => {
+    if (selectedSnapshot === undefined) return;
+    onCheck({
+      datasetRevisionId: detail.revision.id,
+      corpusId: selectedSnapshot.corpusId,
+      snapshotId: selectedSnapshot.snapshotId,
+    });
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={!canCheck || state.status === "checking"}
+        onClick={check}
+      >
+        {state.status === "checking"
+          ? t("evaluation.checkingCompatibility")
+          : t("evaluation.checkCompatibility")}
+      </button>
+      <PreflightResult state={state} />
+      {onStartRun === undefined ? null : (
+        <button
+          type="button"
+          disabled={!canStartRun}
+          onClick={() => {
+            if (state.status === "compatible") onStartRun(state.selection);
+          }}
+        >
+          {t("evaluation.startRun")}
+        </button>
+      )}
+    </>
   );
 }
 
@@ -291,6 +393,14 @@ function DatasetReadinessDetail({
 }) {
   const { t } = useTranslation();
   const review = detail.review;
+  const reviewValue =
+    review === null
+      ? t("evaluation.reviewUnavailable")
+      : formatReviewValue(
+          t(`evaluation.reviewDecision.${review.decision}`),
+          t(`evaluation.publicationState.${review.publicationState}`),
+          review.reviewedAt,
+        );
 
   return (
     <section
@@ -351,14 +461,7 @@ function DatasetReadinessDetail({
               : t("evaluation.unavailable")
           }
         />
-        <IdentityRow
-          label={t("evaluation.review")}
-          value={
-            review === null
-              ? t("evaluation.reviewUnavailable")
-              : `${t(`evaluation.reviewDecision.${review.decision}`)} - ${t(`evaluation.publicationState.${review.publicationState}`)} - ${review.reviewedAt}`
-          }
-        />
+        <IdentityRow label={t("evaluation.review")} value={reviewValue} />
       </dl>
 
       <h3>{t("evaluation.sourceRequirements")}</h3>
@@ -385,7 +488,7 @@ function DatasetReadinessDetail({
 function PreflightResult({ state }: { readonly state: PreflightState }) {
   const { t } = useTranslation();
   if (state.status === "compatible") {
-    return <p role="status">{t("evaluation.compatible")}</p>;
+    return <output>{t("evaluation.compatible")}</output>;
   }
   if (state.status === "incompatible") {
     return (
@@ -411,6 +514,36 @@ function PreflightResult({ state }: { readonly state: PreflightState }) {
     return <p role="alert">{t("evaluation.preflightFailed")}</p>;
   }
   return null;
+}
+
+function canStartEvaluationRun(
+  onStartRun: DatasetReadinessViewProps["onStartRun"],
+  detail: EvaluationDatasetDetail | null,
+  selectedSnapshot: EvaluationSnapshotOption | undefined,
+  preflightState: PreflightState,
+): boolean {
+  if (
+    onStartRun === undefined ||
+    detail === null ||
+    selectedSnapshot === undefined ||
+    preflightState.status !== "compatible"
+  ) {
+    return false;
+  }
+
+  return (
+    preflightState.selection.datasetRevisionId === detail.revision.id &&
+    preflightState.selection.corpusId === selectedSnapshot.corpusId &&
+    preflightState.selection.snapshotId === selectedSnapshot.snapshotId
+  );
+}
+
+function formatReviewValue(
+  reviewDecision: string,
+  publicationState: string,
+  reviewedAt: string,
+): string {
+  return `${reviewDecision} - ${publicationState} - ${reviewedAt}`;
 }
 
 function SelectedSnapshotIdentity({
@@ -475,4 +608,14 @@ function isCompatibilityError(
       error.code === "snapshot_incompatible" ||
       error.code === "locator_unresolved")
   );
+}
+
+function preflightFailureState(error: unknown): PreflightState {
+  if (isCompatibilityError(error)) {
+    return {
+      status: "incompatible",
+      requirements: error.missingRequirements ?? [],
+    };
+  }
+  return { status: "failed" };
 }

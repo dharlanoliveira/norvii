@@ -319,9 +319,9 @@ function openingSuggestionIdentitiesMatch(
   first: OpeningSuggestionIdentity | undefined,
   second: OpeningSuggestionIdentity | undefined,
 ): boolean {
+  if (first === undefined || second === undefined) return false;
+
   return (
-    first !== undefined &&
-    second !== undefined &&
     first.corpusId === second.corpusId &&
     first.interfaceLanguage === second.interfaceLanguage &&
     first.snapshotId === second.snapshotId &&

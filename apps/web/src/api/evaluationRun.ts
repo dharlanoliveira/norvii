@@ -1000,12 +1000,12 @@ function recordWithOptional(
   required: readonly string[],
   optional: readonly string[],
 ): Record<string, unknown> {
-  const fields = [...required, ...optional];
+  const fields = new Set([...required, ...optional]);
   if (value === null || typeof value !== "object" || Array.isArray(value))
     throw new TypeError(`${label} must be an object.`);
   const record = value as Record<string, unknown>;
   for (const key of Object.keys(record))
-    if (!fields.includes(key))
+    if (!fields.has(key))
       throw new Error(`${label} contains unsupported field ${key}.`);
   for (const field of required)
     if (!(field in record))
