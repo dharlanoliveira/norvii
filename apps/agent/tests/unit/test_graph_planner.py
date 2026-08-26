@@ -84,8 +84,8 @@ def test_graph_planner_keeps_only_declared_capabilities(monkeypatch: pytest.Monk
     assert requests[0].data is not None
     request_body = json.loads(requests[0].data)
     policy = request_body["messages"][0]["content"]
-    assert "Vector retrieval has already searched" in policy
-    assert "If a relationship is not necessary" in policy
+    assert "Do not assess whether vector evidence is sufficient" in policy
+    assert "outside the available graph structure" in policy
     assert "decision_reason" in policy
     assert "predicate_capabilities" in request_body["messages"][1]["content"]
     assert "scope_locators" in request_body["messages"][1]["content"]
@@ -164,7 +164,7 @@ def test_graph_planner_discards_an_invented_scope_locator(
     assert plan.scope_locator is None
 
 
-def test_graph_planner_records_direct_evidence_as_sufficient(
+def test_graph_planner_rejects_removed_direct_evidence_reason(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     response = FakeResponse(
@@ -180,4 +180,23 @@ def test_graph_planner_records_direct_evidence_as_sufficient(
     )
 
     assert plan.use_graph is False
-    assert plan.decision_reason == "direct_evidence_sufficient"
+    assert plan.decision_reason == "uncertain"
+
+
+def test_graph_planner_accepts_outside_graph_scope_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = FakeResponse(
+        b'{"choices":[{"message":{"content":"{\\"use_graph\\":false,\\"decision_reason\\":\\"outside_graph_scope\\",\\"predicates\\":[],\\"entity_labels\\":[]}"}}]}'
+    )
+    monkeypatch.setattr(
+        "norvii_agent.providers.planning.request.urlopen", lambda *_args, **_kwargs: response
+    )
+
+    plan = OpenAICompatibleGraphPlanner("https://provider.test/chat", "", "model", 1).plan(
+        "What color is the interface?",
+        GraphCapabilityCatalog(("actor",), ("imposes_duty_on",), ("controller",)),
+    )
+
+    assert plan.use_graph is False
+    assert plan.decision_reason == "outside_graph_scope"

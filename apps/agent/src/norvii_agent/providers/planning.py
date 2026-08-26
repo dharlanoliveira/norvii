@@ -16,15 +16,15 @@ _MAX_ENTITY_LABELS = 8
 _MAX_PREDICATES = 8
 _MAX_SCOPE_LOCATOR_LENGTH = 160
 _MAX_TERM_LENGTH = 80
-_DECISION_REASONS = frozenset({"relationship_required", "direct_evidence_sufficient", "uncertain"})
+_DECISION_REASONS = frozenset({"relationship_required", "outside_graph_scope", "uncertain"})
 _PLANNING_POLICY = (
-    "Vector retrieval has already searched for direct supporting passages. "
-    "Set use_graph to false when the question can be answered by locating, explaining, "
-    "or summarizing a provision directly. Set use_graph to true only when answering well "
-    "requires a relationship between entities, such as an authority's responsibility, "
-    "a right's holder, an obligation's subject, an application condition, or a connection "
-    "between named legal concepts. If a relationship is not necessary or the decision is "
-    "uncertain, prefer false."
+    "Do not assess whether vector evidence is sufficient. Decide only whether the graph "
+    "can add grounded legal structure to the answer. Set use_graph to true when a "
+    "catalog-supported assertion, entity connection, or legal hierarchy scope can materially "
+    "improve the answer, including an authority's responsibility, a right's holder, an "
+    "obligation's subject, an application condition, a legal definition, or a connection "
+    "between named legal concepts. Set use_graph to false only when the question is outside "
+    "the available graph structure."
 )
 
 
@@ -59,15 +59,15 @@ class OpenAICompatibleGraphPlanner:
                             "Decide whether graph relationships can add grounded evidence to a "
                             "legal research question. Return JSON only with use_graph (boolean), "
                             "decision_reason (one of relationship_required, "
-                            "direct_evidence_sufficient, or uncertain), predicates "
+                            "outside_graph_scope, or uncertain), predicates "
                             "(array), entity_labels (array), and scope_locator (string or null). "
                             "Use only catalog predicates, entity labels, and scope locators. "
                             "Predicate capabilities define the only valid predicate "
                             "and entity-label combinations. "
                             f"{_PLANNING_POLICY} "
                             "Use relationship_required only when use_graph is true. When "
-                            "use_graph is false, use direct_evidence_sufficient or uncertain and "
-                            "return empty arrays and null scope_locator. Select scope_locator only "
+                            "use_graph is false, use outside_graph_scope or uncertain and return "
+                            "empty arrays and null scope_locator. Select scope_locator only "
                             "when the question explicitly restricts a legal location. "
                             "Entity labels are canonical graph values and can be in a different "
                             "language than the question. "

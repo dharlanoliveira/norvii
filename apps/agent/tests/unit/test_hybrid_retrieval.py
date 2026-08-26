@@ -64,11 +64,11 @@ class FixedPlanner:
         return self._plan
 
 
-def test_hybrid_keeps_vector_evidence_when_graph_plan_is_not_relevant(
+def test_hybrid_keeps_vector_evidence_when_question_is_outside_graph_scope(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     planner = FixedPlanner(
-        GraphRetrievalPlan(use_graph=False, decision_reason="direct_evidence_sufficient")
+        GraphRetrievalPlan(use_graph=False, decision_reason="outside_graph_scope")
     )
     hybrid = HybridRetriever(
         FixedVectorRetriever((_evidence("vector", "article-1"),)),
@@ -88,7 +88,7 @@ def test_hybrid_keeps_vector_evidence_when_graph_plan_is_not_relevant(
         ("planning", "skipped"),
         ("graph", "skipped"),
     ]
-    assert '"decision_reason": "direct_evidence_sufficient"' in caplog.text
+    assert '"decision_reason": "outside_graph_scope"' in caplog.text
     assert '"use_graph": false' in caplog.text
 
 
