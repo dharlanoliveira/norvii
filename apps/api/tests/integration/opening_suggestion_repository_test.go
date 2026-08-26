@@ -23,6 +23,9 @@ func TestOpeningSuggestionRepositoryUsesOnlyTheCurrentCorpusRelease(t *testing.T
 	if _, err := transaction.Exec(ctx, "SET CONSTRAINTS ALL IMMEDIATE"); err != nil {
 		t.Fatalf("validate opening-suggestion fixture: %v", err)
 	}
+	if _, err := transaction.Exec(ctx, "SET CONSTRAINTS ALL DEFERRED"); err != nil {
+		t.Fatalf("defer opening-suggestion projection constraints: %v", err)
+	}
 
 	repository := suggestionspostgres.NewRepository(transaction)
 	if err := repository.AppendProjection(ctx, projection); err != nil {
@@ -112,6 +115,9 @@ func TestOpeningSuggestionRepositoryHidesProjectionAfterLatestPublicationBecomes
 	)
 	if _, err := transaction.Exec(ctx, "SET CONSTRAINTS ALL IMMEDIATE"); err != nil {
 		t.Fatalf("validate opening-suggestion fixture: %v", err)
+	}
+	if _, err := transaction.Exec(ctx, "SET CONSTRAINTS ALL DEFERRED"); err != nil {
+		t.Fatalf("defer opening-suggestion projection constraints: %v", err)
 	}
 
 	repository := suggestionspostgres.NewRepository(transaction)

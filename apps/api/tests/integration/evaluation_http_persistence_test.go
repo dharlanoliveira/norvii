@@ -117,9 +117,16 @@ func TestEvaluationDatasetInspectionHTTPPreservesPersistedStarterMetadataAndPref
 	}
 	var catalog []evaluationcontract.DatasetCatalogResponse
 	decodeEvaluationHTTPResponse(t, listResponse, &catalog)
-	if len(catalog) != 1 || catalog[0].Revision.ID != fixture.revisionID.String() || catalog[0].Review == nil ||
-		catalog[0].Review.Decision != "approved" || catalog[0].Review.PublicationState != "available" {
-		t.Fatalf("catalog response = %#v, want persisted revision and review", catalog)
+	var fixtureEntry *evaluationcontract.DatasetCatalogResponse
+	for index := range catalog {
+		if catalog[index].Revision.ID == fixture.revisionID.String() {
+			fixtureEntry = &catalog[index]
+			break
+		}
+	}
+	if fixtureEntry == nil || fixtureEntry.Review == nil || fixtureEntry.Review.Decision != "approved" ||
+		fixtureEntry.Review.PublicationState != "available" {
+		t.Fatalf("catalog response = %#v, want persisted fixture revision and review", catalog)
 	}
 
 	detailRequest := httptest.NewRequest(http.MethodGet, "/api/v1/evaluation-datasets/"+fixture.revisionID.String(), nil)
@@ -190,8 +197,10 @@ func TestEvaluationDatasetInspectionHTTPPreservesPersistedStarterMetadataAndPref
 	}
 	var rejected evaluationcontract.DatasetPreflightErrorResponse
 	decodeEvaluationHTTPResponse(t, rejectedResponse, &rejected)
-	if rejected.Error.Code != "snapshot_incompatible" || len(rejected.Error.MissingRequirements) != 1 {
-		t.Fatalf("rejected preflight payload = %#v", rejected)
+	if rejected.Error.Code != "snapshot_incompatible" || len(rejected.Error.MissingRequirements) != 2 ||
+		rejected.Error.MissingRequirements[0].Reason != "The required source is not a member of the selected snapshot." ||
+		rejected.Error.MissingRequirements[1].Reason != "The locator did not resolve uniquely." {
+		t.Fatalf("rejected preflight payload = %#v, want source and locator diagnostics", rejected)
 	}
 	assertBoundedEvaluationHTTPError(t, rejectedResponse.Body.String())
 	assertEvaluationRunCount(t, ctx, transaction, 0)
