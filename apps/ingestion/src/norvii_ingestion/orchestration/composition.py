@@ -56,6 +56,17 @@ class StructuredEventLogger:
             "document_id",
             "stage",
             "media_type",
+            "diagnostic_code",
+            "response_byte_count",
+            "response_sha256",
+            "response_content_type",
+            "provider_request_id",
+            "json_error_line",
+            "json_error_column",
+            "json_error_offset",
+            "completion_byte_count",
+            "completion_sha256",
+            "provider_response_attempt",
             "error_type",
         }
     )

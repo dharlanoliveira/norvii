@@ -102,6 +102,7 @@ def main() -> int:
                 timeout_seconds=worker_config.semantic_timeout_seconds,
                 reasoning_effort=worker_config.semantic_reasoning_effort,
                 extraction_version=worker_config.semantic_extraction_version,
+                diagnostic_logger=event_logger,
             ),
         ),
         logger=event_logger,

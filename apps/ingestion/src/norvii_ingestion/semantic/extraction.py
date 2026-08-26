@@ -57,9 +57,47 @@ _MALFORMED_RESPONSE = "semantic extraction response is malformed"
 class ExtractionProviderError(RuntimeError):
     """Indicate a failed or malformed semantic extraction provider response."""
 
-    def __init__(self, message: str, detail: str = "provider_response_invalid") -> None:
+    def __init__(
+        self,
+        message: str,
+        detail: str = "provider_response_invalid",
+        diagnostic: ProviderResponseDiagnostic | None = None,
+    ) -> None:
         super().__init__(message)
         self.detail = detail
+        self.diagnostic = diagnostic
+
+
+class SemanticDiagnosticLogger(Protocol):
+    """Persist safe provider-response diagnostics outside semantic artifacts."""
+
+    def failure(self, event: str, **fields: object) -> None:
+        """Record a safe structured failure event."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderResponseDiagnostic:
+    """Retain response metadata without retaining the response content."""
+
+    code: str
+    response_byte_count: int
+    response_sha256: str
+    response_content_type: str | None
+    provider_request_id: str | None
+    json_error_line: int | None = None
+    json_error_column: int | None = None
+    json_error_offset: int | None = None
+    completion_byte_count: int | None = None
+    completion_sha256: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderResponse:
+    """Pair one decoded provider response with safe diagnostic metadata."""
+
+    payload: object
+    diagnostic: ProviderResponseDiagnostic
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +157,7 @@ class OpenAICompatibleSemanticExtractor:
     timeout_seconds: int = 30
     reasoning_effort: str = "none"
     extraction_version: str = "legal-semantic-v3"
+    diagnostic_logger: SemanticDiagnosticLogger | None = None
 
     def __post_init__(self) -> None:
         """Reject incomplete configuration before an ingestion lease is claimed."""
@@ -231,10 +270,12 @@ class OpenAICompatibleSemanticExtractor:
             method="POST",
         )
         for attempt in range(_MAX_RESPONSE_ATTEMPTS):
-            decoded = self._response_body(request, timeout_seconds)
             try:
+                decoded = self._response_body(request, timeout_seconds)
                 return _completion_content(decoded)
             except ExtractionProviderError as error:
+                if error.detail == "provider_response_invalid":
+                    self._record_invalid_response(error, attempt + 1, len(units))
                 if (
                     error.detail != "provider_response_invalid"
                     or attempt + 1 == _MAX_RESPONSE_ATTEMPTS
@@ -243,10 +284,20 @@ class OpenAICompatibleSemanticExtractor:
         raise AssertionError("semantic response attempts must either return or raise")
 
     @staticmethod
-    def _response_body(request: Request, timeout_seconds: int) -> object:
+    def _response_body(request: Request, timeout_seconds: int) -> ProviderResponse:
         try:
             with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
-                return json.loads(response.read())
+                body = response.read()
+                diagnostic = _response_diagnostic(response, body)
+                try:
+                    payload = json.loads(body)
+                except json.JSONDecodeError as error:
+                    raise ExtractionProviderError(
+                        _MALFORMED_RESPONSE,
+                        "provider_response_invalid",
+                        _with_json_error(diagnostic, "response_body_invalid_json", error),
+                    ) from error
+                return ProviderResponse(payload, diagnostic)
         except HTTPError as error:
             detail = f"provider_http_status_{error.code}"
             raise ExtractionProviderError(_REQUEST_FAILED, detail) from error
@@ -259,10 +310,31 @@ class OpenAICompatibleSemanticExtractor:
             raise ExtractionProviderError(_REQUEST_FAILED, detail) from error
         except TimeoutError as error:
             raise ExtractionProviderError(_REQUEST_FAILED, "provider_timeout") from error
-        except json.JSONDecodeError as error:
-            raise ExtractionProviderError(
-                _MALFORMED_RESPONSE, "provider_response_invalid"
-            ) from error
+
+    def _record_invalid_response(
+        self,
+        error: ExtractionProviderError,
+        response_attempt: int,
+        unit_count: int,
+    ) -> None:
+        diagnostic = error.diagnostic
+        if self.diagnostic_logger is None or diagnostic is None:
+            return
+        self.diagnostic_logger.failure(
+            "semantic_provider_response_invalid",
+            diagnostic_code=diagnostic.code,
+            response_byte_count=diagnostic.response_byte_count,
+            response_sha256=diagnostic.response_sha256,
+            response_content_type=diagnostic.response_content_type,
+            provider_request_id=diagnostic.provider_request_id,
+            json_error_line=diagnostic.json_error_line,
+            json_error_column=diagnostic.json_error_column,
+            json_error_offset=diagnostic.json_error_offset,
+            completion_byte_count=diagnostic.completion_byte_count,
+            completion_sha256=diagnostic.completion_sha256,
+            provider_response_attempt=response_attempt,
+            unit_count=unit_count,
+        )
 
 
 def _selected_units(artifact: DocumentArtifact) -> Iterable[DocumentUnit]:
@@ -296,14 +368,68 @@ def _selection_bytes(units: Sequence[DocumentUnit], artifact: DocumentArtifact) 
     return digest.hexdigest().encode("ascii")
 
 
-def _completion_content(payload: object) -> object:
-    if not isinstance(payload, dict):
+def _completion_content(response: ProviderResponse) -> object:
+    if not isinstance(response.payload, dict):
         raise ExtractionProviderError(_MALFORMED_RESPONSE, "provider_response_schema_invalid")
     try:
-        content = _message_content(payload)
-        return {"content": json.loads(content), "usage": payload.get("usage")}
+        content = _message_content(response.payload)
+        return {"content": json.loads(content), "usage": response.payload.get("usage")}
     except json.JSONDecodeError as error:
-        raise ExtractionProviderError(_MALFORMED_RESPONSE, "provider_response_invalid") from error
+        completion = content.encode("utf-8")
+        raise ExtractionProviderError(
+            _MALFORMED_RESPONSE,
+            "provider_response_invalid",
+            _with_json_error(
+                response.diagnostic,
+                "completion_content_invalid_json",
+                error,
+                completion,
+            ),
+        ) from error
+
+
+def _response_diagnostic(response: object, body: bytes) -> ProviderResponseDiagnostic:
+    return ProviderResponseDiagnostic(
+        code="response_valid_json",
+        response_byte_count=len(body),
+        response_sha256=hashlib.sha256(body).hexdigest(),
+        response_content_type=_header(response, "content-type"),
+        provider_request_id=(
+            _header(response, "x-request-id")
+            or _header(response, "request-id")
+            or _header(response, "openai-request-id")
+        ),
+    )
+
+
+def _header(response: object, name: str) -> str | None:
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    value = headers.get(name)
+    return value.strip()[:256] if isinstance(value, str) and value.strip() else None
+
+
+def _with_json_error(
+    diagnostic: ProviderResponseDiagnostic,
+    code: str,
+    error: json.JSONDecodeError,
+    completion: bytes | None = None,
+) -> ProviderResponseDiagnostic:
+    return ProviderResponseDiagnostic(
+        code=code,
+        response_byte_count=diagnostic.response_byte_count,
+        response_sha256=diagnostic.response_sha256,
+        response_content_type=diagnostic.response_content_type,
+        provider_request_id=diagnostic.provider_request_id,
+        json_error_line=error.lineno,
+        json_error_column=error.colno,
+        json_error_offset=error.pos,
+        completion_byte_count=len(completion) if completion is not None else None,
+        completion_sha256=hashlib.sha256(completion).hexdigest()
+        if completion is not None
+        else None,
+    )
 
 
 def _message_content(payload: dict[object, object]) -> str:

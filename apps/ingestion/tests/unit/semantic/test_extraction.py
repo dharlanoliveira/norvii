@@ -22,6 +22,14 @@ if TYPE_CHECKING:
     from urllib.request import Request
 
 
+class RecordingDiagnosticLogger:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    def failure(self, event: str, **fields: object) -> None:
+        self.events.append((event, fields))
+
+
 def test_validated_batch_creates_evidence_backed_atomic_assertions() -> None:
     unit = _article_unit()
 
@@ -221,6 +229,41 @@ def test_extractor_skips_a_unit_after_two_invalid_completions(
     assert extraction.assertions == ()
 
 
+def test_extractor_logs_safe_invalid_completion_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unit = _article_unit()
+    artifact = _artifact_for(unit)
+    logger = RecordingDiagnosticLogger()
+    invalid_completion = "not valid JSON"
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *_args, **_kwargs: _ProviderResponse(
+            json.dumps({"choices": [{"message": {"content": invalid_completion}}]}).encode(),
+            headers={"content-type": "application/json", "x-request-id": "provider-123"},
+        ),
+    )
+
+    OpenAICompatibleSemanticExtractor(
+        endpoint="https://example.test/v1/chat/completions",
+        api_key="test-key",
+        model="test-model",
+        diagnostic_logger=logger,
+    ).extract(artifact)
+
+    assert len(logger.events) == 2
+    event, fields = logger.events[0]
+    assert event == "semantic_provider_response_invalid"
+    assert fields["diagnostic_code"] == "completion_content_invalid_json"
+    assert fields["provider_request_id"] == "provider-123"
+    assert fields["response_content_type"] == "application/json"
+    assert fields["response_byte_count"] > 0
+    assert fields["completion_byte_count"] == len(invalid_completion.encode())
+    assert fields["provider_response_attempt"] == 1
+    assert fields["unit_count"] == 1
+    assert invalid_completion not in repr(logger.events)
+
+
 def test_extractor_bounds_each_provider_request_and_requires_atomic_entities(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -415,8 +458,9 @@ def _request_unit_count(request: dict[str, object]) -> int:
 
 
 class _ProviderResponse:
-    def __init__(self, payload: bytes) -> None:
+    def __init__(self, payload: bytes, headers: dict[str, str] | None = None) -> None:
         self._payload = payload
+        self.headers = headers or {}
 
     def __enter__(self) -> Self:
         return self

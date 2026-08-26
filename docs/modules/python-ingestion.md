@@ -90,6 +90,11 @@ smaller set of legal units. Hierarchy links are structural rather than semantic 
 lets graph retrieval navigate from a relevant provision to its chapter without treating every
 chapter as answer evidence.
 
+If a semantic provider response cannot be parsed, ingestion writes a structured diagnostic to
+`.log/ingestion.log`. It records the provider request identifier when available, content type,
+byte count, SHA-256 fingerprints, parsing location, response attempt, and safe failure subtype.
+It never stores the provider response body, legal text, prompts, credentials, or personal data.
+
 The canonical write model is PostgreSQL `normative_assertions`, plus graph-release memberships
 for legal units and assertions. Neo4j is an immutable derived projection with this topology:
 
