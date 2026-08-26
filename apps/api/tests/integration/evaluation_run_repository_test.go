@@ -93,14 +93,29 @@ func TestEvaluationRunRepositoryRecoversLeasesAndPreservesTerminalResults(t *tes
 	if state != "leased" || metricCount != 0 {
 		t.Fatalf("partial completed case = state %q with %d metrics, want leased without metrics", state, metricCount)
 	}
-	assertEvaluationRunCompleted(t, ctx, transaction, repository, fixture, runID, runCaseID, recovered[0])
+	assertEvaluationRunCompleted(t, evaluationRunCompletion{
+		context: ctx, transaction: transaction, repository: repository, fixture: fixture,
+		runID: runID, runCaseID: runCaseID, claim: recovered[0],
+	})
 
 	assertEvaluationRunFailedAndCancelled(t, ctx, transaction, repository, fixture)
 	assertEvaluationRunAbstained(t, ctx, transaction, repository, fixture)
 }
 
-func assertEvaluationRunCompleted(t *testing.T, ctx context.Context, transaction pgx.Tx, repository *evaluationpostgres.Repository, fixture evaluationResolutionFixture, runID, runCaseID uuid.UUID, claim evaluationapplication.ClaimedCase) {
+type evaluationRunCompletion struct {
+	context     context.Context
+	transaction pgx.Tx
+	repository  *evaluationpostgres.Repository
+	fixture     evaluationResolutionFixture
+	runID       uuid.UUID
+	runCaseID   uuid.UUID
+	claim       evaluationapplication.ClaimedCase
+}
+
+func assertEvaluationRunCompleted(t *testing.T, input evaluationRunCompletion) {
 	t.Helper()
+	ctx, transaction, repository, fixture := input.context, input.transaction, input.repository, input.fixture
+	runID, runCaseID, claim := input.runID, input.runCaseID, input.claim
 	if err := repository.Complete(ctx, claim, evaluationapplication.TerminalCaseResult{
 		State: evaluationapplication.RunCaseCompleted, Answer: "Synthetic completed answer.",
 		LatencyMilliseconds: int64Pointer(42), InputTokens: int64Pointer(7), OutputTokens: int64Pointer(11),
@@ -403,11 +418,30 @@ func TestEvaluationRunInspectionRetainsHistoricalSnapshotAndImmutableCaseLedger(
 		t.Fatalf("GetEvaluationRunCase(before publication) error = %v", err)
 	}
 
-	assertEvaluationRunHistoryRemainsImmutable(t, ctx, transaction, repository, fixture, runID, runCaseID, originalReleaseVersion, historicalPublication, historicalRun, historicalCase)
+	assertEvaluationRunHistoryRemainsImmutable(t, evaluationRunHistory{
+		context: ctx, transaction: transaction, repository: repository, fixture: fixture,
+		runID: runID, runCaseID: runCaseID, originalReleaseVersion: originalReleaseVersion,
+		historicalPublication: historicalPublication, historicalRun: historicalRun, historicalCase: historicalCase,
+	})
 }
 
-func assertEvaluationRunHistoryRemainsImmutable(t *testing.T, ctx context.Context, transaction pgx.Tx, repository *evaluationpostgres.Repository, fixture evaluationResolutionFixture, runID, runCaseID uuid.UUID, originalReleaseVersion int, historicalPublication evaluationdomain.Publication, historicalRun evaluationapplication.Run, historicalCase evaluationapplication.RunCase) {
+type evaluationRunHistory struct {
+	context                context.Context
+	transaction            pgx.Tx
+	repository             *evaluationpostgres.Repository
+	fixture                evaluationResolutionFixture
+	runID                  uuid.UUID
+	runCaseID              uuid.UUID
+	originalReleaseVersion int
+	historicalPublication  evaluationdomain.Publication
+	historicalRun          evaluationapplication.Run
+	historicalCase         evaluationapplication.RunCase
+}
+
+func assertEvaluationRunHistoryRemainsImmutable(t *testing.T, input evaluationRunHistory) {
 	t.Helper()
+	ctx, transaction, repository, fixture := input.context, input.transaction, input.repository, input.fixture
+	originalReleaseVersion := input.originalReleaseVersion
 	laterSourceRevisionID, laterDocumentID, laterContentSHA256 := insertLaterReadyEvaluationDocument(t, ctx, transaction, fixture)
 	snapshotRepository := snapshotpostgres.NewRepository(transaction)
 	laterPublication, err := snapshotRepository.Publish(ctx, snapshotdomain.PublishCommand{
@@ -447,7 +481,7 @@ func assertEvaluationRunHistoryRemainsImmutable(t *testing.T, ctx context.Contex
 	assertEvaluationPublication(t, availableLaterPublication, laterDatasetPublication)
 	assertEvaluationActiveSnapshot(t, ctx, transaction, fixture.corpusID, laterPublication.Snapshot.ID, originalReleaseVersion+1)
 	assertEvaluationHistoricalSnapshot(t, ctx, snapshotRepository, fixture)
-	assertEvaluationHistoricalRun(t, ctx, repository, fixture, runID, runCaseID, historicalPublication, historicalRun, historicalCase)
+	assertEvaluationHistoricalRun(t, input)
 }
 
 func assertEvaluationActiveSnapshot(t *testing.T, ctx context.Context, transaction pgx.Tx, corpusID, snapshotID uuid.UUID, releaseVersion int) {
@@ -473,8 +507,11 @@ func assertEvaluationHistoricalSnapshot(t *testing.T, ctx context.Context, repos
 	}
 }
 
-func assertEvaluationHistoricalRun(t *testing.T, ctx context.Context, repository *evaluationpostgres.Repository, fixture evaluationResolutionFixture, runID, runCaseID uuid.UUID, historicalPublication evaluationdomain.Publication, historicalRun evaluationapplication.Run, historicalCase evaluationapplication.RunCase) {
+func assertEvaluationHistoricalRun(t *testing.T, input evaluationRunHistory) {
 	t.Helper()
+	ctx, repository, fixture := input.context, input.repository, input.fixture
+	runID, runCaseID := input.runID, input.runCaseID
+	historicalPublication, historicalRun, historicalCase := input.historicalPublication, input.historicalRun, input.historicalCase
 	publication, found, err := repository.LatestPublication(ctx, fixture.corpusID, fixture.revisionID)
 	if err != nil {
 		t.Fatalf("LatestPublication(historical dataset revision) error = %v", err)

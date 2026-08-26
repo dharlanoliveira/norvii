@@ -451,32 +451,56 @@ func terminalRunState(completed, abstained, failed, cancelled int64) string {
 }
 
 func (request CreateRunRequest) validate() error {
-	identity := request.Identity
-	if identity.ID == uuid.Nil || identity.DatasetRevisionID == uuid.Nil || identity.CorpusID == uuid.Nil || identity.SnapshotID == uuid.Nil ||
-		!runSHA256Pattern.MatchString(identity.SnapshotManifestSHA256) || !runSHA256Pattern.MatchString(identity.DatasetContentSHA256) ||
-		!runSHA256Pattern.MatchString(identity.OrderedCaseSetSHA256) || !allNonBlank(identity.RetrievalStrategy, identity.RetrievalConfigurationFingerprint,
-		identity.ScoringPolicyVersion, identity.AgentBuild, identity.ChatModelIdentity, identity.EmbeddingModelIdentity, identity.InitiatedBy) || len(request.Cases) == 0 {
+	if !validRunIdentity(request.Identity) || len(request.Cases) == 0 {
 		return ErrInvalidInput
 	}
-	caseIDs := make(map[uuid.UUID]struct{}, len(request.Cases))
-	positions := make(map[int]struct{}, len(request.Cases))
-	runCaseIDs := make(map[uuid.UUID]struct{}, len(request.Cases))
-	for _, evaluationCase := range request.Cases {
+	runCaseIDs, err := validateRunCases(request.Cases)
+	if err != nil {
+		return err
+	}
+	return validateRunExpectedEvidence(request.ExpectedEvidence, runCaseIDs)
+}
+
+func validRunIdentity(identity RunIdentity) bool {
+	return validRunIDs(identity) && validRunHashes(identity) && validRunMetadata(identity)
+}
+
+func validRunIDs(identity RunIdentity) bool {
+	return identity.ID != uuid.Nil && identity.DatasetRevisionID != uuid.Nil && identity.CorpusID != uuid.Nil && identity.SnapshotID != uuid.Nil
+}
+
+func validRunHashes(identity RunIdentity) bool {
+	return runSHA256Pattern.MatchString(identity.SnapshotManifestSHA256) && runSHA256Pattern.MatchString(identity.DatasetContentSHA256) && runSHA256Pattern.MatchString(identity.OrderedCaseSetSHA256)
+}
+
+func validRunMetadata(identity RunIdentity) bool {
+	return allNonBlank(identity.RetrievalStrategy, identity.RetrievalConfigurationFingerprint, identity.ScoringPolicyVersion, identity.AgentBuild, identity.ChatModelIdentity, identity.EmbeddingModelIdentity, identity.InitiatedBy)
+}
+
+func validateRunCases(cases []RunCaseDefinition) (map[uuid.UUID]struct{}, error) {
+	caseIDs := make(map[uuid.UUID]struct{}, len(cases))
+	positions := make(map[int]struct{}, len(cases))
+	runCaseIDs := make(map[uuid.UUID]struct{}, len(cases))
+	for _, evaluationCase := range cases {
 		if evaluationCase.ID == uuid.Nil || evaluationCase.DatasetCaseID == uuid.Nil || evaluationCase.Position < 1 ||
 			(evaluationCase.ExpectedOutcome != domain.ExpectedOutcomeAnswer && evaluationCase.ExpectedOutcome != domain.ExpectedOutcomeAbstain) {
-			return ErrInvalidInput
+			return nil, ErrInvalidInput
 		}
 		if _, found := caseIDs[evaluationCase.DatasetCaseID]; found {
-			return ErrInvalidInput
+			return nil, ErrInvalidInput
 		}
 		if _, found := positions[evaluationCase.Position]; found {
-			return ErrInvalidInput
+			return nil, ErrInvalidInput
 		}
 		caseIDs[evaluationCase.DatasetCaseID] = struct{}{}
 		positions[evaluationCase.Position] = struct{}{}
 		runCaseIDs[evaluationCase.ID] = struct{}{}
 	}
-	for _, evidence := range request.ExpectedEvidence {
+	return runCaseIDs, nil
+}
+
+func validateRunExpectedEvidence(expectedEvidence []ExpectedEvidenceDefinition, runCaseIDs map[uuid.UUID]struct{}) error {
+	for _, evidence := range expectedEvidence {
 		if evidence.ID == uuid.Nil || evidence.RunCaseID == uuid.Nil || evidence.SourceID == uuid.Nil || evidence.SourceRevisionID == uuid.Nil ||
 			evidence.DocumentID == uuid.Nil || evidence.LegalUnitID == uuid.Nil || evidence.Ordinal < 1 ||
 			!canonicalLocatorPattern.MatchString(evidence.CanonicalLocator) || !runSHA256Pattern.MatchString(evidence.ContentSHA256) || !allNonBlank(evidence.DisplayLocator) {
