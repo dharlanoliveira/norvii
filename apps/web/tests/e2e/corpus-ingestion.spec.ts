@@ -134,7 +134,7 @@ test("shows graph contribution and safe graph unavailability in Hybrid research 
     page.getByRole("list", { name: "Retrieval stages" }),
   ).toContainText("Graph contribution");
   await expect(
-    page.getByRole("list", { name: "Graph evidence path" }),
+    page.getByRole("list", { name: "Normative assertion provenance" }),
   ).toBeVisible();
 
   await configureCitationInspectionAPI(page, hybridChatStream("unavailable"));
@@ -456,15 +456,18 @@ function hybridChatStream(graphState: "completed" | "unavailable"): string {
     },
     evidence: [reference],
     stages,
-    graphPath:
+    assertionPath:
       graphState === "completed"
         ? [
             {
-              relationshipType: "applies_to",
+              assertionId: "assertion-1",
+              predicate: "applies_to",
               subjectLabel: "Right",
               objectLabel: "Request",
-              evidenceId: reference.id,
+              establishingLocator: "article-1",
               evidenceLocator: "article-1",
+              hierarchyContext: ["chapter-1", "article-1"],
+              qualifier: null,
             },
           ]
         : [],

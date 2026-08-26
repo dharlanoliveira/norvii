@@ -63,8 +63,9 @@ class Neo4jStore:
             "corpus_id": str(release.corpus_id),
             "snapshot_id": str(release.snapshot_id),
             "manifest_sha256": release.manifest_sha256,
+            "legal_units": release.legal_units,
             "entities": release.entities,
-            "relationships": release.relationships,
+            "assertions": release.assertions,
         }
         try:
             self._driver.execute_query(
@@ -89,49 +90,81 @@ class GraphReleaseProjection:
     corpus_id: UUID
     snapshot_id: UUID
     manifest_sha256: str
+    legal_units: tuple[dict[str, object], ...]
     entities: tuple[dict[str, object], ...]
-    relationships: tuple[dict[str, object], ...]
+    assertions: tuple[dict[str, object], ...]
 
 
 _REPLACE_RELEASE = """
 OPTIONAL MATCH (old:NorviiGraphRelease {id: $release_id})
 WITH collect(old) AS old_releases, $release_id AS release_id, $corpus_id AS corpus_id,
      $snapshot_id AS snapshot_id, $manifest_sha256 AS manifest_sha256,
-     $entities AS entities, $relationships AS relationships
+     $legal_units AS legal_units, $entities AS entities, $assertions AS assertions
 FOREACH (old_release IN old_releases | DETACH DELETE old_release)
-WITH release_id, corpus_id, snapshot_id, manifest_sha256, entities, relationships
-OPTIONAL MATCH (old_entity:NorviiGraphEntity {release_id: release_id})
-WITH collect(old_entity) AS old_entities, release_id, corpus_id, snapshot_id, manifest_sha256,
-     entities, relationships
-FOREACH (old_entity IN old_entities | DETACH DELETE old_entity)
-WITH release_id, corpus_id, snapshot_id, manifest_sha256, entities, relationships
+WITH release_id, corpus_id, snapshot_id, manifest_sha256, legal_units, entities, assertions
+OPTIONAL MATCH (old_node {release_id: release_id})
+WHERE old_node:NorviiGraphLegalUnit
+   OR old_node:NorviiGraphLegalEntity
+   OR old_node:NorviiGraphNormativeAssertion
+WITH collect(old_node) AS old_nodes, release_id, corpus_id, snapshot_id, manifest_sha256,
+     legal_units, entities, assertions
+FOREACH (old_node IN old_nodes | DETACH DELETE old_node)
+WITH release_id, corpus_id, snapshot_id, manifest_sha256, legal_units, entities, assertions
 MERGE (release:NorviiGraphRelease {id: release_id})
 SET release.corpus_id = corpus_id, release.snapshot_id = snapshot_id,
     release.manifest_sha256 = manifest_sha256, release.status = 'ready'
-WITH release, entities, relationships
+WITH release, legal_units, entities, assertions
+UNWIND legal_units AS legal_unit
+MERGE (unit:NorviiGraphLegalUnit {release_id: release.id, legal_unit_id: legal_unit.id})
+SET unit.document_id = legal_unit.document_id, unit.locator = legal_unit.locator,
+    unit.kind = legal_unit.kind
+MERGE (unit)-[:IN_GRAPH_RELEASE]->(release)
+WITH release, legal_units, entities, assertions
+UNWIND legal_units AS child_unit
+OPTIONAL MATCH (parent:NorviiGraphLegalUnit {
+  release_id: release.id, legal_unit_id: child_unit.parent_id
+})
+MATCH (child:NorviiGraphLegalUnit {
+  release_id: release.id, legal_unit_id: child_unit.id
+})
+FOREACH (_ IN CASE WHEN child_unit.parent_id IS NULL THEN [] ELSE [1] END |
+  MERGE (parent)-[:CONTAINS {release_id: release.id}]->(child)
+)
+WITH DISTINCT release, entities, assertions
 UNWIND entities AS entity
-MERGE (node:NorviiGraphEntity {release_id: release.id, semantic_entity_id: entity.id})
-SET node.label = entity.label, node.normalized_label = entity.normalized_label,
-    node.entity_type = entity.entity_type
-MERGE (node)-[:IN_GRAPH_RELEASE]->(release)
-WITH release, relationships
-UNWIND relationships AS relationship
-MATCH (subject:NorviiGraphEntity {
-  release_id: release.id, semantic_entity_id: relationship.subject_entity_id
+MERGE (entity_node:NorviiGraphLegalEntity {release_id: release.id, semantic_entity_id: entity.id})
+SET entity_node.label = entity.label, entity_node.normalized_label = entity.normalized_label,
+    entity_node.entity_type = entity.entity_type
+MERGE (entity_node)-[:IN_GRAPH_RELEASE]->(release)
+WITH release, assertions
+UNWIND assertions AS assertion
+MATCH (establishing_unit:NorviiGraphLegalUnit {
+  release_id: release.id, legal_unit_id: assertion.establishing_unit_id
 })
-MATCH (object:NorviiGraphEntity {
-  release_id: release.id, semantic_entity_id: relationship.object_entity_id
+MATCH (subject:NorviiGraphLegalEntity {
+  release_id: release.id, semantic_entity_id: assertion.subject_entity_id
 })
-MERGE (subject)-[edge:LEGAL_RELATIONSHIP {release_id: release.id, id: relationship.id}]->(object)
-SET edge.evidence_id = relationship.evidence_id,
-    edge.source_id = relationship.source_id,
-    edge.document_id = relationship.document_id,
-    edge.source_revision_id = relationship.source_revision_id,
-    edge.pipeline_version = relationship.pipeline_version,
-    edge.source_title = relationship.source_title,
-    edge.evidence_locator = relationship.evidence_locator,
-    edge.start_offset = relationship.start_offset,
-    edge.end_offset = relationship.end_offset,
-    edge.excerpt = relationship.excerpt,
-    edge.relationship_type = relationship.relationship_type
+MATCH (object:NorviiGraphLegalEntity {
+  release_id: release.id, semantic_entity_id: assertion.object_entity_id
+})
+MERGE (assertion_node:NorviiGraphNormativeAssertion {
+  release_id: release.id, normative_assertion_id: assertion.id
+})
+SET assertion_node.predicate = assertion.predicate,
+    assertion_node.qualifier = assertion.qualifier,
+    assertion_node.evidence_id = assertion.evidence_id,
+    assertion_node.source_id = assertion.source_id,
+    assertion_node.document_id = assertion.document_id,
+    assertion_node.source_revision_id = assertion.source_revision_id,
+    assertion_node.pipeline_version = assertion.pipeline_version,
+    assertion_node.source_title = assertion.source_title,
+    assertion_node.establishing_locator = assertion.establishing_locator,
+    assertion_node.evidence_locator = assertion.evidence_locator,
+    assertion_node.start_offset = assertion.start_offset,
+    assertion_node.end_offset = assertion.end_offset,
+    assertion_node.excerpt = assertion.excerpt
+MERGE (assertion_node)-[:IN_GRAPH_RELEASE]->(release)
+MERGE (establishing_unit)-[:ESTABLISHES {release_id: release.id}]->(assertion_node)
+MERGE (assertion_node)-[:SUBJECT {release_id: release.id}]->(subject)
+MERGE (assertion_node)-[:OBJECT {release_id: release.id}]->(object)
 """

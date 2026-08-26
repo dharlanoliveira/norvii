@@ -203,14 +203,18 @@ class PublicationCommand:
                 for entity in self.semantic_extraction.entities
             ):
                 raise ValueError("semantic entity references an unknown document unit")
-            for relationship in self.semantic_extraction.relationships:
-                if relationship.evidence_unit_id not in known_units:
-                    raise ValueError("semantic relationship references an unknown document unit")
+            for assertion in self.semantic_extraction.assertions:
                 if (
-                    relationship.subject_entity_id not in known_entities
-                    or relationship.object_entity_id not in known_entities
+                    assertion.establishing_unit_id not in known_units
+                    or assertion.evidence_unit_id not in known_units
                 ):
-                    raise ValueError("semantic relationship references an unknown entity")
+                    raise ValueError("normative assertion references an unknown document unit")
+                if (
+                    assertion.subject_entity_id not in known_entities
+                    or assertion.object_entity_id not in known_entities
+                    or assertion.subject_entity_id == assertion.object_entity_id
+                ):
+                    raise ValueError("normative assertion references an invalid entity")
 
 
 def _hash_text(text: str) -> Sha256:

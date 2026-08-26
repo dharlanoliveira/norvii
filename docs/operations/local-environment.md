@@ -60,7 +60,11 @@ responses, the web server, and both stable initial sources to reach `ready` or s
 before reporting readiness. A source becomes `ready` only after the worker stages its immutable
 snapshot, builds its Neo4j graph release, and activates that graph-ready snapshot. The
 initial-ingestion wait is bounded by
-`NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS`. Repeating bootstrap reapplies idempotent
+`NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS` (1,800 seconds in the example configuration).
+The semantic extraction budget is 240 seconds per document and its ingestion lease is
+1,800 seconds, leaving room for the separately bounded embedding stage. Semantic extraction
+uses `reasoning_effort=none` so its bounded completion budget is reserved for validated JSON.
+Repeating bootstrap reapplies idempotent
 migrations and reuses verified process identities instead of creating duplicates.
 The worker claims pending work in PostgreSQL and turns URL or PDF sources into
 immutable document revisions.
@@ -102,6 +106,21 @@ make persistence-config
 
 The output must contain only `postgres` and `neo4j`.
 
+## MCP container profile
+
+Feature 010 adds an MCP service. The managed `make bootstrap` and `make local-start`
+workflows start it after persistence migration and verification. The persistence-only
+commands do not start it; use the explicit command below when needed:
+
+```bash
+docker compose --env-file infra/.env -f infra/compose.yaml --profile mcp up --build --wait
+```
+
+The service offers Streamable HTTP at `http://127.0.0.1:8091/mcp`. Compose publishes
+the port only to the local host while the service remains available to the Norvii
+Docker network. Do not publish it remotely without adding authentication, TLS
+termination, and Origin validation.
+
 ## Lifecycle commands
 
 Start both stores, apply pending migrations, and verify the Go and Python production
@@ -131,7 +150,11 @@ make persistence-migration-status
 Initialization is idempotent. Migration `001_enable_vector.sql` enables pgvector;
 `002_corpus_ingestion.sql` creates corpora, sources, origins, work leases, attempts,
 immutable revisions, documents, and addressable units. It also inserts exactly one
-English GDPR corpus and one Portuguese LGPD corpus with official URL sources.
+English GDPR corpus and one Portuguese LGPD corpus with official URL sources. Migration
+`011_normative_assertions.sql` replaces the legacy direct semantic-relationship storage with
+canonical `normative_assertions` and graph-release memberships for legal units and assertions.
+Each published assertion has atomic entity endpoints plus exact establishing and evidence legal
+units.
 
 The ingestion worker stages and activates immutable active releases automatically after its
 embeddings and semantic graph artifacts are ready. The historical command remains available only
@@ -221,10 +244,11 @@ docker compose --env-file infra/.env -f infra/compose.yaml exec postgres \
 
 Useful tables include `corpora`, `sources`, `url_origins`, `pdf_origins`,
 `ingestion_work`, `ingestion_attempts`, `source_revisions`, `documents`,
-`corpus_snapshots`, `corpus_snapshot_documents`, `corpus_snapshot_releases`,
-`semantic_extraction_runs`, `semantic_entities`, `semantic_relationships`, and
-`graph_releases`. Neo4j contains product graph data after successful ingestion; inspect it at
-`http://127.0.0.1:7474` or with `cypher-shell` inside the container.
+`document_units`, `corpus_snapshots`, `corpus_snapshot_documents`,
+`corpus_snapshot_releases`, `semantic_extraction_runs`, `semantic_entities`,
+`normative_assertions`, `graph_releases`, `graph_release_legal_units`, and
+`graph_release_assertions`. Neo4j contains the rebuildable assertion projection after successful
+ingestion; inspect it at `http://127.0.0.1:7474` or with `cypher-shell` inside the container.
 
 For a failed component, inspect its dedicated `.log/<component>.log` file first.
 API errors include a request identifier but exclude credentials and document bodies.
@@ -238,7 +262,11 @@ validate provider credentials. For a provider configuration or availability fail
 run `make local-status` and review only a bounded tail of `.log/agent.log`. Agent
 terminal diagnostics contain bounded outcome, evidence-count, and duration fields;
 they do not log prompts, evidence text, provider payloads, or credentials. Review
-logs before sharing them and never paste `infra/.env` into tickets or chat.
+logs before sharing them and never paste `infra/.env` into tickets or chat. Graph
+planning logs its validated response (`use_graph`, `decision_reason`, bounded assertion
+predicates, entity labels, and any scope locator). When it selects graph retrieval, it also logs
+the fixed Cypher template, parameter values, and the number of returned evidence locations. It
+never logs the research question, evidence text, provider payload, or credentials.
 
 ## Isolated integration journey
 
@@ -257,22 +285,31 @@ removes the isolated containers and volumes; it never targets default local data
 
 ## Intentional local reset
 
-The following command permanently removes exactly `norvii_postgres_data` and
-`norvii_neo4j_data` after validating their Compose ownership:
+Feature 011 has one supported destructive local-corpus reset. The following command runs its
+preflight (persistence startup, pending migrations, ingestion tests, and agent tests) and then
+permanently removes exactly `norvii_postgres_data` and `norvii_neo4j_data` after validating their
+Compose ownership:
 
 ```bash
 make persistence-reset CONFIRM=reset-norvii-data
 ```
 
-The command accepts no volume name or filesystem path. It refuses missing or
-unexpected volumes, a changed project identity, invalid ownership labels, and any
-other confirmation. Removed data cannot be recovered through Norvii.
+The command accepts no volume name or filesystem path. It refuses a failed preflight, missing or
+unexpected volumes, a changed project identity, invalid ownership labels, and any other
+confirmation. It stops managed services before deleting the two verified volumes. Removed data
+cannot be recovered through Norvii, and the operation does not contact or delete external sources.
 
-Recreate the foundation after reset:
+After a successful reset, rebuild the complete local environment and ingest the configured seed
+sources again:
 
 ```bash
-make persistence
+make bootstrap
 ```
+
+Before asking graph questions, wait for the new source snapshots to reach `ready`. A fresh graph
+result must expose an assertion ID, predicate, atomic subject and object labels, establishing and
+evidence locators, and any hierarchy context. Until a new graph-ready snapshot is active, the
+corpus is empty and graph retrieval must not return stale evidence.
 
 Feature-specific executable evidence is recorded in the
 [Feature 004 quickstart](../../specs/004-corpus-catalog/quickstart.md).

@@ -24,3 +24,19 @@ to `text-embedding-3-small`. A blank `NORVII_EMBEDDING_API_KEY` reuses
 `NORVII_CHAT_API_KEY`; credentials are never committed. The agent retrieves only
 `ready` embedded chunks from a source's latest ready document version, so sources
 must be reprocessed after enabling embeddings.
+
+## MCP research server
+
+Feature 010 adds a separate MCP entry point. In a local MCP client configuration,
+use stdio:
+
+```bash
+uv run norvii-mcp --transport stdio
+```
+
+For Docker, the `mcp` Compose profile runs the same server over Streamable HTTP at
+`/mcp`. `make bootstrap` and `make local-start` include this profile and manage its
+log at `.log/mcp.log`; see the
+[feature quickstart](../../specs/010-mcp-research-tools/quickstart.md). The server
+exposes bounded, read-only corpus research tools and reusable prompts. It always
+resolves the active published snapshot and must not be treated as legal advice.

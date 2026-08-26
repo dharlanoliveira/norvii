@@ -39,10 +39,20 @@ class PersistenceResetScriptTest(unittest.TestCase):
         self.assertIn("unexpected persistence volumes", result.stderr)
         self.assertNotIn("volume rm", docker_calls)
 
+    def test_refuses_reset_without_assertion_preflight_before_calling_docker(self) -> None:
+        result, docker_calls = self.run_script(
+            confirmation="reset-norvii-data", preflight="missing"
+        )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("normative assertion preflight", result.stderr)
+        self.assertEqual("", docker_calls)
+
     def run_script(
         self,
         *,
         confirmation: str,
+        preflight: str = "passed",
         project_volumes: str = "norvii_postgres_data\nnorvii_neo4j_data",
     ) -> tuple[subprocess.CompletedProcess[str], str]:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -71,7 +81,10 @@ class PersistenceResetScriptTest(unittest.TestCase):
                 encoding="utf-8",
             )
             docker.chmod(docker.stat().st_mode | stat.S_IXUSR)
-            environment = os.environ | {"PATH": f"{directory}:{os.environ['PATH']}"}
+            environment = os.environ | {
+                "PATH": f"{directory}:{os.environ['PATH']}",
+                "NORVII_ASSERTION_RESET_PREFLIGHT": preflight,
+            }
             result = subprocess.run(
                 ["bash", str(RESET_SCRIPT), str(environment_file), confirmation],
                 cwd=REPOSITORY_ROOT,

@@ -37,15 +37,15 @@ class WorkerConfig:
     semantic_endpoint: str = "https://api.openai.com/v1/chat/completions"
     semantic_api_key: str = ""
     semantic_model: str = "gpt-5.6-luna"
-    semantic_timeout_seconds: int = 30
-    semantic_reasoning_effort: str = "medium"
-    semantic_extraction_version: str = "legal-semantic-v1"
+    semantic_timeout_seconds: int = 240
+    semantic_reasoning_effort: str = "none"
+    semantic_extraction_version: str = "legal-semantic-v3"
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> WorkerConfig:
         """Build configuration from an environment mapping with safe defaults."""
         poll_seconds = cls._positive_integer(environment, "NORVII_INGESTION_POLL_SECONDS", 1)
-        lease_seconds = cls._positive_integer(environment, "NORVII_INGESTION_LEASE_SECONDS", 120)
+        lease_seconds = cls._positive_integer(environment, "NORVII_INGESTION_LEASE_SECONDS", 1_800)
         if lease_seconds <= poll_seconds:
             raise ConfigurationError("ingestion lease duration must exceed the polling interval")
         pipeline_version = environment.get(
@@ -54,7 +54,7 @@ class WorkerConfig:
         if not pipeline_version:
             raise ConfigurationError("NORVII_INGESTION_PIPELINE_VERSION must not be empty")
         semantic_timeout_seconds = cls._positive_integer(
-            environment, "NORVII_SEMANTIC_TIMEOUT_SECONDS", 30
+            environment, "NORVII_SEMANTIC_TIMEOUT_SECONDS", 240
         )
         embedding_timeout_seconds = cls._positive_integer(
             environment, "NORVII_EMBEDDING_TIMEOUT_SECONDS", 30
@@ -110,10 +110,10 @@ class WorkerConfig:
             ).strip(),
             semantic_timeout_seconds=semantic_timeout_seconds,
             semantic_reasoning_effort=environment.get(
-                "NORVII_SEMANTIC_REASONING_EFFORT", "medium"
+                "NORVII_SEMANTIC_REASONING_EFFORT", "none"
             ).strip(),
             semantic_extraction_version=environment.get(
-                "NORVII_SEMANTIC_EXTRACTION_VERSION", "legal-semantic-v1"
+                "NORVII_SEMANTIC_EXTRACTION_VERSION", "legal-semantic-v3"
             ).strip(),
         )
 

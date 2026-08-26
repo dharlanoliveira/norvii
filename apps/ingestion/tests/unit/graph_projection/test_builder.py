@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Self, cast
 from uuid import uuid4
 
@@ -8,8 +9,9 @@ import pytest
 from norvii_ingestion.graph_projection.builder import (
     GraphProjectionBuildError,
     GraphReleaseBuilder,
+    _AssertionProjection,
     _EntityProjection,
-    _RelationshipProjection,
+    _LegalUnitProjection,
 )
 
 if TYPE_CHECKING:
@@ -78,92 +80,82 @@ class RecordingReadConnection:
         return _ReadCursor(self)
 
 
-def test_builder_marks_a_release_failed_when_final_persistence_state_changes(
+def test_builder_projects_assertion_topology_with_exact_provenance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     corpus_id = uuid4()
     snapshot_id = uuid4()
+    legal_units, entities, assertions = _projection_inputs()
     graph = RecordingGraphStore()
     builder = GraphReleaseBuilder(
         cast("psycopg.Connection[tuple[object, ...]]", object()),
         cast("Neo4jStore", graph),
     )
-    entity = _EntityProjection(uuid4(), "Controller", "controller", "actor")
-    relationship = _RelationshipProjection(
-        id=uuid4(),
-        subject_entity_id=entity.id,
-        object_entity_id=entity.id,
-        evidence_unit_id=uuid4(),
-        source_id=uuid4(),
-        document_id=uuid4(),
-        source_revision_id=uuid4(),
-        pipeline_version="test-pipeline",
-        source_title="Official source",
-        evidence_locator="Article 1",
-        start_offset=0,
-        end_offset=10,
-        excerpt="Legal text",
-        relationship_type="governs",
-    )
-    recorded_failures: list[object] = []
 
     monkeypatch.setattr(
         builder,
         "_load_snapshot_projection",
-        lambda _corpus_id, _snapshot_id: ((entity,), (relationship,)),
+        lambda _corpus_id, _snapshot_id: (legal_units, entities, assertions),
     )
     monkeypatch.setattr(builder, "_ready_release", lambda _summary: False)
     monkeypatch.setattr(builder, "_record_building", lambda _summary: None)
-    monkeypatch.setattr(builder, "_record_ready", _raise_state_change)
-    monkeypatch.setattr(builder, "_record_failed", recorded_failures.append)
+    monkeypatch.setattr(builder, "_record_ready", lambda *_arguments: None)
 
-    with pytest.raises(GraphProjectionBuildError, match="state changed"):
-        builder.build(corpus_id, snapshot_id)
+    summary = builder.build(corpus_id, snapshot_id)
 
-    assert len(graph.releases) == 1
-    assert len(recorded_failures) == 1
+    release = graph.releases[0]
+    assertion = release.assertions[0]
+    assert summary.legal_unit_count == 2
+    assert summary.entity_count == 2
+    assert summary.assertion_count == 1
+    assert release.legal_units[1]["parent_id"] == str(legal_units[0].id)
+    assert assertion["establishing_unit_id"] == str(legal_units[1].id)
+    assert assertion["evidence_unit_id"] == str(legal_units[1].id)
+    assert assertion["predicate"] == "imposes_duty_on"
+    assert assertion["evidence_locator"] == "article-1"
 
 
 def test_builder_commits_snapshot_reads_before_recording_a_graph_release() -> None:
     corpus_id = uuid4()
     snapshot_id = uuid4()
-    entity = _EntityProjection(uuid4(), "Controller", "controller", "actor")
-    relationship = _RelationshipProjection(
-        id=uuid4(),
-        subject_entity_id=entity.id,
-        object_entity_id=entity.id,
-        evidence_unit_id=uuid4(),
-        source_id=uuid4(),
-        document_id=uuid4(),
-        source_revision_id=uuid4(),
-        pipeline_version="test-pipeline",
-        source_title="Official source",
-        evidence_locator="Article 1",
-        start_offset=0,
-        end_offset=10,
-        excerpt="Legal text",
-        relationship_type="governs",
-    )
+    legal_units, entities, assertions = _projection_inputs()
     connection = RecordingReadConnection(
         [
-            ((entity.id, entity.label, entity.normalized_label, entity.entity_type),),
-            (
+            tuple(
                 (
-                    relationship.id,
-                    relationship.subject_entity_id,
-                    relationship.object_entity_id,
-                    relationship.evidence_unit_id,
-                    relationship.source_id,
-                    relationship.document_id,
-                    relationship.source_revision_id,
-                    relationship.pipeline_version,
-                    relationship.source_title,
-                    relationship.evidence_locator,
-                    relationship.start_offset,
-                    relationship.end_offset,
-                    relationship.excerpt,
-                    relationship.relationship_type,
-                ),
+                    unit.id,
+                    unit.document_id,
+                    unit.parent_id,
+                    unit.kind,
+                    unit.locator,
+                )
+                for unit in legal_units
+            ),
+            tuple(
+                (entity.id, entity.label, entity.normalized_label, entity.entity_type)
+                for entity in entities
+            ),
+            tuple(
+                (
+                    assertion.id,
+                    assertion.subject_entity_id,
+                    assertion.object_entity_id,
+                    assertion.establishing_unit_id,
+                    assertion.evidence_unit_id,
+                    assertion.source_id,
+                    assertion.document_id,
+                    assertion.source_revision_id,
+                    assertion.pipeline_version,
+                    assertion.source_title,
+                    assertion.establishing_locator,
+                    assertion.evidence_locator,
+                    assertion.start_offset,
+                    assertion.end_offset,
+                    assertion.excerpt,
+                    assertion.predicate,
+                    assertion.qualifier,
+                )
+                for assertion in assertions
             ),
             (),
         ]
@@ -179,28 +171,62 @@ def test_builder_commits_snapshot_reads_before_recording_a_graph_release() -> No
     assert connection.completed_transactions == 4
 
 
+def test_builder_allows_a_structural_snapshot_without_assertions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus_id = uuid4()
+    snapshot_id = uuid4()
+    legal_units, _, _ = _projection_inputs()
+    graph = RecordingGraphStore()
+    builder = GraphReleaseBuilder(
+        cast("psycopg.Connection[tuple[object, ...]]", object()),
+        cast("Neo4jStore", graph),
+    )
+    monkeypatch.setattr(
+        builder,
+        "_load_snapshot_projection",
+        lambda _corpus_id, _snapshot_id: (legal_units, (), ()),
+    )
+    monkeypatch.setattr(builder, "_ready_release", lambda _summary: False)
+    monkeypatch.setattr(builder, "_record_building", lambda _summary: None)
+    monkeypatch.setattr(builder, "_record_ready", lambda *_arguments: None)
+
+    summary = builder.build(corpus_id, snapshot_id)
+
+    assert summary.assertion_count == 0
+    assert graph.releases[0].entities == ()
+    assert graph.releases[0].assertions == ()
+
+
+def test_builder_rejects_an_assertion_with_an_unprojected_establishing_unit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus_id = uuid4()
+    snapshot_id = uuid4()
+    legal_units, entities, assertions = _projection_inputs()
+    invalid = replace(assertions[0], establishing_unit_id=uuid4())
+    builder = GraphReleaseBuilder(
+        cast("psycopg.Connection[tuple[object, ...]]", object()),
+        cast("Neo4jStore", RecordingGraphStore()),
+    )
+    monkeypatch.setattr(
+        builder,
+        "_load_snapshot_projection",
+        lambda _corpus_id, _snapshot_id: (legal_units, entities, (invalid,)),
+    )
+    monkeypatch.setattr(builder, "_ready_release", lambda _summary: False)
+    monkeypatch.setattr(builder, "_record_building", lambda _summary: None)
+
+    with pytest.raises(GraphProjectionBuildError, match="inputs are inconsistent"):
+        builder.build(corpus_id, snapshot_id)
+
+
 def test_builder_reuses_the_same_manifest_across_three_snapshot_builds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     corpus_id = uuid4()
     snapshot_id = uuid4()
-    entity = _EntityProjection(uuid4(), "Controller", "controller", "actor")
-    relationship = _RelationshipProjection(
-        id=uuid4(),
-        subject_entity_id=entity.id,
-        object_entity_id=entity.id,
-        evidence_unit_id=uuid4(),
-        source_id=uuid4(),
-        document_id=uuid4(),
-        source_revision_id=uuid4(),
-        pipeline_version="test-pipeline",
-        source_title="Official source",
-        evidence_locator="Article 1",
-        start_offset=0,
-        end_offset=10,
-        excerpt="Legal text",
-        relationship_type="governs",
-    )
+    legal_units, entities, assertions = _projection_inputs()
     graph = RecordingGraphStore()
     builder = GraphReleaseBuilder(
         cast("psycopg.Connection[tuple[object, ...]]", object()),
@@ -210,14 +236,14 @@ def test_builder_reuses_the_same_manifest_across_three_snapshot_builds(
     monkeypatch.setattr(
         builder,
         "_load_snapshot_projection",
-        lambda _corpus, _snapshot: ((entity,), (relationship,)),
+        lambda _corpus, _snapshot: (legal_units, entities, assertions),
     )
     monkeypatch.setattr(builder, "_ready_release", lambda summary: summary.release_id in ready)
     monkeypatch.setattr(builder, "_record_building", lambda _summary: None)
     monkeypatch.setattr(
         builder,
         "_record_ready",
-        lambda summary, _entities, _relationships: ready.add(summary.release_id),
+        lambda summary, *_projection: ready.add(summary.release_id),
     )
 
     first = builder.build(corpus_id, snapshot_id)
@@ -232,9 +258,33 @@ def test_builder_reuses_the_same_manifest_across_three_snapshot_builds(
     assert len(graph.releases) == 1
 
 
-def _raise_state_change(
-    _summary: object,
-    _entities: object,
-    _relationships: object,
-) -> None:
-    raise GraphProjectionBuildError("Graph release state changed during projection.")
+def _projection_inputs() -> tuple[
+    tuple[_LegalUnitProjection, ...],
+    tuple[_EntityProjection, ...],
+    tuple[_AssertionProjection, ...],
+]:
+    document_id = uuid4()
+    root = _LegalUnitProjection(uuid4(), document_id, None, "document", "law")
+    article = _LegalUnitProjection(uuid4(), document_id, root.id, "article", "article-1")
+    subject = _EntityProjection(uuid4(), "The norm", "the norm", "concept")
+    object_ = _EntityProjection(uuid4(), "Controller", "controller", "actor")
+    assertion = _AssertionProjection(
+        id=uuid4(),
+        subject_entity_id=subject.id,
+        object_entity_id=object_.id,
+        establishing_unit_id=article.id,
+        evidence_unit_id=article.id,
+        source_id=uuid4(),
+        document_id=document_id,
+        source_revision_id=uuid4(),
+        pipeline_version="test-pipeline",
+        source_title="Official source",
+        establishing_locator="article-1",
+        evidence_locator="article-1",
+        start_offset=0,
+        end_offset=10,
+        excerpt="Legal text",
+        predicate="imposes_duty_on",
+        qualifier=None,
+    )
+    return (root, article), (subject, object_), (assertion,)

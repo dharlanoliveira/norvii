@@ -134,6 +134,9 @@ identifies the outcome, safe reason, timing, and cited contribution of every ret
 - **FR-004a**: A Hybrid plan MUST select graph entities only from the active snapshot's published
   canonical entity catalog. It MAY select such an entity when its label differs from the question
   language; direct lexical overlap with the question is not required.
+- **FR-004b**: A Hybrid plan that selects graph retrieval MUST use at least one published
+  relationship-type and entity-label combination from the active snapshot. It MUST skip graph
+  retrieval rather than execute a combination that cannot match a published graph path.
 - **FR-005**: The system MUST run graph retrieval for a Hybrid question only when the planning
   outcome identifies a relevant, ready, snapshot-scoped graph capability. A graph miss or skip
   MUST NOT discard otherwise valid vector evidence.

@@ -160,7 +160,7 @@ class RepositoryLayout:
 class ComponentLogger:
     """Append lifecycle output to component-owned files."""
 
-    COMPONENTS = ("bootstrap", "api", "agent", "ingestion", "web", "postgres", "neo4j")
+    COMPONENTS = ("bootstrap", "api", "agent", "ingestion", "mcp", "web", "postgres", "neo4j")
 
     def __init__(self, layout: RepositoryLayout) -> None:
         self._layout = layout
@@ -371,6 +371,10 @@ class LocalEnvironmentManager:
         if not agent_port.isdigit() or not 1 <= int(agent_port) <= MAX_TCP_PORT:
             raise LocalEnvironmentError("NORVII_AGENT_PORT must be a valid TCP port.")
         self._agent_health_url = f"http://127.0.0.1:{agent_port}/healthz"
+        mcp_port = environment.get("NORVII_MCP_PORT", "8091")
+        if not mcp_port.isdigit() or not 1 <= int(mcp_port) <= MAX_TCP_PORT:
+            raise LocalEnvironmentError("NORVII_MCP_PORT must be a valid TCP port.")
+        self._mcp_url = f"http://127.0.0.1:{mcp_port}/mcp"
         initial_timeout = os.environ.get(
             "NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS",
             environment.get("NORVII_INITIAL_INGESTION_TIMEOUT_SECONDS", "90"),
@@ -408,6 +412,23 @@ class LocalEnvironmentManager:
                 "neo4j",
                 [*compose, "logs", "--follow", "--tail", "200", "--no-color", "neo4j"],
                 ("docker", "compose", "neo4j"),
+                layout,
+                self._logger,
+            ),
+            "mcp": ManagedProcess(
+                "mcp",
+                [
+                    *compose,
+                    "--profile",
+                    "mcp",
+                    "logs",
+                    "--follow",
+                    "--tail",
+                    "200",
+                    "--no-color",
+                    "mcp",
+                ],
+                ("docker", "compose", "mcp"),
                 layout,
                 self._logger,
             ),
@@ -489,11 +510,12 @@ class LocalEnvironmentManager:
             self._runner.run("api", self._make("persistence-migrate"))
             self._runner.run("api", self._make("persistence-verify-api"))
             self._runner.run("ingestion", self._make("persistence-verify-ingestion"))
+            self._runner.run("mcp", self._make("persistence-mcp-up"))
             if not self._processes["web"].is_running():
                 self._runner.run("web", ["npm", "--prefix", str(self._layout.web_directory), "ci"])
             started_components.extend(
                 component
-                for component in ("postgres", "neo4j", "agent", "api", "ingestion", "web")
+                for component in ("postgres", "neo4j", "mcp", "agent", "api", "ingestion", "web")
                 if self._processes[component].start()
             )
             self._wait_for_agent()
@@ -508,6 +530,7 @@ class LocalEnvironmentManager:
         )
         print(
             f"Norvii is ready\nWeb: {self._web_url}\n"
+            f"MCP: {self._mcp_url}\n"
             f"Initial sources: {states}\nSnapshots and graph releases: {self._release_status(initial_states)}\n"
             f"Logs: {self._layout.log_directory}"
         )
@@ -518,16 +541,24 @@ class LocalEnvironmentManager:
         health = self._runner.capture("bootstrap", self._make("persistence-health"))
         print(health, end="")
         print("Web is running." if self._processes["web"].is_running() else "Web is stopped.")
-        for component in ("api", "agent", "ingestion"):
+        self._runner.run("mcp", self._make("persistence-mcp-health"))
+        for component in ("api", "agent", "ingestion", "mcp"):
             state = "running" if self._processes[component].is_running() else "stopped"
-            label = {"api": "API", "agent": "Agent", "ingestion": "Ingestion"}[component]
+            label = {
+                "api": "API",
+                "agent": "Agent",
+                "ingestion": "Ingestion",
+                "mcp": "MCP",
+            }[component]
             print(f"{label} is {state}.")
 
     def stop(self) -> None:
         """Stop managed processes and persistence without deleting stored data."""
         self._layout.validate_root()
         self._logger.initialize()
-        self._stop_managed_processes(("web", "ingestion", "api", "agent", "neo4j", "postgres"))
+        self._stop_managed_processes(
+            ("web", "ingestion", "api", "agent", "mcp", "neo4j", "postgres")
+        )
         if self._layout.environment_file.exists():
             self._runner.run("bootstrap", self._make("persistence-stop"))
         for component in ("api", "agent", "ingestion"):

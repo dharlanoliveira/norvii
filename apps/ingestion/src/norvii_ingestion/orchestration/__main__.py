@@ -67,6 +67,7 @@ def main() -> int:
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
     worker_id = f"{socket.gethostname()}-{os.getpid()}"
+    event_logger = StructuredEventLogger(_LOGGER)
     worker = Worker(
         config=worker_config,
         worker_id=worker_id,
@@ -86,6 +87,7 @@ def main() -> int:
                 batch_size=worker_config.embedding_batch_size,
             ),
             embedding_model=worker_config.embedding_model,
+            logger=event_logger,
             graph_release_coordinator=GraphReleaseCoordinator(
                 SnapshotReleaseHttpClient(
                     persistence_config.snapshot_api_base_url,
@@ -100,9 +102,10 @@ def main() -> int:
                 timeout_seconds=worker_config.semantic_timeout_seconds,
                 reasoning_effort=worker_config.semantic_reasoning_effort,
                 extraction_version=worker_config.semantic_extraction_version,
+                diagnostic_logger=event_logger,
             ),
         ),
-        logger=StructuredEventLogger(_LOGGER),
+        logger=event_logger,
     )
     try:
         worker.run(stop)

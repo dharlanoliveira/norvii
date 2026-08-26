@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 import pytest
@@ -38,7 +39,8 @@ class FixedGraphRetriever:
         self._catalog = catalog
         self._evidence = evidence
         self._unavailable = unavailable
-        self.last_graph_path = ()
+        self.last_assertion_path = ()
+        self.last_scope_locator = None
 
     def capabilities(self, _corpus_id: UUID, _snapshot_id: UUID) -> GraphCapabilityCatalog | None:
         if self._unavailable:
@@ -62,15 +64,22 @@ class FixedPlanner:
         return self._plan
 
 
-def test_hybrid_keeps_vector_evidence_when_graph_plan_is_not_relevant() -> None:
-    planner = FixedPlanner(GraphRetrievalPlan(use_graph=False))
+def test_hybrid_keeps_vector_evidence_when_question_is_outside_graph_scope(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    planner = FixedPlanner(
+        GraphRetrievalPlan(use_graph=False, decision_reason="outside_graph_scope")
+    )
     hybrid = HybridRetriever(
         FixedVectorRetriever((_evidence("vector", "article-1"),)),
-        FixedGraphRetriever(GraphCapabilityCatalog(("authority",), ("governs",), ("authority",))),
+        FixedGraphRetriever(
+            GraphCapabilityCatalog(("authority",), ("assigns_responsibility_to",), ("authority",))
+        ),
         planner,
     )
 
-    result = hybrid.search(_corpus_id(), _snapshot_id(), "What is the purpose?")
+    with caplog.at_level(logging.INFO, logger="norvii_agent.retrieval.hybrid"):
+        result = hybrid.search(_corpus_id(), _snapshot_id(), "What is the purpose?")
 
     assert [item.id for item in result] == ["vector"]
     assert planner.calls == 1
@@ -79,6 +88,8 @@ def test_hybrid_keeps_vector_evidence_when_graph_plan_is_not_relevant() -> None:
         ("planning", "skipped"),
         ("graph", "skipped"),
     ]
+    assert '"decision_reason": "outside_graph_scope"' in caplog.text
+    assert '"use_graph": false' in caplog.text
 
 
 def test_hybrid_keeps_vector_evidence_when_graph_is_unavailable() -> None:
@@ -88,7 +99,7 @@ def test_hybrid_keeps_vector_evidence_when_graph_is_unavailable() -> None:
         FixedPlanner(
             GraphRetrievalPlan(
                 use_graph=True,
-                relationship_types=("governs",),
+                predicates=("assigns_responsibility_to",),
                 entity_labels=("authority",),
             )
         ),
@@ -108,12 +119,14 @@ def test_hybrid_deduplicates_shared_immutable_locations_with_both_contributions(
     hybrid = HybridRetriever(
         FixedVectorRetriever((_evidence("vector", "article-1"),)),
         FixedGraphRetriever(
-            GraphCapabilityCatalog(("authority",), ("governs",), ("authority",)),
+            GraphCapabilityCatalog(("authority",), ("assigns_responsibility_to",), ("authority",)),
             (_evidence("graph", "article-1"),),
         ),
         FixedPlanner(
             GraphRetrievalPlan(
-                use_graph=True, relationship_types=("governs",), entity_labels=("authority",)
+                use_graph=True,
+                predicates=("assigns_responsibility_to",),
+                entity_labels=("authority",),
             )
         ),
     )
@@ -123,6 +136,28 @@ def test_hybrid_deduplicates_shared_immutable_locations_with_both_contributions(
     assert len(result) == 1
     assert result[0].contribution == "vector_and_graph"
     assert hybrid.last_retrieval == RetrievalInspection("hybrid", 8, 1, "embedding")
+
+
+def test_hybrid_records_no_assertion_evidence_without_losing_vector_results() -> None:
+    hybrid = HybridRetriever(
+        FixedVectorRetriever((_evidence("vector", "article-1"),)),
+        FixedGraphRetriever(
+            GraphCapabilityCatalog(("actor",), ("imposes_duty_on",), ("controller",))
+        ),
+        FixedPlanner(
+            GraphRetrievalPlan(
+                use_graph=True,
+                predicates=("imposes_duty_on",),
+                entity_labels=("controller",),
+                scope_locator="chapter-1",
+            )
+        ),
+    )
+
+    result = hybrid.search(_corpus_id(), _snapshot_id(), "Who has the duty?")
+
+    assert [item.id for item in result] == ["vector"]
+    assert hybrid.last_stages[-1].reason_code == "no_assertion_evidence"
 
 
 def test_hybrid_preserves_distinct_evidence_from_vector_and_graph() -> None:
@@ -135,12 +170,13 @@ def test_hybrid_preserves_distinct_evidence_from_vector_and_graph() -> None:
     hybrid = HybridRetriever(
         FixedVectorRetriever(vector_evidence),
         FixedGraphRetriever(
-            GraphCapabilityCatalog(("authority",), ("requires",), ("authority",)), graph_evidence
+            GraphCapabilityCatalog(("authority",), ("must_be_observed_by",), ("authority",)),
+            graph_evidence,
         ),
         FixedPlanner(
             GraphRetrievalPlan(
                 use_graph=True,
-                relationship_types=("requires",),
+                predicates=("must_be_observed_by",),
                 entity_labels=("authority",),
             )
         ),

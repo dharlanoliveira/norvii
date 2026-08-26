@@ -129,7 +129,7 @@ func TestClientMapsInspectionMetadata(t *testing.T) {
 	sourceID := uuid.New()
 	documentID := uuid.New()
 	reference := `{"id":"ref-1","corpusId":"` + corpusID.String() + `","sourceId":"` + sourceID.String() + `","documentId":"` + documentID.String() + `","documentVersionId":"` + documentID.String() + `","unitLocator":"article-1","startOffset":1,"endOffset":8,"excerpt":"text","rank":1,"cosineDistance":0.18}`
-	body := "event: completed\ndata: {\"type\":\"completed\",\"answer\":\"Answer\",\"references\":[" + reference + "],\"inspection\":{\"outcome\":\"completed\",\"retrieval\":{\"strategy\":\"vector\",\"topK\":8,\"returnedCount\":1,\"embeddingModel\":null},\"measurements\":{\"retrievalMilliseconds\":12,\"generationMilliseconds\":34,\"totalMilliseconds\":50,\"inputTokens\":null,\"outputTokens\":7},\"evidence\":[" + reference + "],\"graphPath\":[{\"relationshipType\":\"requires\",\"subjectLabel\":\"Authority\",\"objectLabel\":\"Impact report\",\"evidenceId\":\"ref-1\",\"evidenceLocator\":\"article-1\"}],\"stages\":[{\"name\":\"vector\",\"state\":\"completed\",\"evidenceCount\":1,\"durationMilliseconds\":12,\"reasonCode\":null,\"inputTokens\":null,\"outputTokens\":7}]}}\n\n"
+	body := "event: completed\ndata: {\"type\":\"completed\",\"answer\":\"Answer\",\"references\":[" + reference + "],\"inspection\":{\"outcome\":\"completed\",\"retrieval\":{\"strategy\":\"vector\",\"topK\":8,\"returnedCount\":1,\"embeddingModel\":null},\"measurements\":{\"retrievalMilliseconds\":12,\"generationMilliseconds\":34,\"totalMilliseconds\":50,\"inputTokens\":null,\"outputTokens\":7},\"evidence\":[" + reference + "],\"assertionPath\":[{\"assertionId\":\"assertion-1\",\"predicate\":\"imposes_duty_on\",\"subjectLabel\":\"Authority\",\"objectLabel\":\"Impact report\",\"establishingLocator\":\"article-1\",\"evidenceLocator\":\"item-1\",\"hierarchyContext\":[\"chapter-1\",\"article-1\"],\"qualifier\":\"When required\"}],\"scopeLocator\":\"chapter-1\",\"stages\":[{\"name\":\"vector\",\"state\":\"completed\",\"evidenceCount\":1,\"durationMilliseconds\":12,\"reasonCode\":null,\"inputTokens\":null,\"outputTokens\":7}]}}\n\n"
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		_, _ = writer.Write([]byte(body))
 	}))
@@ -153,8 +153,15 @@ func TestClientMapsInspectionMetadata(t *testing.T) {
 	if len(result.Inspection.Stages) != 1 || result.Inspection.Stages[0].Name != "vector" {
 		t.Fatalf("stages = %#v, want vector stage", result.Inspection.Stages)
 	}
-	if len(result.Inspection.GraphPath) != 1 || result.Inspection.GraphPath[0].RelationshipType != "requires" {
-		t.Fatalf("graph path = %#v, want requires path", result.Inspection.GraphPath)
+	if len(result.Inspection.AssertionPath) != 1 || result.Inspection.AssertionPath[0].Predicate != "imposes_duty_on" {
+		t.Fatalf("assertion path = %#v, want imposes_duty_on path", result.Inspection.AssertionPath)
+	}
+	assertion := result.Inspection.AssertionPath[0]
+	if assertion.EstablishingLocator != "article-1" || assertion.EvidenceLocator != "item-1" || len(assertion.HierarchyContext) != 2 {
+		t.Fatalf("assertion provenance = %#v, want legal-unit provenance", assertion)
+	}
+	if result.Inspection.ScopeLocator == nil || *result.Inspection.ScopeLocator != "chapter-1" {
+		t.Fatalf("scope locator = %#v, want chapter-1", result.Inspection.ScopeLocator)
 	}
 }
 

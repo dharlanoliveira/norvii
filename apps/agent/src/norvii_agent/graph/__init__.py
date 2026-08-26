@@ -2,10 +2,10 @@
 
 from .grounded_chat import (
     AnswerInspection,
+    AssertionPathStep,
     ChatModelPort,
     Evidence,
     ExecutionMeasurements,
-    GraphPathStep,
     GroundedChatGraph,
     GroundedChatRequest,
     GroundedChatResult,
@@ -18,10 +18,10 @@ from .grounded_chat import (
 
 __all__ = [
     "AnswerInspection",
+    "AssertionPathStep",
     "ChatModelPort",
     "Evidence",
     "ExecutionMeasurements",
-    "GraphPathStep",
     "GroundedChatGraph",
     "GroundedChatRequest",
     "GroundedChatResult",

@@ -15,3 +15,13 @@ Licensed under the MIT License:
 > THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Project: [GitHub Spec Kit](https://github.com/github/spec-kit)
+
+## Model Context Protocol Python SDK
+
+The Python MCP server implementation depends on the official Model Context Protocol
+Python SDK.
+
+Copyright 2025 Anthropic, PBC
+
+Licensed under the MIT License. See the dependency's bundled license text and
+[upstream repository](https://github.com/modelcontextprotocol/python-sdk).

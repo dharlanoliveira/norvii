@@ -70,10 +70,44 @@ an immutable active snapshot through the Go API.
 
 ## Semantic extraction and graph releases
 
-Semantic extraction runs during explicit ingestion and records bounded, evidence-backed entities
-and relationships against one immutable document version. Provider requests are bounded by the
-configured unit and request limits; the extraction provider is never invoked by chat or graph
-retrieval.
+Semantic extraction runs during explicit ingestion and records bounded, evidence-backed legal
+entities and normative assertions against one immutable document version. A published assertion
+has exactly one allowed predicate, one subject entity, one object entity, an establishing legal
+unit, and an evidence legal unit. The supported predicates are `defines`, `applies_to`,
+`must_be_observed_by`, `imposes_duty_on`, `grants`, `protects`,
+`assigns_responsibility_to`, and `conditions`.
+
+Each legal entity is atomic: independently addressable people, authorities, activities, rights,
+obligations, concepts, or conditions in a coordinated list are emitted as separate entities and
+separate assertions. A collective is kept as one entity only when the source treats it as one
+indivisible legal subject. Incomplete assertions and assertions with unresolved provenance are
+not published. Provider requests are bounded by the configured unit and request limits; the
+extraction provider is never invoked by chat or graph retrieval.
+
+The document hierarchy is different: every normalized location and directed parent-child
+`CONTAINS` link is projected deterministically, even when semantic extraction is bounded to a
+smaller set of legal units. Hierarchy links are structural rather than semantic assertions. This
+lets graph retrieval navigate from a relevant provision to its chapter without treating every
+chapter as answer evidence.
+
+If a semantic provider response cannot be parsed, ingestion writes a structured diagnostic to
+`.log/ingestion.log`. It records the provider request identifier when available, content type,
+byte count, SHA-256 fingerprints, parsing location, response attempt, and safe failure subtype.
+It never stores the provider response body, legal text, prompts, credentials, or personal data.
+
+The canonical write model is PostgreSQL `normative_assertions`, plus graph-release memberships
+for legal units and assertions. Neo4j is an immutable derived projection with this topology:
+
+```text
+(LegalUnit)-[:CONTAINS]->(LegalUnit)
+(LegalUnit)-[:ESTABLISHES]->(NormativeAssertion {predicate, qualifier})
+(NormativeAssertion)-[:SUBJECT]->(LegalEntity)
+(NormativeAssertion)-[:OBJECT]->(LegalEntity)
+```
+
+The predicate is an allowlisted assertion property; it is not a dynamic Neo4j relationship type.
+Every projected node is release-, corpus-, and snapshot-scoped. The projection is rebuildable
+from canonical PostgreSQL records and never becomes a source of canonical legal text.
 
 After a maintainer publishes a snapshot, build its Neo4j projection explicitly:
 
@@ -88,6 +122,20 @@ snapshot. It writes an idempotent derived Neo4j release and records its manifest
 and safe failure category in PostgreSQL. Repeating the command for unchanged inputs reuses the
 same release identity. The builder never changes source content, snapshot activation, or
 canonical extraction artifacts.
+
+## Assertion-model reset and fresh ingestion
+
+Feature 011 replaces the legacy direct semantic-relationship model. Do not delete local data by
+hand and do not run a fresh ingestion against a partially migrated database. The only supported
+destructive operation is `make persistence-reset CONFIRM=reset-norvii-data`; it first starts the
+stores, applies pending migrations, and runs the ingestion and agent test targets. The reset
+script proceeds only when that preflight succeeds and verifies the two Compose-owned persistence
+volumes before removing them.
+
+After a successful reset, run `make bootstrap` to recreate the local services, apply migrations,
+register the configured seed sources, and perform the normal fresh-ingestion workflow. Until a
+new snapshot and graph release are ready, an empty corpus has no graph evidence. The reset never
+contacts or deletes external sources.
 
 ## Verification model
 

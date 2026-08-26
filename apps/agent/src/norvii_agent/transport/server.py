@@ -233,7 +233,8 @@ def _inspection(inspection: AnswerInspection | None) -> dict[str, object]:
                 "outputTokens": None,
             },
             "evidence": [],
-            "graphPath": [],
+            "assertionPath": [],
+            "scopeLocator": None,
             "stages": [],
         }
     measurements = inspection.measurements
@@ -253,16 +254,20 @@ def _inspection(inspection: AnswerInspection | None) -> dict[str, object]:
             "outputTokens": measurements.output_tokens,
         },
         "evidence": [_reference(item) for item in inspection.evidence],
-        "graphPath": [
+        "assertionPath": [
             {
-                "relationshipType": step.relationship_type,
+                "assertionId": step.assertion_id,
+                "predicate": step.predicate,
                 "subjectLabel": step.subject_label,
                 "objectLabel": step.object_label,
-                "evidenceId": step.evidence_id,
+                "establishingLocator": step.establishing_locator,
                 "evidenceLocator": step.evidence_locator,
+                "hierarchyContext": list(step.hierarchy_context),
+                "qualifier": step.qualifier,
             }
-            for step in inspection.graph_path
+            for step in inspection.assertion_path
         ],
+        "scopeLocator": inspection.scope_locator,
         "stages": [
             {
                 "name": stage.name,

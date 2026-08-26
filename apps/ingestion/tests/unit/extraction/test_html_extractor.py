@@ -91,6 +91,19 @@ def test_extractor_supports_legacy_windows_1252_legal_html() -> None:
     assert any(unit.kind is UnitKind.ARTICLE for unit in artifact.units)
 
 
+def test_extractor_recognizes_ascii_portuguese_article_ordinals() -> None:
+    artifact = HtmlExtractor().extract(
+        b"<main><p>Art. 1o This Law establishes general rules for personal-data "
+        b"protection.</p><p>Art. 2o This Law protects fundamental rights.</p></main>"
+    )
+
+    articles = [unit for unit in artifact.units if unit.kind is UnitKind.ARTICLE]
+
+    assert len(articles) == 2
+    assert articles[0].start_offset == 0
+    assert articles[0].end_offset == articles[1].start_offset
+
+
 def test_extractor_preserves_brazilian_article_hierarchy() -> None:
     html = (
         "<main><p>CAP\u00cdTULO I DISPOSI\u00c7\u00d5ES PRELIMINARES</p>"

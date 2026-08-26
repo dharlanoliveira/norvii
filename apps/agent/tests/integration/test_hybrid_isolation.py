@@ -30,15 +30,16 @@ class FixedEmbeddingProvider:
 
 
 class SupportingGraphPlanner:
-    """Select the seeded relationship without invoking a configured model provider."""
+    """Select the seeded assertion without invoking a configured model provider."""
 
     def plan(self, _question: str, catalog: GraphCapabilityCatalog) -> GraphRetrievalPlan:
-        assert set(catalog.relationship_types) == {"governs"}
+        assert set(catalog.predicates) == {"imposes_duty_on"}
         assert set(catalog.entity_labels) == {"authority", "obligation"}
         return GraphRetrievalPlan(
             use_graph=True,
-            relationship_types=("governs",),
+            predicates=("imposes_duty_on",),
             entity_labels=("authority",),
+            scope_locator="chapter-1",
         )
 
 
@@ -129,9 +130,11 @@ def test_hybrid_retrieval_excludes_foreign_postgres_and_neo4j_evidence(
     returned_documents = {item.document_id for item in evidence}
     assert isolation_fixture.foreign_snapshot.document_id not in returned_documents
     assert isolation_fixture.foreign_corpus.document_id not in returned_documents
-    assert [path.evidence_id for path in hybrid.last_graph_path] == [
-        str(isolation_fixture.target.graph_relationship_id)
+    assert [path.assertion_id for path in hybrid.last_assertion_path] == [
+        str(isolation_fixture.target.graph_assertion_id)
     ]
+    assert hybrid.last_assertion_path[0].hierarchy_context == ("chapter-1", "article-1")
+    assert hybrid.last_scope_locator == "chapter-1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,10 +146,11 @@ class SnapshotDocument:
     source_id: UUID
     source_revision_id: UUID
     document_id: UUID
+    chapter_unit_id: UUID
     unit_id: UUID
     chunk_id: UUID
     graph_release_id: UUID
-    graph_relationship_id: UUID
+    graph_assertion_id: UUID
     label: str
 
 
@@ -189,10 +193,12 @@ class RetrievalIsolationFixture:
                 release_id=str(document.graph_release_id),
                 corpus_id=str(document.corpus_id),
                 snapshot_id=str(document.snapshot_id),
-                relationship_id=str(document.graph_relationship_id),
+                assertion_id=str(document.graph_assertion_id),
                 source_id=str(document.source_id),
                 document_id=str(document.document_id),
                 source_revision_id=str(document.source_revision_id),
+                chapter_unit_id=str(document.chapter_unit_id),
+                unit_id=str(document.unit_id),
                 evidence_locator="article-1",
                 excerpt=f"{document.label} authority governs obligations.",
                 database_=database,
@@ -251,10 +257,11 @@ class RetrievalIsolationFixture:
             source_id=uuid4(),
             source_revision_id=uuid4(),
             document_id=uuid4(),
+            chapter_unit_id=uuid4(),
             unit_id=uuid4(),
             chunk_id=uuid4(),
             graph_release_id=uuid4(),
-            graph_relationship_id=uuid4(),
+            graph_assertion_id=uuid4(),
             label=label,
         )
 
@@ -414,28 +421,38 @@ _INSERT_GRAPH_RELEASE = """
 CREATE (release:NorviiGraphRelease {
   id: $release_id, corpus_id: $corpus_id, snapshot_id: $snapshot_id, status: 'ready'
 })
-CREATE (subject:NorviiGraphEntity {
+CREATE (chapter:NorviiGraphLegalUnit {
+  release_id: $release_id, legal_unit_id: $chapter_unit_id, locator: 'chapter-1', kind: 'chapter'
+})-[:IN_GRAPH_RELEASE]->(release)
+CREATE (unit:NorviiGraphLegalUnit {
+  release_id: $release_id, legal_unit_id: $unit_id, locator: 'article-1', kind: 'article'
+})-[:IN_GRAPH_RELEASE]->(release)
+CREATE (chapter)-[:CONTAINS]->(unit)
+CREATE (subject:NorviiGraphLegalEntity {
   release_id: $release_id, semantic_entity_id: $release_id + '-authority', label: 'Authority',
   normalized_label: 'authority', entity_type: 'actor'
 })-[:IN_GRAPH_RELEASE]->(release)
-CREATE (object:NorviiGraphEntity {
+CREATE (object:NorviiGraphLegalEntity {
   release_id: $release_id, semantic_entity_id: $release_id + '-obligation', label: 'Obligation',
   normalized_label: 'obligation', entity_type: 'obligation'
 })-[:IN_GRAPH_RELEASE]->(release)
-CREATE (subject)-[:LEGAL_RELATIONSHIP {
-  release_id: $release_id, id: $relationship_id, evidence_id: $relationship_id,
+CREATE (assertion:NorviiGraphNormativeAssertion {
+  release_id: $release_id, normative_assertion_id: $assertion_id, evidence_id: $assertion_id,
   source_id: $source_id, document_id: $document_id, source_revision_id: $source_revision_id,
   pipeline_version: 'graph-retrieval-test', source_title: 'Graph retrieval source',
   evidence_locator: $evidence_locator, start_offset: 0, end_offset: 40, excerpt: $excerpt,
-  relationship_type: 'governs'
-}]->(object)
+  establishing_locator: 'article-1', predicate: 'imposes_duty_on', qualifier: null
+})-[:IN_GRAPH_RELEASE]->(release)
+CREATE (unit)-[:ESTABLISHES]->(assertion)
+CREATE (assertion)-[:SUBJECT]->(subject)
+CREATE (assertion)-[:OBJECT]->(object)
 """
 
 _DELETE_GRAPH_RELEASES = """
 MATCH (release:NorviiGraphRelease)
 WHERE release.id IN $release_ids
-OPTIONAL MATCH (entity:NorviiGraphEntity)-[:IN_GRAPH_RELEASE]->(release)
-WITH collect(DISTINCT entity) + collect(DISTINCT release) AS nodes
+OPTIONAL MATCH (node)-[:IN_GRAPH_RELEASE]->(release)
+WITH collect(DISTINCT node) + collect(DISTINCT release) AS nodes
 UNWIND nodes AS node
 DETACH DELETE node
 """

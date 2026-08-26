@@ -60,14 +60,17 @@ class RetrievalStage:
 
 
 @dataclass(frozen=True, slots=True)
-class GraphPathStep:
-    """One evidence-backed relationship traversed during graph retrieval."""
+class AssertionPathStep:
+    """One evidence-backed normative assertion used during graph retrieval."""
 
-    relationship_type: str
+    assertion_id: str
+    predicate: str
     subject_label: str
     object_label: str
-    evidence_id: str
+    establishing_locator: str
     evidence_locator: str
+    hierarchy_context: tuple[str, ...]
+    qualifier: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +92,8 @@ class AnswerInspection:
     retrieval: RetrievalInspection
     measurements: ExecutionMeasurements
     evidence: tuple[Evidence, ...]
-    graph_path: tuple[GraphPathStep, ...] = ()
+    assertion_path: tuple[AssertionPathStep, ...] = ()
+    scope_locator: str | None = None
     stages: tuple[RetrievalStage, ...] = ()
 
 
@@ -160,7 +164,8 @@ class _State(TypedDict, total=False):
     emit: Callable[[str], None]
     retrieval_inspection: RetrievalInspection
     retrieval_milliseconds: int | None
-    graph_path: tuple[GraphPathStep, ...]
+    assertion_path: tuple[AssertionPathStep, ...]
+    scope_locator: str | None
     retrieval_stages: tuple[RetrievalStage, ...]
     generation_milliseconds: int | None
     input_tokens: int | None
@@ -224,7 +229,8 @@ class GroundedChatGraph:
                 metadata.strategy, metadata.top_k, len(evidence), metadata.embedding_model
             ),
             "retrieval_milliseconds": elapsed,
-            "graph_path": tuple(getattr(self._retriever, "last_graph_path", ())),
+            "assertion_path": tuple(getattr(self._retriever, "last_assertion_path", ())),
+            "scope_locator": getattr(self._retriever, "last_scope_locator", None),
             "retrieval_stages": tuple(getattr(self._retriever, "last_stages", ())),
         }
 
@@ -282,7 +288,8 @@ class GroundedChatGraph:
                 output_tokens=state.get("output_tokens"),
             ),
             evidence=evidence,
-            graph_path=tuple(state.get("graph_path", ())),
+            assertion_path=tuple(state.get("assertion_path", ())),
+            scope_locator=state.get("scope_locator"),
             stages=tuple(state.get("retrieval_stages", ())),
         )
 

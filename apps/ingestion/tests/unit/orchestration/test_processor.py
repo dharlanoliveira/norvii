@@ -143,9 +143,21 @@ class RecordingGraphReleaseCoordinator:
         self.publications.append((work, document_id))
 
 
+class RecordingPipelineLogger:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    def info(self, event: str, **fields: object) -> None:
+        self.events.append((event, fields))
+
+    def failure(self, event: str, **fields: object) -> None:
+        self.events.append((event, fields))
+
+
 def test_processor_acquires_extracts_and_publishes_url_work() -> None:
     repository = RecordingRepository()
     coordinator = RecordingGraphReleaseCoordinator()
+    logger = RecordingPipelineLogger()
     processor = IngestionProcessor(
         repository=repository,
         acquirer=FakeAcquirer(),
@@ -155,6 +167,7 @@ def test_processor_acquires_extracts_and_publishes_url_work() -> None:
         embedding_provider=FakeEmbeddingProvider(),
         embedding_model="test-embedding",
         graph_release_coordinator=coordinator,
+        logger=logger,
     )
 
     processor.process(_work())
@@ -162,6 +175,31 @@ def test_processor_acquires_extracts_and_publishes_url_work() -> None:
     assert len(repository.publications) == 1
     assert repository.failures == []
     assert len(coordinator.publications) == 1
+    assert [event for event, _ in logger.events] == [
+        "ingestion_stage_started",
+        "ingestion_stage_completed",
+        "ingestion_origin_acquired",
+        "ingestion_stage_started",
+        "ingestion_stage_completed",
+        "ingestion_document_extracted",
+        "ingestion_stage_skipped",
+        "ingestion_stage_started",
+        "ingestion_stage_completed",
+        "ingestion_retrieval_chunks_created",
+        "ingestion_stage_started",
+        "ingestion_stage_completed",
+        "ingestion_embeddings_created",
+        "ingestion_stage_started",
+        "ingestion_stage_completed",
+        "ingestion_document_published",
+        "ingestion_stage_started",
+        "ingestion_stage_completed",
+        "ingestion_stage_started",
+        "ingestion_stage_completed",
+    ]
+    origin = next(fields for event, fields in logger.events if event == "ingestion_origin_acquired")
+    assert origin["byte_count"] == len(b"Legal text")
+    assert origin["media_type"] == "text/html"
 
 
 def test_processor_categorizes_unsafe_url_without_exposing_its_detail() -> None:
@@ -175,6 +213,7 @@ def test_processor_categorizes_unsafe_url_without_exposing_its_detail() -> None:
         embedding_provider=FakeEmbeddingProvider(),
         embedding_model="test-embedding",
         graph_release_coordinator=RecordingGraphReleaseCoordinator(),
+        logger=RecordingPipelineLogger(),
     )
 
     processor.process(_work())
@@ -199,6 +238,7 @@ def test_processor_retains_only_allowlisted_acquisition_diagnostics() -> None:
         embedding_provider=FakeEmbeddingProvider(),
         embedding_model="test-embedding",
         graph_release_coordinator=RecordingGraphReleaseCoordinator(),
+        logger=RecordingPipelineLogger(),
     )
 
     processor.process(_work())
@@ -219,6 +259,7 @@ def test_processor_extracts_preserved_pdf_without_network_acquisition() -> None:
         embedding_provider=FakeEmbeddingProvider(),
         embedding_model="test-embedding",
         graph_release_coordinator=RecordingGraphReleaseCoordinator(),
+        logger=RecordingPipelineLogger(),
     )
 
     processor.process(_pdf_work())
@@ -239,6 +280,7 @@ def test_processor_preserves_the_ready_version_when_embedding_fails() -> None:
         embedding_provider=FailingEmbeddingProvider(),
         embedding_model="test-embedding",
         graph_release_coordinator=RecordingGraphReleaseCoordinator(),
+        logger=RecordingPipelineLogger(),
     )
 
     processor.process(_work())
@@ -260,6 +302,7 @@ def test_processor_retains_allowlisted_semantic_provider_diagnostic() -> None:
         embedding_provider=FakeEmbeddingProvider(),
         embedding_model="test-embedding",
         graph_release_coordinator=RecordingGraphReleaseCoordinator(),
+        logger=RecordingPipelineLogger(),
         semantic_extractor=FailingSemanticExtractor(),
     )
 
@@ -282,6 +325,7 @@ def test_processor_retains_allowlisted_repository_diagnostic() -> None:
         embedding_provider=FakeEmbeddingProvider(),
         embedding_model="test-embedding",
         graph_release_coordinator=RecordingGraphReleaseCoordinator(),
+        logger=RecordingPipelineLogger(),
     )
 
     processor.process(_work())
@@ -304,6 +348,7 @@ def test_processor_fails_the_active_lease_when_graph_release_publication_fails()
         graph_release_coordinator=RecordingGraphReleaseCoordinator(
             GraphReleaseCoordinatorError("graph_projection_failed")
         ),
+        logger=RecordingPipelineLogger(),
     )
 
     processor.process(_work())

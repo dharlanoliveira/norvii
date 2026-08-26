@@ -120,6 +120,9 @@ or was unavailable without exposing private reasoning.
   protection authority selected the Portuguese `autoridade nacional` graph entity and retrieved
   five snapshot-scoped graph evidence locations in an isolated configured-provider run.
 - 2026-08-25: The stakeholder accepted the configured-provider quickstart validation and authorized feature completion. Automated unit, contract, and browser verification is recorded above.
+- 2026-08-25: Follow-up correction: graph capability discovery now publishes only real
+  relationship-type and entity-label combinations. The planner rejects an unpaired selection
+  before query execution, and the demo starter questions target seeded LGPD graph paths.
 
 ## Dependencies and Execution Order
 

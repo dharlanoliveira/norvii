@@ -17,8 +17,9 @@ document does not create feature branches or implementation commitments by itsel
 | 007 | Portuguese and English snapshots | A user switches between two isolated, reproducible curated legal corpora | Ingestion, API, Web | 004, 005 |
 | 008 | GraphRAG and hybrid retrieval | An evaluator compares vector, graph, and hybrid evidence paths | Ingestion, API, Web, contracts, infra | 006, 007 |
 | [009](../../specs/009-planned-hybrid-retrieval/spec.md) | Planned hybrid retrieval | A researcher uses vector-first retrieval with graph augmentation planned only when it can add snapshot-scoped evidence | Agent, API, Web, contracts | 008 |
-| 010 | MCP research tools and skills | An evaluator invokes explicit research tools and reusable evidence workflows | API, contracts | 006, 009 |
-| 011 | Evaluation showcase | A contributor runs versioned quality and cost evaluations and views comparable results | Ingestion, API, Web | 007, 009, 010 |
+| [010](../../specs/010-mcp-research-tools/spec.md) | MCP research tools and skills | An evaluator invokes explicit research tools and reusable evidence workflows | API, contracts | 006, 009 |
+| [011](../../specs/011-normative-assertions/spec.md) | Evidence-backed normative assertions | An investigator traces a graph relationship to its exact legal unit and evidence without over-retrieving a chapter or changing the active corpus | Ingestion, Agent, API, Web, contracts | 008, 009 |
+| 012 | Evaluation showcase | A contributor runs versioned quality and cost evaluations and views comparable results | Ingestion, API, Web | 007, 009, 010, 011 |
 
 ## Slicing rules
 

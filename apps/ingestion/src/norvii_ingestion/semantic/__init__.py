@@ -3,15 +3,15 @@
 from norvii_ingestion.semantic.extraction import (
     ExtractionProviderError,
     OpenAICompatibleSemanticExtractor,
+    SemanticAssertion,
     SemanticEntity,
     SemanticExtraction,
-    SemanticRelationship,
 )
 
 __all__ = [
     "ExtractionProviderError",
     "OpenAICompatibleSemanticExtractor",
+    "SemanticAssertion",
     "SemanticEntity",
     "SemanticExtraction",
-    "SemanticRelationship",
 ]

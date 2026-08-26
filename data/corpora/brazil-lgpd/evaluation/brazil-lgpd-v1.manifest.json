@@ -1,0 +1,17 @@
+{
+  "dataset_id": "brazil-lgpd-v1",
+  "status": "draft",
+  "snapshot_date": "2026-08-25",
+  "jurisdiction": "BR-Federal",
+  "authoritative_source_language": "pt-BR",
+  "supported_query_languages": ["pt-BR", "en"],
+  "source_manifest": [
+    {
+      "id": "lgpd",
+      "title": "Lei nº 13.709, de 14 de agosto de 2018",
+      "authority": "Câmara dos Deputados",
+      "document_type": "law",
+      "official_url": "https://www2.camara.leg.br/legin/fed/lei/2018/lei-13709-14-agosto-2018-787077-normaatualizada-pl.html"
+    }
+  ]
+}

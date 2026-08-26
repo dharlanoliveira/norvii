@@ -25,6 +25,8 @@ class AgentConfig:
     chat_model: str
     chat_reasoning_effort: str
     chat_timeout_seconds: float
+    mcp_host: str = "127.0.0.1"
+    mcp_port: int = 8091
     embedding_base_url: str = ""
     embedding_api_key: str = ""
     embedding_model: str = "text-embedding-3-small"
@@ -51,6 +53,8 @@ class AgentConfig:
             chat_model=os.environ.get("NORVII_CHAT_MODEL", "gpt-4o-mini"),
             chat_reasoning_effort=_reasoning_effort("NORVII_CHAT_REASONING_EFFORT", "medium"),
             chat_timeout_seconds=_positive_float("NORVII_CHAT_TIMEOUT_SECONDS", 30.0),
+            mcp_host=os.environ.get("NORVII_MCP_HOST", "127.0.0.1"),
+            mcp_port=_positive_int("NORVII_MCP_PORT", 8091),
             embedding_base_url=os.environ.get("NORVII_EMBEDDING_BASE_URL", "").strip(),
             embedding_api_key=(
                 os.environ.get("NORVII_EMBEDDING_API_KEY", "").strip()

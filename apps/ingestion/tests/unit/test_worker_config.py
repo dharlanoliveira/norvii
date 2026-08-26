@@ -11,12 +11,15 @@ def test_worker_config_uses_bounded_defaults() -> None:
     config = WorkerConfig.from_environment({})
 
     assert config.poll_interval == timedelta(seconds=1)
-    assert config.lease_duration == timedelta(seconds=120)
+    assert config.lease_duration == timedelta(seconds=1_800)
+    assert config.semantic_timeout_seconds == 240
     assert config.max_source_bytes == 10 * 1024 * 1024
     assert config.max_redirects == 5
     assert config.pipeline_version == "corpus-ingestion-v3"
     assert config.embedding_model == "text-embedding-3-small"
     assert config.embedding_dimensions == 1536
+    assert config.semantic_reasoning_effort == "none"
+    assert config.semantic_extraction_version == "legal-semantic-v3"
 
 
 def test_worker_config_rejects_lease_shorter_than_poll_interval() -> None:

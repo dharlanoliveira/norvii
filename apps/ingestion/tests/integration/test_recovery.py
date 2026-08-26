@@ -22,9 +22,9 @@ from norvii_ingestion.extraction.html import HtmlExtractor
 from norvii_ingestion.publication.persistence.config import EnvironmentConfigurationLoader
 from norvii_ingestion.publication.postgres.repository import PostgresWorkRepository
 from norvii_ingestion.semantic.extraction import (
+    SemanticAssertion,
     SemanticEntity,
     SemanticExtraction,
-    SemanticRelationship,
 )
 
 if TYPE_CHECKING:
@@ -156,7 +156,7 @@ def test_reprocessing_reused_document_backfills_missing_semantic_artifacts() -> 
                 SELECT
                     (SELECT count(*) FROM semantic_extraction_runs WHERE document_id = %s),
                     (SELECT count(*) FROM semantic_entities WHERE document_id = %s),
-                    (SELECT count(*) FROM semantic_relationships WHERE document_id = %s)
+                    (SELECT count(*) FROM normative_assertions WHERE document_id = %s)
                 """,
                 (document_id, document_id, document_id),
             )
@@ -219,7 +219,7 @@ def test_reprocessing_reuses_a_historical_semantic_run_identity() -> None:
                 SELECT
                     (SELECT count(*) FROM semantic_extraction_runs WHERE document_id = %s),
                     (SELECT count(*) FROM semantic_entities WHERE document_id = %s),
-                    (SELECT count(*) FROM semantic_relationships WHERE document_id = %s)
+                    (SELECT count(*) FROM normative_assertions WHERE document_id = %s)
                 """,
                 (document_id, document_id, document_id),
             )
@@ -400,9 +400,9 @@ def _semantic_extraction(
                 SemanticEntity(
                     id=root_entity_id,
                     evidence_unit_id=root.id,
-                    entity_type="location",
-                    label=root.locator,
-                    normalized_label=root.locator,
+                    entity_type="obligation",
+                    label="Recovery obligation",
+                    normalized_label="recovery obligation",
                 ),
             )
             if fixture_kind
@@ -416,19 +416,20 @@ def _semantic_extraction(
             SemanticEntity(
                 id=article_entity_id,
                 evidence_unit_id=article.id,
-                entity_type="location",
-                label=article.locator,
-                normalized_label=article.locator,
+                entity_type="actor",
+                label="Recovery operator",
+                normalized_label="recovery operator",
             ),
         ),
-        relationships=(
+        assertions=(
             (
-                SemanticRelationship(
-                    id=uuid5(article.id, "contains"),
+                SemanticAssertion(
+                    id=uuid5(article.id, "imposes_duty_on"),
                     subject_entity_id=root_entity_id,
                     object_entity_id=article_entity_id,
+                    establishing_unit_id=article.id,
                     evidence_unit_id=article.id,
-                    relationship_type="contains",
+                    predicate="imposes_duty_on",
                 ),
             )
             if fixture_kind
@@ -452,7 +453,7 @@ def _html(version: str) -> bytes:
 def _cleanup(connection: psycopg.Connection[tuple[object, ...]], corpus_id: UUID) -> None:
     connection.rollback()
     with connection.transaction(), connection.cursor() as cursor:
-        cursor.execute("DELETE FROM semantic_relationships WHERE corpus_id = %s", (corpus_id,))
+        cursor.execute("DELETE FROM normative_assertions WHERE corpus_id = %s", (corpus_id,))
         cursor.execute("DELETE FROM semantic_entities WHERE corpus_id = %s", (corpus_id,))
         cursor.execute("DELETE FROM semantic_extraction_runs WHERE corpus_id = %s", (corpus_id,))
         cursor.execute("DELETE FROM retrieval_chunks WHERE corpus_id = %s", (corpus_id,))

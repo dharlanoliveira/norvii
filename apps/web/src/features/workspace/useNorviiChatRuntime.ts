@@ -25,6 +25,7 @@ interface UseNorviiChatRuntimeOptions {
 
 interface NorviiChatRuntime {
   readonly runtime: AssistantRuntime;
+  readonly startNewChat: () => void;
   readonly terminalStatesByMessageId: ReadonlyMap<
     string,
     AssistantTerminalState
@@ -201,9 +202,20 @@ export function useNorviiChatRuntime({
     ],
   );
   const runtime = useLocalRuntime(adapter);
+  const startNewChat = useCallback(() => {
+    runtime.thread.cancelRun();
+    runtime.thread.reset();
+    void runtime.thread.composer.reset();
+    setTerminalStatesByMessageId(new Map());
+    setReferencesByMessageId(new Map());
+    setInspectionsByMessageId(new Map());
+    setLastSubmittedQuestion(undefined);
+    setLastSubmittedQuestionVersion((current) => current + 1);
+  }, [runtime]);
 
   return {
     runtime,
+    startNewChat,
     terminalStatesByMessageId,
     referencesByMessageId,
     inspectionsByMessageId,

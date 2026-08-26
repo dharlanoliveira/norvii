@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from time import monotonic
 from typing import TYPE_CHECKING, Protocol
 
 from norvii_ingestion.acquisition.https import (
@@ -37,7 +38,8 @@ if TYPE_CHECKING:
     from norvii_ingestion.domain.models import IngestionWork
     from norvii_ingestion.enrichment.embedding import EmbeddingProvider
     from norvii_ingestion.release.coordinator import GraphReleaseCoordinator
-    from norvii_ingestion.semantic.extraction import SemanticExtractor
+    from norvii_ingestion.semantic.extraction import SemanticExtraction, SemanticExtractor
+
 
 _FAILURE_MAPPINGS: tuple[tuple[type[Exception], FailureCategory], ...] = (
     (UnsafeUrlError, FailureCategory.UNSAFE_URL),
@@ -119,6 +121,18 @@ class PublicationRepository(Protocol):
         ...
 
 
+class PipelineEventLogger(Protocol):
+    """Record safe structured lifecycle events for one ingestion attempt."""
+
+    def info(self, event: str, **fields: object) -> None:
+        """Record a safe informational event."""
+        ...
+
+    def failure(self, event: str, **fields: object) -> None:
+        """Record a safe failure event."""
+        ...
+
+
 class IngestionProcessor:
     """Process exactly one claim without automatic retries."""
 
@@ -133,6 +147,7 @@ class IngestionProcessor:
         embedding_provider: EmbeddingProvider,
         embedding_model: str,
         graph_release_coordinator: GraphReleaseCoordinator,
+        logger: PipelineEventLogger,
         semantic_extractor: SemanticExtractor | None = None,
     ) -> None:
         self._repository = repository
@@ -143,26 +158,60 @@ class IngestionProcessor:
         self._embedding_provider = embedding_provider
         self._embedding_model = embedding_model
         self._graph_release_coordinator = graph_release_coordinator
+        self._logger = logger
         self._semantic_extractor = semantic_extractor
 
     def process(self, work: IngestionWork) -> None:
         """Acquire, extract, and publish, or persist one safe failure category."""
+        stage = "origin_acquisition"
         try:
-            content, media_type, final_url = self._origin(work)
-            artifact = self._extract(work, content)
-            semantic_extraction = (
-                self._semantic_extractor.extract(artifact)
-                if self._semantic_extractor is not None
-                else None
+            content, media_type, final_url = self._run_stage(
+                work, stage, lambda: self._origin(work)
             )
-            retrieval_chunks = LegalChunker().chunk(artifact)
-            embeddings = self._embedding_provider.embed(
-                tuple(chunk.text for chunk in retrieval_chunks)
+            self._logger.info(
+                "ingestion_origin_acquired",
+                **self._work_fields(work),
+                byte_count=len(content),
+                media_type=media_type,
+            )
+
+            stage = "document_extraction"
+            artifact = self._run_stage(work, stage, lambda: self._extract(work, content))
+            self._logger.info(
+                "ingestion_document_extracted",
+                **self._work_fields(work),
+                character_count=len(artifact.text),
+                unit_count=len(artifact.units),
+            )
+
+            stage = "semantic_extraction"
+            semantic_extraction = self._extract_semantics(work, artifact)
+
+            stage = "retrieval_chunking"
+            retrieval_chunks = self._run_stage(work, stage, lambda: LegalChunker().chunk(artifact))
+            self._logger.info(
+                "ingestion_retrieval_chunks_created",
+                **self._work_fields(work),
+                chunk_count=len(retrieval_chunks),
+            )
+
+            stage = "embedding"
+            embeddings = self._run_stage(
+                work,
+                stage,
+                lambda: self._embedding_provider.embed(
+                    tuple(chunk.text for chunk in retrieval_chunks)
+                ),
             )
             if len(embeddings) != len(retrieval_chunks):
                 raise ValueError(  # noqa: TRY301
                     "embedding provider returned an unexpected item count"
                 )
+            self._logger.info(
+                "ingestion_embeddings_created",
+                **self._work_fields(work),
+                chunk_count=len(embeddings),
+            )
             enriched_chunks = tuple(
                 replace(chunk, embedding=embedding, embedding_model=self._embedding_model)
                 for chunk, embedding in zip(retrieval_chunks, embeddings, strict=True)
@@ -184,16 +233,101 @@ class IngestionProcessor:
                 retrieval_chunks=enriched_chunks,
                 semantic_extraction=semantic_extraction,
             )
-            document_id = self._repository.publish(
+            stage = "canonical_publication"
+            document_id = self._run_stage(
                 work,
-                capture,
-                command,
-                now,
+                stage,
+                lambda: self._repository.publish(work, capture, command, now),
             )
-            self._graph_release_coordinator.publish(work, document_id)
-            self._repository.complete(work, capture, command, document_id, self._clock())
+            self._logger.info(
+                "ingestion_document_published",
+                **self._work_fields(work),
+                document_id=str(document_id),
+            )
+
+            stage = "graph_release"
+            self._run_stage(
+                work,
+                stage,
+                lambda: self._graph_release_coordinator.publish(work, document_id),
+            )
+
+            stage = "lease_completion"
+            self._run_stage(
+                work,
+                stage,
+                lambda: self._repository.complete(
+                    work, capture, command, document_id, self._clock()
+                ),
+            )
         except Exception as error:  # noqa: BLE001 - boundary converts failures to safe categories
-            self._repository.fail(work, _safe_failure(error), self._clock())
+            failure = _safe_failure(error)
+            self._logger.failure(
+                "ingestion_stage_failed",
+                **self._work_fields(work),
+                stage=stage,
+                failure_category=failure.category.value,
+                error_type=type(error).__name__,
+            )
+            self._repository.fail(work, failure, self._clock())
+            self._logger.info(
+                "ingestion_failure_persisted",
+                **self._work_fields(work),
+                stage=stage,
+                failure_category=failure.category.value,
+            )
+
+    def _extract_semantics(
+        self, work: IngestionWork, artifact: DocumentArtifact
+    ) -> SemanticExtraction | None:
+        extractor = self._semantic_extractor
+        if extractor is None:
+            self._logger.info(
+                "ingestion_stage_skipped",
+                **self._work_fields(work),
+                stage="semantic_extraction",
+            )
+            return None
+        extraction = self._run_stage(
+            work,
+            "semantic_extraction",
+            lambda: extractor.extract(artifact),
+        )
+        self._logger.info(
+            "ingestion_semantics_extracted",
+            **self._work_fields(work),
+            entity_count=len(extraction.entities),
+            assertion_count=len(extraction.assertions),
+            input_token_count=extraction.input_tokens,
+            output_token_count=extraction.output_tokens,
+        )
+        return extraction
+
+    def _run_stage[StageResult](
+        self,
+        work: IngestionWork,
+        stage: str,
+        operation: Callable[[], StageResult],
+    ) -> StageResult:
+        self._logger.info("ingestion_stage_started", **self._work_fields(work), stage=stage)
+        started = monotonic()
+        result = operation()
+        self._logger.info(
+            "ingestion_stage_completed",
+            **self._work_fields(work),
+            stage=stage,
+            duration_ms=int((monotonic() - started) * 1000),
+        )
+        return result
+
+    @staticmethod
+    def _work_fields(work: IngestionWork) -> dict[str, str]:
+        return {
+            "work_id": str(work.claim.work_id),
+            "corpus_id": str(work.claim.corpus_id),
+            "source_id": str(work.claim.source_id),
+            "source_kind": work.claim.source_kind.value,
+        }
 
     def _origin(self, work: IngestionWork) -> tuple[bytes, str, str | None]:
         if work.claim.source_kind is SourceKind.URL and work.url is not None:

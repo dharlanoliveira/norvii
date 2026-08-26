@@ -156,20 +156,24 @@ type evidenceReference struct {
 }
 
 type inspectionPayload struct {
-	Outcome      string                  `json:"outcome"`
-	Retrieval    *retrievalInspection    `json:"retrieval"`
-	Measurements measurementPayload      `json:"measurements"`
-	Evidence     []evidenceReference     `json:"evidence"`
-	GraphPath    []graphPathPayload      `json:"graphPath"`
-	Stages       []retrievalStagePayload `json:"stages"`
+	Outcome       string                  `json:"outcome"`
+	Retrieval     *retrievalInspection    `json:"retrieval"`
+	Measurements  measurementPayload      `json:"measurements"`
+	Evidence      []evidenceReference     `json:"evidence"`
+	AssertionPath []assertionPathPayload  `json:"assertionPath"`
+	ScopeLocator  *string                 `json:"scopeLocator"`
+	Stages        []retrievalStagePayload `json:"stages"`
 }
 
-type graphPathPayload struct {
-	RelationshipType string `json:"relationshipType"`
-	SubjectLabel     string `json:"subjectLabel"`
-	ObjectLabel      string `json:"objectLabel"`
-	EvidenceID       string `json:"evidenceId"`
-	EvidenceLocator  string `json:"evidenceLocator"`
+type assertionPathPayload struct {
+	AssertionID         string   `json:"assertionId"`
+	Predicate           string   `json:"predicate"`
+	SubjectLabel        string   `json:"subjectLabel"`
+	ObjectLabel         string   `json:"objectLabel"`
+	EstablishingLocator string   `json:"establishingLocator"`
+	EvidenceLocator     string   `json:"evidenceLocator"`
+	HierarchyContext    []string `json:"hierarchyContext"`
+	Qualifier           *string  `json:"qualifier"`
 }
 
 type retrievalStagePayload struct {
@@ -239,20 +243,24 @@ func inspectionValue(payload *inspectionPayload, evidence []chatdomain.Evidence,
 	if len(payload.Evidence) > 0 {
 		inspection.Evidence = evidenceValues(payload.Evidence)
 	}
-	inspection.GraphPath = graphPathValues(payload.GraphPath)
+	inspection.AssertionPath = assertionPathValues(payload.AssertionPath)
+	inspection.ScopeLocator = payload.ScopeLocator
 	inspection.Stages = stageValues(payload.Stages)
 	return inspection
 }
 
-func graphPathValues(steps []graphPathPayload) []chatdomain.GraphPathStep {
-	values := make([]chatdomain.GraphPathStep, 0, len(steps))
+func assertionPathValues(steps []assertionPathPayload) []chatdomain.AssertionPathStep {
+	values := make([]chatdomain.AssertionPathStep, 0, len(steps))
 	for _, step := range steps {
-		values = append(values, chatdomain.GraphPathStep{
-			RelationshipType: step.RelationshipType,
-			SubjectLabel:     step.SubjectLabel,
-			ObjectLabel:      step.ObjectLabel,
-			EvidenceID:       step.EvidenceID,
-			EvidenceLocator:  step.EvidenceLocator,
+		values = append(values, chatdomain.AssertionPathStep{
+			AssertionID:         step.AssertionID,
+			Predicate:           step.Predicate,
+			SubjectLabel:        step.SubjectLabel,
+			ObjectLabel:         step.ObjectLabel,
+			EstablishingLocator: step.EstablishingLocator,
+			EvidenceLocator:     step.EvidenceLocator,
+			HierarchyContext:    step.HierarchyContext,
+			Qualifier:           step.Qualifier,
 		})
 	}
 	return values

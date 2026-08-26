@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from norvii_agent.config import AgentConfig
 from norvii_agent.graph import GroundedChatGraph
 from norvii_agent.providers import (
@@ -20,6 +22,7 @@ from norvii_agent.transport.server import AgentHTTPServer
 
 def main() -> None:
     """Build provider adapters and serve the internal graph endpoint."""
+    logging.basicConfig(level=logging.INFO)
     configuration = AgentConfig.from_environment()
     embeddings = OpenAICompatibleEmbeddingProvider(
         configuration.embedding_base_url,

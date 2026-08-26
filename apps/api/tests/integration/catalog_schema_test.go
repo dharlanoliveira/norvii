@@ -58,15 +58,16 @@ func TestCorpusIngestionSchemaIsCanonicalSeededAndRepeatable(t *testing.T) {
 		"corpus_snapshots",
 		"document_units",
 		"document_versions",
+		"graph_release_assertions",
 		"graph_release_entities",
-		"graph_release_relationships",
+		"graph_release_legal_units",
 		"graph_releases",
 		"ingestion_work",
+		"normative_assertions",
 		"pdf_origins",
 		"processing_attempts",
 		"semantic_entities",
 		"semantic_extraction_runs",
-		"semantic_relationships",
 		"source_revisions",
 		"sources",
 		"url_origins",
@@ -96,10 +97,10 @@ func TestCorpusIngestionSchemaIsCanonicalSeededAndRepeatable(t *testing.T) {
 		"graph_releases_snapshot_status_idx",
 		"ingestion_work_active_source_uidx",
 		"ingestion_work_pending_order_idx",
+		"normative_assertions_extraction_supported_idx",
 		"processing_attempts_source_order_idx",
 		"semantic_entities_extraction_supported_idx",
 		"semantic_extraction_runs_document_ready_idx",
-		"semantic_relationships_extraction_supported_idx",
 		"sources_corpus_order_idx",
 	}
 	indexRows, err := connection.Query(ctx, `
@@ -139,6 +140,9 @@ func TestCorpusIngestionSchemaIsCanonicalSeededAndRepeatable(t *testing.T) {
 		)
 	}
 
+	assertPrimaryKeyColumns(t, ctx, connection, "graph_release_assertions", []string{"graph_release_id", "normative_assertion_id"})
+	assertPrimaryKeyColumns(t, ctx, connection, "graph_release_legal_units", []string{"graph_release_id", "document_id", "legal_unit_id"})
+
 	var corpusCount, sourceCount, originCount, workCount int
 	err = connection.QueryRow(ctx, `
 		SELECT
@@ -176,6 +180,33 @@ func TestCorpusIngestionSchemaIsCanonicalSeededAndRepeatable(t *testing.T) {
 	}
 	if foreignKeys < 7 {
 		t.Fatalf("ownership foreign keys = %d, want at least 7", foreignKeys)
+	}
+}
+
+func assertPrimaryKeyColumns(
+	t *testing.T,
+	ctx context.Context,
+	connection *pgx.Conn,
+	table string,
+	want []string,
+) {
+	t.Helper()
+	var actual []string
+	err := connection.QueryRow(ctx, `
+		SELECT array_agg(attribute.attname ORDER BY key_column.ordinality)
+		FROM pg_constraint AS constraint_definition
+		CROSS JOIN LATERAL unnest(constraint_definition.conkey)
+			WITH ORDINALITY AS key_column(attribute_number, ordinality)
+		JOIN pg_attribute AS attribute
+			ON attribute.attrelid = constraint_definition.conrelid
+			AND attribute.attnum = key_column.attribute_number
+		WHERE constraint_definition.conrelid = $1::regclass
+			AND constraint_definition.contype = 'p'`, table).Scan(&actual)
+	if err != nil {
+		t.Fatalf("%s primary key query error = %v", table, err)
+	}
+	if !slices.Equal(actual, want) {
+		t.Fatalf("%s primary key = %v, want %v", table, actual, want)
 	}
 }
 

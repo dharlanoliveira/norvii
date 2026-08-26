@@ -1081,12 +1081,19 @@
   padding: 0;
 }
 
+.chat-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: var(--chat-reading-width);
+  margin: 12px auto 0;
+}
+
 .chat-strategy {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  width: var(--chat-reading-width);
-  margin: 12px auto 0;
   color: var(--ink-muted);
   font-size: 10px;
   font-weight: 700;
@@ -1119,6 +1126,33 @@
 }
 
 .chat-strategy__choices button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.chat-new {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--teal-deep);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-new:hover {
+  border-color: var(--teal);
+  background: var(--paper-raised);
+}
+
+.chat-new:focus-visible {
   outline: 2px solid var(--teal);
   outline-offset: 2px;
 }

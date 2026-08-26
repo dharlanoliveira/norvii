@@ -147,3 +147,7 @@ complete the consolidated tasks below rather than recreating superseded behavior
 - [X] T034 Add Playwright journeys for planned Hybrid with graph contribution, graph unavailability, and immutable source navigation; do not restore a standalone Graph selector per T018-T020, T025, Feature 009 FR-001, and SC-003-SC-004 (partial).
 - [X] T035 Verify that reingestion backfills missing semantic artifacts before coordinated graph publication, exposes a safe release-stage diagnostic, and activates only a graph-ready snapshot; cover both seeded corpora end to end per T026, T029-T031, FR-016, and SC-008 (partial).
 - [X] T036 Execute the documented configured-provider graph-rebuild journey, update operational/module documentation if it diverges, and record reproducibility measurements in quickstart per T021, T022, T026, and SC-005-SC-006 (partial).
+- [X] T037 Refine the future semantic vocabulary to distinguish legal scope, observance,
+  duty, and responsibility; project the complete directed document hierarchy independently from
+  bounded semantic extraction; do not reingest or rebuild an existing corpus as part of this
+  correction.
