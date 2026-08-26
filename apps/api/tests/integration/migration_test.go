@@ -186,6 +186,30 @@ func TestEvaluationComparisonMetricLedgerMigrationIsEmbedded(t *testing.T) {
 	}
 }
 
+func TestFairHousingSourceRefreshMigrationIsEmbedded(t *testing.T) {
+	migration, err := migrations.Files.ReadFile("020_refresh_us_fair_housing_sources.sql")
+	if err != nil {
+		t.Fatalf("read U.S. fair-housing source refresh migration: %v", err)
+	}
+
+	content := string(migration)
+	for _, requiredStatement := range []string{
+		"USCODE-2024-title42-chap45-subchapI-sec3604.pdf",
+		"CFR-2025-title24-vol1-sec103-25.pdf",
+		"30000000-0000-4000-8000-000000000014",
+		"30000000-0000-4000-8000-000000000015",
+		"30000000-0000-4000-8000-000000000016",
+		"existing_work.status IN ('pending', 'leased')",
+	} {
+		if !strings.Contains(content, requiredStatement) {
+			t.Errorf("U.S. fair-housing source refresh migration does not contain %q", requiredStatement)
+		}
+	}
+	if strings.Contains(content, "20000000-0000-4000-8000-000000000009") {
+		t.Error("U.S. fair-housing source refresh migration must not alter assistance-animals source")
+	}
+}
+
 func latestEmbeddedMigrationVersion(t *testing.T) int32 {
 	t.Helper()
 	entries, err := migrations.Files.ReadDir(".")
