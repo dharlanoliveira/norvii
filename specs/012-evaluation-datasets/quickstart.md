@@ -73,14 +73,27 @@ Use test fixtures to cover right source/right location, right source/wrong locat
 
 ## 6. Required automated checks
 
-Run the relevant Go, Python, and TypeScript test targets; migration/persistence verification; the prototype approval checks; and:
+Run the following sequence from the repository root:
 
 ```bash
+make persistence-migrate
+make persistence-migration-status
+make persistence-verify
+make -C apps/api ci
+make -C apps/agent ci
+make -C apps/ingestion ci
+(cd apps/web && npm ci && npm run format:check && npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e)
+(cd prototypes/web && npm ci && make ci)
+python3 .github/scripts/validate_contracts.py
 python3 .github/scripts/validate_repository_language.py
 git diff --check
 ```
 
-Add the exact implemented commands to this guide during the implementation task. Keep the technical-measurement and not-legal-advice notice visible in the maintainer experience.
+The database-backed integration suite requires a running local PostgreSQL environment configured
+through `infra/.env`. It must run against isolated fixture data; existing imported evaluation
+datasets can contaminate assertions that expect an empty catalog.
+
+Keep the technical-measurement and not-legal-advice notice visible in the maintainer experience.
 
 Evaluation results and opening suggestions are technical information about corpus-grounded system
 behavior. They do not provide legal advice or a legal conclusion about a real person or entity.

@@ -56,9 +56,7 @@ class AgentConfig:
             postgres_password=os.environ.get("NORVII_POSTGRES_PASSWORD", ""),
             chat_base_url=os.environ.get("NORVII_CHAT_BASE_URL", "").strip(),
             chat_api_key=os.environ.get("NORVII_CHAT_API_KEY", ""),
-            chat_model=_normalized_execution_identity_value(
-                "NORVII_CHAT_MODEL", "gpt-4o-mini"
-            ),
+            chat_model=_normalized_execution_identity_value("NORVII_CHAT_MODEL", "gpt-4o-mini"),
             chat_reasoning_effort=_reasoning_effort("NORVII_CHAT_REASONING_EFFORT", "medium"),
             chat_timeout_seconds=_positive_float("NORVII_CHAT_TIMEOUT_SECONDS", 30.0),
             mcp_host=os.environ.get("NORVII_MCP_HOST", "127.0.0.1"),
