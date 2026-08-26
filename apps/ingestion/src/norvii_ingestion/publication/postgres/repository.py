@@ -15,7 +15,7 @@ from norvii_ingestion.domain.models import (
     WorkClaim,
     WorkReason,
 )
-from norvii_ingestion.semantic import SemanticEntity, SemanticExtraction, SemanticRelationship
+from norvii_ingestion.semantic import SemanticAssertion, SemanticEntity, SemanticExtraction
 
 if TYPE_CHECKING:
     from norvii_ingestion.domain.artifacts import PublicationCommand
@@ -616,25 +616,27 @@ class PostgresWorkRepository:
         )
         cursor.executemany(
             """
-            INSERT INTO semantic_relationships (
+            INSERT INTO normative_assertions (
                 id, extraction_run_id, corpus_id, source_id, document_id, subject_entity_id,
-                object_entity_id, evidence_unit_id, relationship_type, qualifier, validation_status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'supported')
+                object_entity_id, establishing_unit_id, evidence_unit_id, predicate, qualifier,
+                validation_status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'supported')
             """,
             [
                 (
-                    relationship.id,
+                    assertion.id,
                     extraction.id,
                     work.claim.corpus_id,
                     work.claim.source_id,
                     document_id,
-                    relationship.subject_entity_id,
-                    relationship.object_entity_id,
-                    relationship.evidence_unit_id,
-                    relationship.relationship_type,
-                    relationship.qualifier,
+                    assertion.subject_entity_id,
+                    assertion.object_entity_id,
+                    assertion.establishing_unit_id,
+                    assertion.evidence_unit_id,
+                    assertion.predicate,
+                    assertion.qualifier,
                 )
-                for relationship in extraction.relationships
+                for assertion in extraction.assertions
             ],
         )
 
@@ -656,7 +658,7 @@ class PostgresWorkRepository:
             id=self._insert_missing_semantic_run(cursor, work, document_id, extraction, now),
         )
         extraction = self._insert_missing_semantic_entities(cursor, work, document_id, extraction)
-        self._insert_missing_semantic_relationships(cursor, work, document_id, extraction)
+        self._insert_missing_normative_assertions(cursor, work, document_id, extraction)
 
     @staticmethod
     def _insert_missing_semantic_run(
@@ -711,7 +713,7 @@ class PostgresWorkRepository:
         document_id: UUID,
         extraction: SemanticExtraction,
     ) -> SemanticExtraction:
-        """Persist entities and return relationships bound to their canonical identities."""
+        """Persist entities and return assertions bound to their canonical identities."""
         cursor.executemany(
             """
             INSERT INTO semantic_entities (
@@ -762,18 +764,18 @@ class PostgresWorkRepository:
             entities=tuple(
                 replace(entity, id=replacements[entity.id]) for entity in extraction.entities
             ),
-            relationships=tuple(
+            assertions=tuple(
                 replace(
-                    relationship,
-                    subject_entity_id=replacements[relationship.subject_entity_id],
-                    object_entity_id=replacements[relationship.object_entity_id],
+                    assertion,
+                    subject_entity_id=replacements[assertion.subject_entity_id],
+                    object_entity_id=replacements[assertion.object_entity_id],
                 )
-                for relationship in extraction.relationships
+                for assertion in extraction.assertions
             ),
         )
 
     @staticmethod
-    def _insert_missing_semantic_relationships(
+    def _insert_missing_normative_assertions(
         cursor: psycopg.Cursor[tuple[object, ...]],
         work: IngestionWork,
         document_id: UUID,
@@ -781,29 +783,31 @@ class PostgresWorkRepository:
     ) -> None:
         cursor.executemany(
             """
-            INSERT INTO semantic_relationships (
+            INSERT INTO normative_assertions (
                 id, extraction_run_id, corpus_id, source_id, document_id, subject_entity_id,
-                object_entity_id, evidence_unit_id, relationship_type, qualifier, validation_status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'supported')
+                object_entity_id, establishing_unit_id, evidence_unit_id, predicate, qualifier,
+                validation_status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'supported')
             ON CONFLICT (
-                extraction_run_id, subject_entity_id, object_entity_id, relationship_type,
-                evidence_unit_id
+                extraction_run_id, subject_entity_id, object_entity_id, predicate,
+                establishing_unit_id, evidence_unit_id
             ) DO NOTHING
             """,
             [
                 (
-                    relationship.id,
+                    assertion.id,
                     extraction.id,
                     work.claim.corpus_id,
                     work.claim.source_id,
                     document_id,
-                    relationship.subject_entity_id,
-                    relationship.object_entity_id,
-                    relationship.evidence_unit_id,
-                    relationship.relationship_type,
-                    relationship.qualifier,
+                    assertion.subject_entity_id,
+                    assertion.object_entity_id,
+                    assertion.establishing_unit_id,
+                    assertion.evidence_unit_id,
+                    assertion.predicate,
+                    assertion.qualifier,
                 )
-                for relationship in extraction.relationships
+                for assertion in extraction.assertions
             ],
         )
 
@@ -889,16 +893,17 @@ def _document_scoped_semantic_extraction(
         )
         for entity in extraction.entities
     )
-    relationships = tuple(
-        SemanticRelationship(
-            id=uuid5(_SEMANTIC_ARTIFACT_NAMESPACE, f"{document_id}:{relationship.id}"),
-            subject_entity_id=entity_ids[relationship.subject_entity_id],
-            object_entity_id=entity_ids[relationship.object_entity_id],
-            evidence_unit_id=relationship.evidence_unit_id,
-            relationship_type=relationship.relationship_type,
-            qualifier=relationship.qualifier,
+    assertions = tuple(
+        SemanticAssertion(
+            id=uuid5(_SEMANTIC_ARTIFACT_NAMESPACE, f"{document_id}:{assertion.id}"),
+            subject_entity_id=entity_ids[assertion.subject_entity_id],
+            object_entity_id=entity_ids[assertion.object_entity_id],
+            establishing_unit_id=assertion.establishing_unit_id,
+            evidence_unit_id=assertion.evidence_unit_id,
+            predicate=assertion.predicate,
+            qualifier=assertion.qualifier,
         )
-        for relationship in extraction.relationships
+        for assertion in extraction.assertions
     )
     return SemanticExtraction(
         id=uuid5(_SEMANTIC_ARTIFACT_NAMESPACE, f"{document_id}:{extraction.id}"),
@@ -909,7 +914,7 @@ def _document_scoped_semantic_extraction(
         output_tokens=extraction.output_tokens,
         duration_milliseconds=extraction.duration_milliseconds,
         entities=entities,
-        relationships=relationships,
+        assertions=assertions,
     )
 
 

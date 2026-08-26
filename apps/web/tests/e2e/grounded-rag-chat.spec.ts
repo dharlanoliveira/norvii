@@ -341,7 +341,7 @@ function completedStream(referenceValue: ReturnType<typeof reference>): string {
           outputTokens: null,
         },
         evidence: [referenceValue],
-        graphPath: [],
+        assertionPath: [],
         stages: [],
       },
     },

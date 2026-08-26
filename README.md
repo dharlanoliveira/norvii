@@ -18,18 +18,16 @@ The project is a technical demonstration and does not provide legal advice.
 
 ## Project status
 
-Feature 004 provides the authoritative corpus and document slice. Feature 005 now
-adds the grounded-chat boundary: legal-aware retrieval chunks, a corpus-scoped Go
-SSE facade, a Python LangGraph agent, an OpenAI-compatible model adapter, and a
-bilingual React composer with citation references. Configure `NORVII_CHAT_BASE_URL`
-to enable model answers; without it the agent fails closed and the catalog/document
-viewer remain usable.
-Embedding enrichment and citation navigation continue in the remaining Feature 005
-tasks.
+The current implementation includes corpus and source ingestion, immutable corpus
+snapshots, grounded RAG chat with citation inspection, graph-ready releases, and
+vector-first planned Hybrid retrieval. PostgreSQL with pgvector is the canonical
+store; Neo4j Community is a rebuildable, evidence-linked graph projection.
 
-PostgreSQL with pgvector is the canonical store. Standalone Neo4j Community remains
-a rebuildable graph projection for later GraphRAG features and is not written by
-Feature 004.
+Feature 010 is in progress. It introduces bounded MCP research tools and reusable
+evidence workflows while preserving corpus and snapshot isolation. Its production
+target is a Docker-hosted Streamable HTTP endpoint; local stdio remains a development
+transport. See the [feature specification](specs/010-mcp-research-tools/spec.md) for
+scope and acceptance criteria.
 
 ## Bootstrap the complete local environment
 
@@ -69,6 +67,10 @@ make -C apps/web ci
 
 See the [web](apps/web/README.md), [API](apps/api/README.md), [agent](apps/agent/README.md),
 and [ingestion](apps/ingestion/README.md) module guides for focused development.
+
+The managed local bootstrap also starts the MCP Compose profile at its local-only
+endpoint. Its container and client validation instructions are in the
+[Feature 010 quickstart](specs/010-mcp-research-tools/quickstart.md).
 
 ## Run the persistence foundation
 

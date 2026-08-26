@@ -27,6 +27,15 @@ typed source and target entity, one immutable evidence unit, extraction run iden
 and validation state. Relationships cannot cross corpus, source, document, or evidence ownership
 boundaries.
 
+Semantic relationships use a small directed vocabulary: `defines`, `applies_to`, `grants`,
+`protects`, `must_be_observed_by`, `imposes_duty_on`, `assigns_responsibility_to`, `conditions`,
+and structural `contains`. `requires` and `governs` are excluded because they do not distinguish
+the legal role of the target entity.
+
+Every normalized document location is also a structural entity. Its parent-child `contains` link
+is deterministic and directed from parent to child; semantic extraction limits do not restrict
+this structural hierarchy.
+
 ## Graph release
 
 One graph release belongs to one published corpus snapshot. It records its immutable manifest hash,

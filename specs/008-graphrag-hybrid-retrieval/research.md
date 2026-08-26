@@ -37,10 +37,14 @@ actually ready for every supported retrieval strategy.
 
 **Decision**: The first release projects structural document links and only the entity and
 relationship types needed by seeded connected questions: legal concept, actor, right, obligation,
-and explicit relationship.
+and an explicit directed legal vocabulary. The vocabulary distinguishes scope (`applies_to`),
+observance addressee (`must_be_observed_by`), duty (`imposes_duty_on`), responsibility
+(`assigns_responsibility_to`), definition (`defines`), grant (`grants`), protection (`protects`),
+and condition (`conditions`).
 
 **Rationale**: A small vocabulary is inspectable and fits the two-corpus POC. Every semantic
-relationship carries an evidence unit and extraction provenance.
+relationship carries an evidence unit and extraction provenance. Ambiguous `requires` and
+`governs` labels are excluded so graph paths state the legal role being represented.
 
 **Alternatives considered**:
 

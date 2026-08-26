@@ -1,0 +1,45 @@
+{
+  "dataset_id": "brazil-anti-corruption-v1",
+  "status": "draft",
+  "snapshot_date": "2026-08-25",
+  "jurisdiction": "BR-Federal",
+  "authoritative_source_language": "pt-BR",
+  "supported_query_languages": ["pt-BR", "en"],
+  "source_manifest": [
+    {
+      "id": "lac",
+      "title": "Lei nº 12.846, de 1º de agosto de 2013",
+      "authority": "Presidência da República",
+      "document_type": "law",
+      "official_url": "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2013/lei/l12846.htm"
+    },
+    {
+      "id": "penal-code",
+      "title": "Decreto-Lei nº 2.848, de 7 de dezembro de 1940 (Código Penal consolidado)",
+      "authority": "Presidência da República",
+      "document_type": "decree-law",
+      "official_url": "https://www.planalto.gov.br/ccivil_03/decreto-lei/del2848compilado.htm"
+    },
+    {
+      "id": "aml-law",
+      "title": "Lei nº 9.613, de 3 de março de 1998",
+      "authority": "Presidência da República",
+      "document_type": "law",
+      "official_url": "https://www.planalto.gov.br/ccivil_03/leis/l9613compilado.htm"
+    },
+    {
+      "id": "coaf-resolution-36",
+      "title": "Resolução Coaf nº 36, de 10 de março de 2021",
+      "authority": "Conselho de Controle de Atividades Financeiras",
+      "document_type": "resolution",
+      "official_url": "https://www.gov.br/coaf/pt-br/acesso-a-informacao/Institucional/a-atividade-de-supervisao/regulacao/supervisao/normas-1/resolucao-coaf-no-36-de-10-de-marco-de-2021"
+    },
+    {
+      "id": "cgu-leniency",
+      "title": "Acordo de Leniência",
+      "authority": "Controladoria-Geral da União",
+      "document_type": "official-guidance-page",
+      "official_url": "https://www.gov.br/cgu/pt-br/assuntos/integridade-privada/acordo-leniencia/acordo-de-leniencia"
+    }
+  ]
+}

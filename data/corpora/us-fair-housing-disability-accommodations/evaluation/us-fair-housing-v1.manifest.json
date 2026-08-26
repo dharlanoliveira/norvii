@@ -1,0 +1,45 @@
+{
+  "dataset_id": "us-fair-housing-v1",
+  "status": "draft",
+  "snapshot_date": "2026-08-25",
+  "jurisdiction": "US-Federal",
+  "authoritative_source_language": "en",
+  "supported_query_languages": ["en", "pt-BR"],
+  "source_manifest": [
+    {
+      "id": "fair-housing-act-3604",
+      "title": "42 U.S.C. § 3604: Discrimination in the sale or rental of housing and other prohibited practices",
+      "authority": "Office of the Law Revision Counsel, U.S. House of Representatives",
+      "document_type": "statute",
+      "official_url": "https://uscode.house.gov/view.xhtml?req=%28title%3A42+section%3A3604+edition%3Aprelim%29"
+    },
+    {
+      "id": "hud-assistance-animals",
+      "title": "Assistance Animals",
+      "authority": "U.S. Department of Housing and Urban Development",
+      "document_type": "official-guidance-page",
+      "official_url": "https://www.hud.gov/helping-americans/assistance-animals"
+    },
+    {
+      "id": "hud-doj-reasonable-accommodations",
+      "title": "Joint Statement of HUD and DOJ: Reasonable Accommodations under the Fair Housing Act",
+      "authority": "U.S. Department of Housing and Urban Development and U.S. Department of Justice",
+      "document_type": "guidance-pdf",
+      "official_url": "https://www.justice.gov/sites/default/files/crt/legacy/2010/12/14/joint_statement_ra.pdf"
+    },
+    {
+      "id": "hud-report-discrimination",
+      "title": "Report Housing Discrimination",
+      "authority": "U.S. Department of Housing and Urban Development",
+      "document_type": "official-procedure-page",
+      "official_url": "https://www.hud.gov/fairhousing/fileacomplaint"
+    },
+    {
+      "id": "ecfr-24-100-204",
+      "title": "24 CFR § 100.204: Reasonable accommodations",
+      "authority": "U.S. Department of Housing and Urban Development",
+      "document_type": "current-regulation-web-edition",
+      "official_url": "https://www.ecfr.gov/current/title-24/subtitle-B/chapter-I/part-100/subpart-D/section-100.204"
+    }
+  ]
+}

@@ -30,7 +30,7 @@ flowchart LR
     I --> D
 
     X --> D
-    X --> M[MCP tools and skills later]
+    X --> M[Read-only MCP research tools]
 ```
 
 Detailed ownership lives in the module models:
@@ -48,7 +48,7 @@ The [repository structure](repository-structure.md) defines source roots and dep
 
 The React client has no direct database access. The Go API validates public requests and proxies an internal SSE contract to the Python agent. The agent owns online retrieval, model calls, grounding validation, and abstention. Python ingestion publishes canonical artifacts to PostgreSQL and later updates the graph projection through an idempotent, checkpointed operation.
 
-PostgreSQL owns corpora, sources, source revisions, PDF binaries, URL origins, complete normalized document versions, hierarchical document units, retrieval fragments, embeddings, semantic extractions, evidence spans, and ingestion state. Neo4j stores versioned nodes and relationships that reference those canonical identifiers and evidence locations.
+PostgreSQL owns corpora, sources, source revisions, PDF binaries, URL origins, complete normalized document versions, hierarchical document units, retrieval fragments, embeddings, semantic extractions, evidence spans, normative assertions, and ingestion state. Neo4j stores a rebuildable, versioned projection that references those canonical identifiers and evidence locations.
 
 ```mermaid
 flowchart LR
@@ -59,9 +59,11 @@ flowchart LR
     F --> E[Embeddings]
 
     R --> X[Extraction run]
-    X --> K[Statements, entities, and events]
-    K --> P[Evidence spans]
-    P --> U
+    X --> E[Atomic legal entities]
+    X --> A[Normative assertions]
+    E --> A
+    U --> A
+    A --> P[Evidence locations]
 ```
 
 Graph publication does not use a distributed transaction. PostgreSQL becomes authoritative first; the graph projection may lag temporarily and can be retried or rebuilt from canonical records.
@@ -77,10 +79,10 @@ The ingestion pipeline runs outside the chat request path. The online agent is a
 5. Normalize headings, notes, articles, and references.
 6. Split text along legal units instead of fixed size alone.
 7. Generate embeddings when vector retrieval is enabled.
-8. Extract evidence-backed statements, allegations, timeline events, entities, and relationships when GraphRAG is enabled.
+8. Extract atomic legal entities and evidence-backed normative assertions when GraphRAG is enabled.
 9. Validate document hierarchy, evidence spans, counts, references, and representative text samples.
 10. Atomically publish canonical PostgreSQL artifacts and mark the source `ready`, or record a classified error and mark it `failed`.
-11. Project eligible artifacts into Neo4j and checkpoint publication so retries do not create duplicate active nodes or relationships.
+11. Project legal-unit hierarchy, entities, and normative assertions into Neo4j and checkpoint publication so retries do not create duplicate active graph data.
 
 The dispatch mechanism remains an [open decision](../decisions/backlog.md).
 
@@ -95,10 +97,10 @@ The dispatch mechanism remains an [open decision](../decisions/backlog.md).
 
 ### GraphRAG
 
-- Identify question entities.
-- Traverse relations between provisions, concepts, actors, and obligations.
-- Retrieve source passages attached to the relevant graph path.
-- Synthesize from the evidence-backed subgraph.
+- Identify relevant legal entities and an optional published legal-unit scope.
+- Retrieve evidence-backed assertions through the unit hierarchy without copying child assertions to ancestors.
+- Return the assertion predicate, atomic endpoints, exact establishing and evidence locations, and minimal hierarchy context.
+- Synthesize only from the evidence-backed subgraph.
 
 ### Hybrid retrieval
 
@@ -106,21 +108,26 @@ The dispatch mechanism remains an [open decision](../decisions/backlog.md).
 - Expand through the graph for references, exceptions, and related documents.
 - Rank combined evidence before constructing model context.
 
-## Initial legal graph
+## Normative assertion graph
 
-Start with the smallest schema justified by evaluation questions.
+The legal hierarchy and the semantic graph are distinct. PostgreSQL `document_units` is the
+canonical hierarchy; Neo4j projects its directed parent-child links separately from legal meaning.
+Each published legal assertion is a first-class node with one allowlisted predicate, atomic subject
+and object entities, an exact establishing unit, an exact evidence unit, and an optional qualifier.
 
-Node candidates:
+```mermaid
+flowchart LR
+    U1[Legal unit] -->|CONTAINS| U2[Legal unit]
+    U2 -->|ESTABLISHES| A[Normative assertion]
+    A -->|SUBJECT| S[Legal entity]
+    A -->|OBJECT| O[Legal entity]
+```
 
-- `Corpus`, `Document`, `Article`, `Section`, and `Recital`;
-- `LegalConcept`, `Actor`, `Right`, `Obligation`, `Authority`, `Sanction`, and `Deadline`.
-
-Relation candidates:
-
-- `CONTAINS`, `DEFINES`, `REFERS_TO`, `AMENDS`, and `REGULATED_BY`;
-- `GRANTS_RIGHT_TO`, `IMPOSES_OBLIGATION_ON`, `EXCEPTION_TO`, `ENFORCED_BY`, `HAS_DEADLINE`, and `INTERPRETS`.
-
-Add a node or relation type only when an evaluation question requires it.
+The current predicate vocabulary is `defines`, `applies_to`, `must_be_observed_by`,
+`imposes_duty_on`, `grants`, `protects`, `assigns_responsibility_to`, and `conditions`. It is stored
+as a validated property of the assertion rather than as a dynamic Neo4j edge type. This preserves
+the exact source of a statement and lets a chapter-scoped query descend to matching provisions
+without representing the chapter as the statement's author.
 
 ## Durable architecture decisions
 

@@ -13,8 +13,19 @@ from norvii_agent.providers.chat import ProviderUnavailableError
 from norvii_agent.retrieval.planning import GraphCapabilityCatalog, GraphRetrievalPlan
 
 _MAX_ENTITY_LABELS = 8
-_MAX_RELATIONSHIP_TYPES = 8
+_MAX_PREDICATES = 8
+_MAX_SCOPE_LOCATOR_LENGTH = 160
 _MAX_TERM_LENGTH = 80
+_DECISION_REASONS = frozenset({"relationship_required", "direct_evidence_sufficient", "uncertain"})
+_PLANNING_POLICY = (
+    "Vector retrieval has already searched for direct supporting passages. "
+    "Set use_graph to false when the question can be answered by locating, explaining, "
+    "or summarizing a provision directly. Set use_graph to true only when answering well "
+    "requires a relationship between entities, such as an authority's responsibility, "
+    "a right's holder, an obligation's subject, an application condition, or a connection "
+    "between named legal concepts. If a relationship is not necessary or the decision is "
+    "uncertain, prefer false."
+)
 
 
 @dataclass(slots=True)
@@ -47,11 +58,19 @@ class OpenAICompatibleGraphPlanner:
                         "content": (
                             "Decide whether graph relationships can add grounded evidence to a "
                             "legal research question. Return JSON only with use_graph (boolean), "
-                            "relationship_types (array), and entity_labels (array). "
-                            "Use only relationship types and entity labels in the catalog. "
-                            "Use graph only when relationships or entities can materially help; "
-                            "otherwise return false and empty arrays. Entity labels are canonical "
-                            "graph values and can be in a different language than the question. "
+                            "decision_reason (one of relationship_required, "
+                            "direct_evidence_sufficient, or uncertain), predicates "
+                            "(array), entity_labels (array), and scope_locator (string or null). "
+                            "Use only catalog predicates, entity labels, and scope locators. "
+                            "Predicate capabilities define the only valid predicate "
+                            "and entity-label combinations. "
+                            f"{_PLANNING_POLICY} "
+                            "Use relationship_required only when use_graph is true. When "
+                            "use_graph is false, use direct_evidence_sufficient or uncertain and "
+                            "return empty arrays and null scope_locator. Select scope_locator only "
+                            "when the question explicitly restricts a legal location. "
+                            "Entity labels are canonical graph values and can be in a different "
+                            "language than the question. "
                             "Never write Cypher, "
                             "never infer schema, and never answer the question."
                         ),
@@ -63,8 +82,16 @@ class OpenAICompatibleGraphPlanner:
                                 "question": question,
                                 "graph_capabilities": {
                                     "entity_types": catalog.entity_types,
-                                    "relationship_types": catalog.relationship_types,
+                                    "predicates": catalog.predicates,
                                     "entity_labels": catalog.entity_labels,
+                                    "predicate_capabilities": [
+                                        {
+                                            "predicate": capability.predicate,
+                                            "entity_labels": capability.entity_labels,
+                                        }
+                                        for capability in catalog.predicate_capabilities
+                                    ],
+                                    "scope_locators": catalog.scope_locators,
                                 },
                             }
                         ),
@@ -115,27 +142,74 @@ def _plan(payload: dict[str, object], catalog: GraphCapabilityCatalog) -> GraphR
     use_graph = decision.get("use_graph")
     if not isinstance(use_graph, bool):
         raise ProviderUnavailableError("graph planner use_graph is invalid")
+    decision_reason = _decision_reason(decision.get("decision_reason"), use_graph=use_graph)
     if not use_graph:
-        return GraphRetrievalPlan(use_graph=False)
-    allowed = set(catalog.relationship_types)
-    relationship_types = tuple(
+        return GraphRetrievalPlan(use_graph=False, decision_reason=decision_reason)
+    if decision_reason != "relationship_required":
+        return GraphRetrievalPlan(use_graph=False, decision_reason="uncertain")
+    labels_by_predicate = {
+        capability.predicate: set(capability.entity_labels)
+        for capability in catalog.predicate_capabilities
+    }
+    predicates = tuple(
         item
-        for item in _bounded_strings(decision.get("relationship_types"), _MAX_RELATIONSHIP_TYPES)
-        if item in allowed
+        for item in _bounded_strings(decision.get("predicates"), _MAX_PREDICATES)
+        if item in labels_by_predicate
     )
-    allowed_labels = set(catalog.entity_labels)
-    entity_labels = tuple(
-        item
-        for item in _bounded_strings(decision.get("entity_labels"), _MAX_ENTITY_LABELS)
-        if item in allowed_labels
+    predicates, entity_labels = _supported_plan_filters(
+        predicates,
+        _bounded_strings(decision.get("entity_labels"), _MAX_ENTITY_LABELS),
+        labels_by_predicate,
     )
-    if not relationship_types or not entity_labels:
-        return GraphRetrievalPlan(use_graph=False)
+    scope_locator = _scope_locator(decision.get("scope_locator"), catalog.scope_locators)
+    if not predicates or not entity_labels:
+        return GraphRetrievalPlan(use_graph=False, decision_reason="uncertain")
     return GraphRetrievalPlan(
         use_graph=True,
-        relationship_types=relationship_types,
+        decision_reason=decision_reason,
+        predicates=predicates,
         entity_labels=entity_labels,
+        scope_locator=scope_locator,
     )
+
+
+def _supported_plan_filters(
+    predicates: tuple[str, ...],
+    entity_labels: tuple[str, ...],
+    labels_by_predicate: dict[str, set[str]],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Keep only filters that can match a published normative assertion."""
+    if not predicates:
+        return (), ()
+    supported_labels = set().union(*(labels_by_predicate[predicate] for predicate in predicates))
+    selected_labels = tuple(label for label in entity_labels if label in supported_labels)
+    selected_predicates = tuple(
+        predicate
+        for predicate in predicates
+        if any(label in labels_by_predicate[predicate] for label in selected_labels)
+    )
+    return selected_predicates, selected_labels
+
+
+def _scope_locator(value: object, available_locators: tuple[str, ...]) -> str | None:
+    """Accept one published hierarchy scope and reject model-invented locations."""
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if not normalized or len(normalized) > _MAX_SCOPE_LOCATOR_LENGTH:
+        return None
+    return normalized if normalized in available_locators else None
+
+
+def _decision_reason(value: object, *, use_graph: bool) -> str:
+    """Normalize an unsafe or incomplete provider explanation to the safe decision."""
+    if not isinstance(value, str) or value not in _DECISION_REASONS:
+        return "uncertain"
+    if use_graph and value != "relationship_required":
+        return "uncertain"
+    if not use_graph and value == "relationship_required":
+        return "uncertain"
+    return value
 
 
 def _bounded_strings(value: object, limit: int) -> tuple[str, ...]:

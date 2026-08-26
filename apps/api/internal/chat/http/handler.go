@@ -190,20 +190,24 @@ func evidenceResponses(evidence []chatdomain.Evidence) []evidenceResponse {
 }
 
 type inspectionEventResponse struct {
-	Outcome      string                   `json:"outcome"`
-	Retrieval    *retrievalResponse       `json:"retrieval,omitempty"`
-	Measurements measurementResponse      `json:"measurements"`
-	Evidence     []evidenceResponse       `json:"evidence,omitempty"`
-	GraphPath    []graphPathResponse      `json:"graphPath,omitempty"`
-	Stages       []retrievalStageResponse `json:"stages,omitempty"`
+	Outcome       string                   `json:"outcome"`
+	Retrieval     *retrievalResponse       `json:"retrieval,omitempty"`
+	Measurements  measurementResponse      `json:"measurements"`
+	Evidence      []evidenceResponse       `json:"evidence,omitempty"`
+	AssertionPath []assertionPathResponse  `json:"assertionPath,omitempty"`
+	ScopeLocator  *string                  `json:"scopeLocator"`
+	Stages        []retrievalStageResponse `json:"stages,omitempty"`
 }
 
-type graphPathResponse struct {
-	RelationshipType string `json:"relationshipType"`
-	SubjectLabel     string `json:"subjectLabel"`
-	ObjectLabel      string `json:"objectLabel"`
-	EvidenceID       string `json:"evidenceId"`
-	EvidenceLocator  string `json:"evidenceLocator"`
+type assertionPathResponse struct {
+	AssertionID         string   `json:"assertionId"`
+	Predicate           string   `json:"predicate"`
+	SubjectLabel        string   `json:"subjectLabel"`
+	ObjectLabel         string   `json:"objectLabel"`
+	EstablishingLocator string   `json:"establishingLocator"`
+	EvidenceLocator     string   `json:"evidenceLocator"`
+	HierarchyContext    []string `json:"hierarchyContext"`
+	Qualifier           *string  `json:"qualifier"`
 }
 
 type retrievalStageResponse struct {
@@ -257,20 +261,24 @@ func inspectionResponse(inspection *chatdomain.Inspection, evidence []chatdomain
 	if outcome == "completed" {
 		response.Evidence = evidenceResponses(inspectionCopy.Evidence)
 	}
-	response.GraphPath = graphPathResponses(inspectionCopy.GraphPath)
+	response.AssertionPath = assertionPathResponses(inspectionCopy.AssertionPath)
+	response.ScopeLocator = inspectionCopy.ScopeLocator
 	response.Stages = stageResponses(inspectionCopy.Stages)
 	return response
 }
 
-func graphPathResponses(steps []chatdomain.GraphPathStep) []graphPathResponse {
-	responses := make([]graphPathResponse, 0, len(steps))
+func assertionPathResponses(steps []chatdomain.AssertionPathStep) []assertionPathResponse {
+	responses := make([]assertionPathResponse, 0, len(steps))
 	for _, step := range steps {
-		responses = append(responses, graphPathResponse{
-			RelationshipType: step.RelationshipType,
-			SubjectLabel:     step.SubjectLabel,
-			ObjectLabel:      step.ObjectLabel,
-			EvidenceID:       step.EvidenceID,
-			EvidenceLocator:  step.EvidenceLocator,
+		responses = append(responses, assertionPathResponse{
+			AssertionID:         step.AssertionID,
+			Predicate:           step.Predicate,
+			SubjectLabel:        step.SubjectLabel,
+			ObjectLabel:         step.ObjectLabel,
+			EstablishingLocator: step.EstablishingLocator,
+			EvidenceLocator:     step.EvidenceLocator,
+			HierarchyContext:    step.HierarchyContext,
+			Qualifier:           step.Qualifier,
 		})
 	}
 	return responses

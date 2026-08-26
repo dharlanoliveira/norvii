@@ -42,3 +42,4 @@ coverage.out
 # Local build and runtime state
 .cache/
 tmp/
+.impeccable/critique/

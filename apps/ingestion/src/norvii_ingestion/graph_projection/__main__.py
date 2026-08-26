@@ -43,7 +43,8 @@ def main() -> int:
     state = "reused" if summary.reused else "built"
     print(
         f"Graph release {state}: {summary.release_id} "
-        f"({summary.entity_count} entities, {summary.relationship_count} relationships)."
+        f"({summary.legal_unit_count} legal units, {summary.entity_count} entities, "
+        f"{summary.assertion_count} assertions)."
     )
     return 0
 

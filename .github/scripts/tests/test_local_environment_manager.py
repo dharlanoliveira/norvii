@@ -46,6 +46,7 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
                 self.assertIn("API is running", status_result.stdout)
                 self.assertIn("Agent is running", status_result.stdout)
                 self.assertIn("Ingestion is running", status_result.stdout)
+                self.assertIn("MCP is running", status_result.stdout)
 
                 pid_files = sorted((root / ".log").glob("*.pid"))
                 initial_identities = [path.read_text() for path in pid_files]
@@ -79,6 +80,10 @@ class LocalEnvironmentManagerTest(unittest.TestCase):
                     "postgres container log", (logs / "postgres.log").read_text()
                 )
                 self.assertIn("neo4j container log", (logs / "neo4j.log").read_text())
+                self.assertIn("mcp container log", (logs / "mcp.log").read_text())
+                self.assertIn(
+                    "persistence-mcp-up", (logs / "mcp.log").read_text()
+                )
                 self.assertEqual(
                     1,
                     (root / "command-trace.log")

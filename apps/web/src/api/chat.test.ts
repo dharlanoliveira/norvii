@@ -232,7 +232,7 @@ describe("HTTP grounded chat provider", () => {
     ).toThrow("retrieval duration must not be negative");
   });
 
-  it("validates graph-backed evidence and graph path provenance", () => {
+  it("validates graph-backed evidence and normative assertion provenance", () => {
     const event = parseChatEvent({
       type: "completed",
       requestId: "request-1",
@@ -265,29 +265,75 @@ describe("HTTP grounded chat provider", () => {
           inputTokens: 4,
           outputTokens: 6,
         },
-        graphPath: [
+        assertionPath: [
           {
-            relationshipType: "requires",
+            assertionId: "assertion-1",
+            predicate: "imposes_duty_on",
             subjectLabel: "data protection authority",
             objectLabel: "issue guidance",
-            evidenceId: "reference-1",
+            establishingLocator: "article-55",
             evidenceLocator: "article-55",
+            hierarchyContext: ["chapter-9", "article-55"],
+            qualifier: null,
           },
         ],
+        scopeLocator: "chapter-9",
       },
     });
 
     if (event.type !== "completed")
       throw new Error("Expected completion event.");
     expect(event.references[0]?.contribution).toBe("vector_and_graph");
-    expect(event.inspection?.graphPath).toEqual([
+    expect(event.inspection?.assertionPath).toEqual([
       {
-        relationshipType: "requires",
+        assertionId: "assertion-1",
+        predicate: "imposes_duty_on",
         subjectLabel: "data protection authority",
         objectLabel: "issue guidance",
-        evidenceId: "reference-1",
+        establishingLocator: "article-55",
         evidenceLocator: "article-55",
+        hierarchyContext: ["chapter-9", "article-55"],
+        qualifier: null,
       },
     ]);
+    expect(event.inspection?.scopeLocator).toBe("chapter-9");
+  });
+
+  it("rejects an assertion predicate outside the normative vocabulary", () => {
+    expect(() =>
+      parseChatEvent({
+        type: "completed",
+        requestId: "request-1",
+        answer: "Answer [1].",
+        references: [],
+        telemetry: {
+          outcome: "completed",
+          evidenceCount: 0,
+          durationMilliseconds: 1,
+        },
+        inspection: {
+          outcome: "completed",
+          measurements: {
+            retrievalMilliseconds: null,
+            generationMilliseconds: null,
+            totalMilliseconds: null,
+            inputTokens: null,
+            outputTokens: null,
+          },
+          assertionPath: [
+            {
+              assertionId: "assertion-1",
+              predicate: "requires",
+              subjectLabel: "Authority",
+              objectLabel: "Controller",
+              establishingLocator: "article-1",
+              evidenceLocator: "article-1",
+              hierarchyContext: ["article-1"],
+              qualifier: null,
+            },
+          ],
+        },
+      }),
+    ).toThrow("Normative assertion predicate is invalid.");
   });
 });

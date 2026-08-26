@@ -24,6 +24,7 @@ authority and contains no complete document content.
 | `entity_types` | Allowlisted graph entity types, bounded to 32 descriptors total. |
 | `relationship_types` | Allowlisted relationship types that a graph query may request. |
 | `entity_labels` | Published canonical entity labels, bounded to 128 values and used only for validated graph filters. |
+| `relationship_capabilities` | Published relationship-type to canonical-entity-label combinations. A plan may use only a combination in this catalog. |
 
 ## Hybrid Retrieval Plan
 
@@ -33,8 +34,8 @@ An ephemeral, validated planner result. It does not contain query text.
 | --- | --- |
 | `state` | `used`, `skipped`, `unavailable`, `no_evidence`, or `failed`. |
 | `reason_code` | Safe bounded reason; required outside `used`. |
-| `relationship_types` | Subset of the capability catalog; empty when skipped. |
-| `entity_labels` | Canonical labels selected only from the active capability catalog; no more than 8. They may differ from the question language. |
+| `relationship_types` | Subset of the capability catalog with at least one selected compatible entity label; empty when skipped. |
+| `entity_labels` | Canonical labels selected only from a matching published relationship capability; no more than 8. They may differ from the question language. |
 | `planning_milliseconds` | Non-negative duration. |
 | `input_tokens` / `output_tokens` | Provider-reported counts or null. |
 

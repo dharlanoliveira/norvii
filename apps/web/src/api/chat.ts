@@ -37,7 +37,8 @@ export interface ChatInspection {
     readonly outputTokens: number | null;
   };
   readonly evidence?: readonly ChatReference[] | undefined;
-  readonly graphPath?: readonly GraphPathStep[] | undefined;
+  readonly assertionPath?: readonly AssertionPathStep[] | undefined;
+  readonly scopeLocator?: string | null | undefined;
   readonly stages?: readonly RetrievalStage[] | undefined;
 }
 
@@ -54,13 +55,26 @@ export interface RetrievalStage {
   readonly outputTokens: number | null;
 }
 
-export interface GraphPathStep {
-  readonly relationshipType: string;
+export interface AssertionPathStep {
+  readonly assertionId: string;
+  readonly predicate: NormativePredicate;
   readonly subjectLabel: string;
   readonly objectLabel: string;
-  readonly evidenceId: string;
+  readonly establishingLocator: string;
   readonly evidenceLocator: string;
+  readonly hierarchyContext: readonly string[];
+  readonly qualifier: string | null;
 }
+
+export type NormativePredicate =
+  | "defines"
+  | "applies_to"
+  | "must_be_observed_by"
+  | "imposes_duty_on"
+  | "grants"
+  | "protects"
+  | "assigns_responsibility_to"
+  | "conditions";
 
 export type ChatStreamEvent =
   | {
@@ -336,10 +350,14 @@ function inspectionValue(value: unknown): ChatInspection | undefined {
       value.evidence === undefined
         ? undefined
         : referencesValue(value.evidence),
-    graphPath:
-      value.graphPath === undefined
+    assertionPath:
+      value.assertionPath === undefined
         ? undefined
-        : graphPathValue(value.graphPath),
+        : assertionPathValue(value.assertionPath),
+    scopeLocator:
+      value.scopeLocator === undefined
+        ? undefined
+        : nullableStringValue(value.scopeLocator, "assertion scope locator"),
     stages: value.stages === undefined ? undefined : stagesValue(value.stages),
   };
 }
@@ -365,26 +383,35 @@ function retrievalValue(value: unknown): ChatInspection["retrieval"] {
   };
 }
 
-function graphPathValue(value: unknown): readonly GraphPathStep[] {
+function assertionPathValue(value: unknown): readonly AssertionPathStep[] {
   if (!Array.isArray(value))
-    throw new TypeError("Chat graph path must be an array.");
+    throw new TypeError("Chat assertion path must be an array.");
   return value.map((item) => {
     if (!isRecord(item))
-      throw new TypeError("Chat graph path entry must be an object.");
+      throw new TypeError("Chat assertion path entry must be an object.");
     return {
-      relationshipType: stringValue(
-        item.relationshipType,
-        "graph relationship type",
-      ),
+      assertionId: stringValue(item.assertionId, "normative assertion ID"),
+      predicate: normativePredicateValue(item.predicate),
       subjectLabel: stringValue(
         item.subjectLabel,
-        "graph relationship subject",
+        "normative assertion subject",
       ),
-      objectLabel: stringValue(item.objectLabel, "graph relationship object"),
-      evidenceId: stringValue(item.evidenceId, "graph evidence ID"),
+      objectLabel: stringValue(item.objectLabel, "normative assertion object"),
+      establishingLocator: stringValue(
+        item.establishingLocator,
+        "normative assertion establishing locator",
+      ),
       evidenceLocator: stringValue(
         item.evidenceLocator,
-        "graph evidence locator",
+        "normative assertion evidence locator",
+      ),
+      hierarchyContext: stringArrayValue(
+        item.hierarchyContext,
+        "normative assertion hierarchy context",
+      ),
+      qualifier: nullableStringValue(
+        item.qualifier,
+        "normative assertion qualifier",
       ),
     };
   });
@@ -392,6 +419,30 @@ function graphPathValue(value: unknown): readonly GraphPathStep[] {
 
 function isRetrievalStrategy(value: unknown): value is RetrievalStrategy {
   return value === "vector" || value === "hybrid";
+}
+
+function normativePredicateValue(value: unknown): NormativePredicate {
+  const predicate = stringValue(value, "normative assertion predicate");
+  if (!isNormativePredicate(predicate)) {
+    throw new TypeError("Normative assertion predicate is invalid.");
+  }
+  return predicate;
+}
+
+function isNormativePredicate(value: string): value is NormativePredicate {
+  switch (value) {
+    case "defines":
+    case "applies_to":
+    case "must_be_observed_by":
+    case "imposes_duty_on":
+    case "grants":
+    case "protects":
+    case "assigns_responsibility_to":
+    case "conditions":
+      return true;
+    default:
+      return false;
+  }
 }
 
 function stagesValue(value: unknown): readonly RetrievalStage[] {
@@ -545,4 +596,9 @@ function optionalStringValue(
 function nullableStringValue(value: unknown, label: string): string | null {
   if (value === null) return null;
   return stringValue(value, label);
+}
+
+function stringArrayValue(value: unknown, label: string): readonly string[] {
+  if (!Array.isArray(value)) throw new TypeError(`${label} must be an array.`);
+  return value.map((item) => stringValue(item, label));
 }

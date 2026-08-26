@@ -123,6 +123,14 @@ and measurements distinct.
 - **FR-006**: The initial graph vocabulary MUST remain limited to document structure plus the
   legal concepts, actors, rights, obligations, and evidence-backed relationships required by the
   seeded evaluation questions. It MUST not treat an extracted relationship as an official fact.
+- **FR-006a**: Semantic relationship types MUST distinguish a norm's scope (`applies_to`),
+  addressee of an observance requirement (`must_be_observed_by`), imposed duty
+  (`imposes_duty_on`), assigned responsibility (`assigns_responsibility_to`), legal definition
+  (`defines`), grant (`grants`), protection (`protects`), and condition (`conditions`). The
+  vocabulary MUST NOT use ambiguous `requires` or `governs` relationship types.
+- **FR-006b**: Every normalized document location and parent-child containment link MUST be
+  projected deterministically into a future graph release. Semantic extraction may remain bounded;
+  it MUST NOT limit structural coverage of a document hierarchy.
 - **FR-007**: Graph retrieval MUST return the selected graph path and the evidence locations that
   support each material relationship used in an answer.
 - **FR-008**: Hybrid retrieval MUST make its vector and graph contributions separately

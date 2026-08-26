@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import replace
 from time import perf_counter
 from typing import TYPE_CHECKING, Protocol
 
 from norvii_agent.graph import (
+    AssertionPathStep,
     Evidence,
-    GraphPathStep,
     RetrievalInspection,
     RetrievalStage,
     StrategyUnavailableError,
@@ -24,11 +26,14 @@ if TYPE_CHECKING:
         GraphRetrievalPlan,
     )
 
+_LOGGER = logging.getLogger(__name__)
+
 
 class PlannedGraphRetriever(Protocol):
     """Expose only bounded graph operations needed by hybrid retrieval."""
 
-    last_graph_path: tuple[GraphPathStep, ...]
+    last_assertion_path: tuple[AssertionPathStep, ...]
+    last_scope_locator: str | None
 
     def capabilities(self, corpus_id: UUID, snapshot_id: UUID) -> GraphCapabilityCatalog | None:
         """Return graph capabilities for a ready snapshot, if any."""
@@ -51,7 +56,8 @@ class HybridRetriever:
         self._graph = graph
         self._planner = planner
         self.last_retrieval: RetrievalInspection | None = None
-        self.last_graph_path: tuple[GraphPathStep, ...] = ()
+        self.last_assertion_path: tuple[AssertionPathStep, ...] = ()
+        self.last_scope_locator: str | None = None
         self.last_stages: tuple[RetrievalStage, ...] = ()
 
     def search(
@@ -60,7 +66,8 @@ class HybridRetriever:
         """Return vector evidence plus any safe, planned graph contribution."""
         if strategy != "hybrid":
             raise ValueError("HybridRetriever only supports hybrid retrieval")
-        self.last_graph_path = ()
+        self.last_assertion_path = ()
+        self.last_scope_locator = None
         vector_evidence, vector_stage = self._vector_evidence(corpus_id, snapshot_id, question)
         stages: list[RetrievalStage] = [vector_stage]
         graph_evidence = self._graph_evidence(corpus_id, snapshot_id, question, stages)
@@ -143,6 +150,19 @@ class HybridRetriever:
                 plan.output_tokens,
             )
         )
+        _LOGGER.info(
+            "Validated graph planning response: %s",
+            json.dumps(
+                {
+                    "use_graph": plan.use_graph,
+                    "decision_reason": plan.decision_reason,
+                    "predicates": list(plan.predicates),
+                    "entity_labels": list(plan.entity_labels),
+                    "scope_locator": plan.scope_locator,
+                },
+                sort_keys=True,
+            ),
+        )
         if not plan.use_graph:
             stages.append(RetrievalStage("graph", "skipped", 0, None, "not_relevant"))
             return ()
@@ -159,13 +179,15 @@ class HybridRetriever:
                 )
             )
             return ()
-        self.last_graph_path = tuple(getattr(self._graph, "last_graph_path", ()))
+        self.last_assertion_path = tuple(getattr(self._graph, "last_assertion_path", ()))
+        self.last_scope_locator = getattr(self._graph, "last_scope_locator", None)
         stages.append(
             RetrievalStage(
                 "graph",
                 "completed" if evidence else "no_evidence",
                 len(evidence),
                 _elapsed_milliseconds(started),
+                None if evidence else "no_assertion_evidence",
             )
         )
         return evidence
@@ -177,7 +199,8 @@ class StrategyRetriever:
     def __init__(self, vector: RetrievalPort, hybrid: RetrievalPort) -> None:
         self._strategies = {"vector": vector, "hybrid": hybrid}
         self.last_retrieval: RetrievalInspection | None = None
-        self.last_graph_path: tuple[GraphPathStep, ...] = ()
+        self.last_assertion_path: tuple[AssertionPathStep, ...] = ()
+        self.last_scope_locator: str | None = None
         self.last_stages: tuple[RetrievalStage, ...] = ()
 
     def search(
@@ -189,7 +212,8 @@ class StrategyRetriever:
             raise ValueError("retrieval strategy is unsupported")
         evidence = tuple(selected.search(corpus_id, snapshot_id, question, strategy))
         self.last_retrieval = getattr(selected, "last_retrieval", None)
-        self.last_graph_path = tuple(getattr(selected, "last_graph_path", ()))
+        self.last_assertion_path = tuple(getattr(selected, "last_assertion_path", ()))
+        self.last_scope_locator = getattr(selected, "last_scope_locator", None)
         stages = tuple(getattr(selected, "last_stages", ()))
         self.last_stages = stages or (
             RetrievalStage(

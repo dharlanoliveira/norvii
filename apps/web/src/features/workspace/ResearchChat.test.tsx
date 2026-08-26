@@ -183,12 +183,87 @@ describe("research chat", () => {
 
     await user.click(
       screen.getByRole("button", {
-        name: "What is the purpose of this document?",
+        name: "How are data processing agents related to the controller and operator in the LGPD?",
       }),
     );
 
     expect(await screen.findByText("Completed.")).toBeVisible();
-    expect(questions).toEqual(["What is the purpose of this document?"]);
+    expect(questions).toEqual([
+      "How are data processing agents related to the controller and operator in the LGPD?",
+    ]);
+  });
+
+  it("starts a new chat by clearing the conversation and composer draft", async () => {
+    const provider: ChatProvider = {
+      streamQuestion: (
+        _corpus,
+        _question,
+        _language,
+        _strategy,
+        _signal,
+        onEvent,
+      ) => {
+        onEvent({
+          type: "completed",
+          requestId: "request-new-chat",
+          answer: "Completed.",
+          references: [],
+          telemetry: {
+            outcome: "completed",
+            evidenceCount: 0,
+            durationMilliseconds: 1,
+          },
+        });
+        return Promise.resolve();
+      },
+    };
+    const user = userEvent.setup();
+    renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
+
+    const input = screen.getByRole("textbox", { name: "Research question" });
+    await user.type(input, "What applies?");
+    await user.keyboard("{Enter}");
+    expect(await screen.findByText("Completed.")).toBeVisible();
+
+    await user.type(input, "Draft for the next chat");
+    await user.click(screen.getByRole("button", { name: "New chat" }));
+
+    expect(screen.getByText("Ask about this corpus.")).toBeVisible();
+    expect(screen.queryByText("Completed.")).not.toBeInTheDocument();
+    expect(input).toHaveValue("");
+    expect(
+      screen.queryByRole("button", { name: "New chat" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("starts a new chat by cancelling an active response", async () => {
+    let requestWasAborted = false;
+    const provider: ChatProvider = {
+      streamQuestion: (_corpus, _question, _language, _strategy, signal) =>
+        new Promise<void>((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              requestWasAborted = true;
+              resolve();
+            },
+            { once: true },
+          );
+        }),
+    };
+    const user = userEvent.setup();
+    renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Research question" }),
+      "What applies?",
+    );
+    await user.keyboard("{Enter}");
+    await user.click(await screen.findByRole("button", { name: "New chat" }));
+
+    expect(requestWasAborted).toBe(true);
+    expect(screen.getByText("Ask about this corpus.")).toBeVisible();
+    expect(screen.queryByText("Response cancelled.")).not.toBeInTheDocument();
   });
 
   it("offers graph-oriented starter questions for the demonstration", async () => {
@@ -220,23 +295,23 @@ describe("research chat", () => {
     const user = userEvent.setup();
     renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
 
-    const authorityReportsQuestion = await screen.findByRole("button", {
-      name: "Which reports does the national data protection authority require?",
+    const processingAgentsQuestion = await screen.findByRole("button", {
+      name: "How are data processing agents related to the controller and operator in the LGPD?",
     });
-    expect(authorityReportsQuestion).toBeVisible();
+    expect(processingAgentsQuestion).toBeVisible();
     expect(
       screen.getByRole("button", {
-        name: "What does this document require the data protection authority to do?",
+        name: "Which data processing operations does the LGPD apply to?",
       }),
     ).toBeVisible();
 
     expect(
       screen.getByRole("button", {
-        name: "Which rights does this document grant to data subjects?",
+        name: "Which fundamental rights does the LGPD protect?",
       }),
     ).toBeVisible();
 
-    await user.click(authorityReportsQuestion);
+    await user.click(processingAgentsQuestion);
 
     expect(strategies).toEqual(["hybrid"]);
   });
@@ -523,6 +598,19 @@ describe("research chat", () => {
               },
             ],
             evidence: [reference],
+            assertionPath: [
+              {
+                assertionId: "assertion-1",
+                predicate: "imposes_duty_on",
+                subjectLabel: "Authority",
+                objectLabel: "Controller",
+                establishingLocator: "Article 1",
+                evidenceLocator: "Article 1",
+                hierarchyContext: ["Chapter I", "Article 1"],
+                qualifier: "When processing personal data",
+              },
+            ],
+            scopeLocator: "Chapter I",
           },
         });
         return Promise.resolve();
@@ -555,6 +643,18 @@ describe("research chat", () => {
     );
     expect(screen.getAllByText(/Vector evidence/)).toHaveLength(2);
     expect(screen.getAllByText("Unavailable")).toHaveLength(2);
+    expect(
+      within(
+        screen.getByRole("list", { name: "Normative assertion provenance" }),
+      ).getByRole("button", {
+        name: "Authority imposes a duty on Controller",
+      }),
+    ).toBeVisible();
+    expect(screen.getByText(/Established in Article 1/)).toBeVisible();
+    expect(screen.getByText("Context: Chapter I > Article 1")).toBeVisible();
+    expect(
+      screen.getByText("Qualifier: When processing personal data"),
+    ).toBeVisible();
     expect(screen.queryByText("Protected rights")).not.toBeInTheDocument();
     await user.click(
       within(

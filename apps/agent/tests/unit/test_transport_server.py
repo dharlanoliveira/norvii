@@ -7,6 +7,7 @@ from threading import Thread
 
 from norvii_agent.graph import (
     AnswerInspection,
+    AssertionPathStep,
     ExecutionMeasurements,
     GroundedChatRequest,
     GroundedChatResult,
@@ -82,6 +83,19 @@ def test_terminal_inspection_serializes_measurements_and_evidence_metadata() -> 
         measurements=ExecutionMeasurements(12, 34, None, 10, None),
         evidence=(),
         stages=(RetrievalStage("vector", "completed", 1, 12),),
+        assertion_path=(
+            AssertionPathStep(
+                "assertion-1",
+                "imposes_duty_on",
+                "Controller",
+                "Data protection officer",
+                "article-41",
+                "article-41-item-2",
+                ("chapter-9", "article-41"),
+                None,
+            ),
+        ),
+        scope_locator="chapter-9",
     )
 
     payload = _inspection(inspection)
@@ -101,6 +115,19 @@ def test_terminal_inspection_serializes_measurements_and_evidence_metadata() -> 
         "outputTokens": None,
     }
     assert payload["evidence"] == []
+    assert payload["assertionPath"] == [
+        {
+            "assertionId": "assertion-1",
+            "predicate": "imposes_duty_on",
+            "subjectLabel": "Controller",
+            "objectLabel": "Data protection officer",
+            "establishingLocator": "article-41",
+            "evidenceLocator": "article-41-item-2",
+            "hierarchyContext": ["chapter-9", "article-41"],
+            "qualifier": None,
+        }
+    ]
+    assert payload["scopeLocator"] == "chapter-9"
     assert payload["stages"] == [
         {
             "name": "vector",

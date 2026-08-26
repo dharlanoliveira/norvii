@@ -48,6 +48,14 @@ class StructuredEventLogger:
             "byte_count",
             "character_count",
             "unit_count",
+            "chunk_count",
+            "entity_count",
+            "assertion_count",
+            "input_token_count",
+            "output_token_count",
+            "document_id",
+            "stage",
+            "media_type",
             "error_type",
         }
     )

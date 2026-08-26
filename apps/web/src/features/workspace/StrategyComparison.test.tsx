@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   ChatProvider,
   ChatReference,
+  ChatStreamEvent,
   RetrievalStrategy,
 } from "../../api/chat";
 import { renderAtRoute } from "../../test/render";
@@ -80,7 +81,7 @@ function completingProvider(): ChatProvider {
   };
 }
 
-function completedEvent(strategy: RetrievalStrategy) {
+function completedEvent(strategy: RetrievalStrategy): ChatStreamEvent {
   const citedReference = reference(strategy);
   return {
     type: "completed" as const,
@@ -101,13 +102,16 @@ function completedEvent(strategy: RetrievalStrategy) {
         inputTokens: 4,
         outputTokens: 5,
       },
-      graphPath: [
+      assertionPath: [
         {
-          evidenceId: citedReference.id,
+          assertionId: `assertion-${strategy}`,
+          predicate: "applies_to",
           evidenceLocator: citedReference.unitLocator,
-          relationshipType: "applies_to",
+          establishingLocator: citedReference.unitLocator,
           subjectLabel: `${strategy} scope`,
           objectLabel: "Authority",
+          hierarchyContext: [citedReference.unitLocator],
+          qualifier: null,
         },
       ],
     },

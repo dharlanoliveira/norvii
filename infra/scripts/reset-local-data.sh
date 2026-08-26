@@ -5,6 +5,7 @@ set -euo pipefail
 readonly environment_file="${1:-}"
 readonly confirmation="${2:-}"
 readonly expected_confirmation="reset-norvii-data"
+readonly expected_preflight="passed"
 readonly expected_project="norvii"
 readonly postgres_volume="norvii_postgres_data"
 readonly neo4j_volume="norvii_neo4j_data"
@@ -13,6 +14,10 @@ readonly compose_file="${script_directory%/scripts}/compose.yaml"
 
 if [[ "${confirmation}" != "${expected_confirmation}" ]]; then
   echo "Reset requires explicit confirmation: ${expected_confirmation}." >&2
+  exit 1
+fi
+if [[ "${NORVII_ASSERTION_RESET_PREFLIGHT:-}" != "${expected_preflight}" ]]; then
+  echo "Reset requires the normative assertion preflight to pass." >&2
   exit 1
 fi
 if [[ -z "${environment_file}" || ! -f "${environment_file}" ]]; then

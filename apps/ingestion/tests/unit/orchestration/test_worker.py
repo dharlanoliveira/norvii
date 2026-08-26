@@ -74,7 +74,7 @@ def test_worker_polls_with_bounded_lease_and_honors_stop_signal() -> None:
 
     worker.run(stop)
 
-    assert work_source.lease_durations == [timedelta(seconds=120)]
+    assert work_source.lease_durations == [timedelta(seconds=1_800)]
     assert stop.waits == [1.0]
 
 

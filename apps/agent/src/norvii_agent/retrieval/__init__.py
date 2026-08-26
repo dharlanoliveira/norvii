@@ -2,11 +2,12 @@
 
 from .graph import GraphRetrievalUnavailableError, Neo4jGraphRetriever
 from .hybrid import HybridRetriever, StrategyRetriever
-from .planning import GraphCapabilityCatalog, GraphRetrievalPlan
+from .planning import GraphCapabilityCatalog, GraphPredicateCapability, GraphRetrievalPlan
 from .postgres import PostgresRetriever
 
 __all__ = [
     "GraphCapabilityCatalog",
+    "GraphPredicateCapability",
     "GraphRetrievalPlan",
     "GraphRetrievalUnavailableError",
     "HybridRetriever",

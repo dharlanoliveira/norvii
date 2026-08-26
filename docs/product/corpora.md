@@ -64,7 +64,7 @@ Jurisdiction: Brazil. Language: Portuguese.
 
 Proposed sources:
 
-1. [Lei Geral de Protecao de Dados Pessoais, Lei 13.709/2018](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm)
+1. [Lei Geral de Protecao de Dados Pessoais, Lei 13.709/2018](https://www2.camara.leg.br/legin/fed/lei/2018/lei-13709-14-agosto-2018-787077-normaatualizada-pl.html)
 2. [Resolucao CD/ANPD 2/2022, agentes de tratamento de pequeno porte](https://www.gov.br/anpd/pt-br/acesso-a-informacao/institucional/atos-normativos/regulamentacoes_anpd/resolucao-cd-anpd-no-2-de-27-de-janeiro-de-2022)
 3. Resolucao CD/ANPD 15/2024, comunicacao de incidente de seguranca
 4. Resolucao CD/ANPD 18/2024, atuacao do encarregado

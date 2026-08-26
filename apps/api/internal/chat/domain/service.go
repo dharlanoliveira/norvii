@@ -74,23 +74,27 @@ type RetrievalStage struct {
 	OutputTokens         *int64
 }
 
-// GraphPathStep identifies one published graph relationship and its immutable evidence location.
-type GraphPathStep struct {
-	RelationshipType string
-	SubjectLabel     string
-	ObjectLabel      string
-	EvidenceID       string
-	EvidenceLocator  string
+// AssertionPathStep identifies one published normative assertion and its legal provenance.
+type AssertionPathStep struct {
+	AssertionID         string
+	Predicate           string
+	SubjectLabel        string
+	ObjectLabel         string
+	EstablishingLocator string
+	EvidenceLocator     string
+	HierarchyContext    []string
+	Qualifier           *string
 }
 
 // Inspection is an ephemeral, safe-to-display answer diagnostic.
 type Inspection struct {
-	Outcome      string
-	Retrieval    *RetrievalInspection
-	Measurements Measurements
-	Evidence     []Evidence
-	GraphPath    []GraphPathStep
-	Stages       []RetrievalStage
+	Outcome       string
+	Retrieval     *RetrievalInspection
+	Measurements  Measurements
+	Evidence      []Evidence
+	AssertionPath []AssertionPathStep
+	ScopeLocator  *string
+	Stages        []RetrievalStage
 }
 
 // Result is the validated terminal answer and its supporting evidence.

@@ -1,7 +1,7 @@
 .PHONY: bootstrap local-start local-status local-stop persistence persistence-config \
 	persistence-health persistence-integration persistence-migrate persistence-migration-status \
 	persistence-initialize-snapshots \
-	persistence-reset persistence-stop persistence-up persistence-verify \
+	persistence-mcp-health persistence-mcp-up persistence-reset persistence-stop persistence-up persistence-verify \
 	persistence-verify-api persistence-verify-ingestion
 
 PERSISTENCE_ENV_FILE := infra/.env
@@ -34,6 +34,14 @@ persistence-up:
 	@$(PERSISTENCE_COMPOSE) up --detach --wait --wait-timeout 120
 	@$(MAKE) persistence-health
 
+persistence-mcp-up:
+	@$(MAKE) persistence-config
+	@$(PERSISTENCE_COMPOSE) --profile mcp up --detach --wait --wait-timeout 120 mcp
+	@$(MAKE) persistence-mcp-health
+
+persistence-mcp-health:
+	@$(PERSISTENCE_COMPOSE) --profile mcp ps --status running --services mcp | grep -qx mcp || { echo "MCP is not running." >&2; exit 1; }
+
 persistence-health:
 	@bash infra/scripts/inspect-health.sh $(PERSISTENCE_ENV_FILE)
 
@@ -57,10 +65,17 @@ persistence-verify-ingestion:
 	@$(PERSISTENCE_RUN) $(MAKE) -C apps/ingestion verify-persistence
 
 persistence-stop:
-	@$(PERSISTENCE_COMPOSE) down --remove-orphans
+	@$(PERSISTENCE_COMPOSE) --profile mcp down --remove-orphans
 
 persistence-reset:
-	@bash infra/scripts/reset-local-data.sh $(PERSISTENCE_ENV_FILE) "$(CONFIRM)"
+	@$(MAKE) persistence-assertion-preflight
+	@NORVII_ASSERTION_RESET_PREFLIGHT=passed bash infra/scripts/reset-local-data.sh $(PERSISTENCE_ENV_FILE) "$(CONFIRM)"
+
+persistence-assertion-preflight:
+	@$(MAKE) persistence-up
+	@$(MAKE) persistence-migrate
+	@$(MAKE) -C apps/ingestion test
+	@$(MAKE) -C apps/agent test
 
 persistence-integration:
 	@bash infra/scripts/verify-foundation.sh

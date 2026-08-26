@@ -142,18 +142,17 @@ export const englishTranslation = {
       "Ask a focused question and receive an answer grounded only in the published sources on this evidence boundary.",
     starterQuestionsLabel: "Suggested research questions",
     starterQuestions: {
-      purpose: "What is the purpose of this document?",
-      scope: "Who does this document apply to?",
-      rights: "What rights and duties does it establish?",
-      authorityReports:
-        "Which reports does the national data protection authority require?",
-      authorityRequirements:
-        "What does this document require the data protection authority to do?",
-      dataSubjectRights:
-        "Which rights does this document grant to data subjects?",
+      processingAgents:
+        "How are data processing agents related to the controller and operator in the LGPD?",
+      processingScope:
+        "Which data processing operations does the LGPD apply to?",
+      fundamentalRights: "Which fundamental rights does the LGPD protect?",
+      chapterContents: "Which articles are in Chapter I of the LGPD?",
+      publicBodies: "Which public bodies must follow the LGPD's general rules?",
     },
     placeholder: "Ask a question about the published sources...",
     questionLabel: "Research question",
+    new: "New chat",
     send: "Send question",
     stop: "Stop response",
     you: "You",
@@ -214,14 +213,21 @@ export const englishTranslation = {
       vector_and_graph: "Vector and graph evidence",
     },
     inspectionEvidence: "Supporting passages",
-    graphPath: "Graph evidence path",
-    relationships: {
+    assertionPath: "Normative assertion provenance",
+    assertionEstablished: "Established in {{locator}}",
+    assertionEvidence: "Evidence: {{locator}}",
+    assertionHierarchy: "Context: {{context}}",
+    assertionQualifier: "Qualifier: {{qualifier}}",
+    assertionSummary: "{{subject}} {{predicate}} {{object}}",
+    predicates: {
       defines: "defines",
       applies_to: "applies to",
       grants: "grants",
-      requires: "requires",
       protects: "protects",
-      governs: "governs",
+      must_be_observed_by: "must be observed by",
+      imposes_duty_on: "imposes a duty on",
+      assigns_responsibility_to: "assigns responsibility to",
+      conditions: "is conditioned by",
     },
     snapshotIdentity: "Evidence snapshot",
     outcome: "Outcome",

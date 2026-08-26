@@ -10,7 +10,7 @@ from norvii_ingestion.publication.postgres.repository import (
     _repository_error_detail,
     retrieval_chunk_id_for_document,
 )
-from norvii_ingestion.semantic import SemanticEntity, SemanticExtraction, SemanticRelationship
+from norvii_ingestion.semantic import SemanticAssertion, SemanticEntity, SemanticExtraction
 
 
 def test_retrieval_chunk_identity_is_unique_per_document_version() -> None:
@@ -41,25 +41,26 @@ def test_semantic_artifact_identity_is_unique_per_document_version() -> None:
             SemanticEntity(
                 id=first_entity_id,
                 evidence_unit_id=UUID("60000000-0000-4000-8000-000000000001"),
-                entity_type="location",
-                label="document",
-                normalized_label="document",
+                entity_type="concept",
+                label="Term",
+                normalized_label="term",
             ),
             SemanticEntity(
                 id=second_entity_id,
                 evidence_unit_id=UUID("70000000-0000-4000-8000-000000000001"),
-                entity_type="location",
-                label="Article 1",
-                normalized_label="article 1",
+                entity_type="concept",
+                label="Definition",
+                normalized_label="definition",
             ),
         ),
-        relationships=(
-            SemanticRelationship(
+        assertions=(
+            SemanticAssertion(
                 id=UUID("80000000-0000-4000-8000-000000000001"),
                 subject_entity_id=first_entity_id,
                 object_entity_id=second_entity_id,
+                establishing_unit_id=UUID("70000000-0000-4000-8000-000000000001"),
                 evidence_unit_id=UUID("70000000-0000-4000-8000-000000000001"),
-                relationship_type="contains",
+                predicate="defines",
             ),
         ),
     )
@@ -71,8 +72,8 @@ def test_semantic_artifact_identity_is_unique_per_document_version() -> None:
     assert {entity.id for entity in first.entities}.isdisjoint(
         {entity.id for entity in second.entities}
     )
-    assert first.relationships[0].subject_entity_id in {entity.id for entity in first.entities}
-    assert first.relationships[0].object_entity_id in {entity.id for entity in first.entities}
+    assert first.assertions[0].subject_entity_id in {entity.id for entity in first.entities}
+    assert first.assertions[0].object_entity_id in {entity.id for entity in first.entities}
 
 
 def test_repository_error_detail_contains_only_the_sqlstate() -> None:

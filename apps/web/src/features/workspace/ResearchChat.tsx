@@ -8,7 +8,7 @@ import {
   useAui,
   useAuiState,
 } from "@assistant-ui/react";
-import { ChevronDown, Info, Send, Square } from "lucide-react";
+import { ChevronDown, Info, Send, Square, SquarePen } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -46,6 +46,7 @@ export function ResearchChat({
   const [strategy, setStrategy] = useState<RetrievalStrategy>("hybrid");
   const {
     runtime,
+    startNewChat,
     terminalStatesByMessageId,
     referencesByMessageId,
     inspectionsByMessageId,
@@ -63,7 +64,11 @@ export function ResearchChat({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <section className="research-chat" aria-label={t("chat.regionLabel")}>
-        <StrategySelector strategy={strategy} onChange={setStrategy} />
+        <ChatToolbar
+          strategy={strategy}
+          onChangeStrategy={setStrategy}
+          onStartNewChat={startNewChat}
+        />
         <ThreadPrimitive.Root className="chat-thread">
           <ThreadPrimitive.Viewport className="chat-viewport" turnAnchor="top">
             <AuiIf condition={(state) => state.thread.isEmpty}>
@@ -99,36 +104,47 @@ export function ResearchChat({
   );
 }
 
-function StrategySelector({
+function ChatToolbar({
   strategy,
-  onChange,
+  onChangeStrategy,
+  onStartNewChat,
 }: {
   readonly strategy: RetrievalStrategy;
-  readonly onChange: (strategy: RetrievalStrategy) => void;
+  readonly onChangeStrategy: (strategy: RetrievalStrategy) => void;
+  readonly onStartNewChat: () => void;
 }) {
   const { t } = useTranslation();
+  const isEmpty = useAuiState((state) => state.thread.isEmpty);
   const strategies: readonly RetrievalStrategy[] = ["vector", "hybrid"];
 
   return (
-    <div
-      aria-label={t("chat.strategy.label")}
-      className="chat-strategy"
-      role="radiogroup"
-    >
-      <span>{t("chat.strategy.label")}</span>
-      <div className="chat-strategy__choices">
-        {strategies.map((option) => (
-          <button
-            aria-checked={strategy === option}
-            key={option}
-            role="radio"
-            type="button"
-            onClick={() => onChange(option)}
-          >
-            {t(`chat.strategy.${option}`)}
-          </button>
-        ))}
+    <div className="chat-toolbar">
+      <div
+        aria-label={t("chat.strategy.label")}
+        className="chat-strategy"
+        role="radiogroup"
+      >
+        <span>{t("chat.strategy.label")}</span>
+        <div className="chat-strategy__choices">
+          {strategies.map((option) => (
+            <button
+              aria-checked={strategy === option}
+              key={option}
+              role="radio"
+              type="button"
+              onClick={() => onChangeStrategy(option)}
+            >
+              {t(`chat.strategy.${option}`)}
+            </button>
+          ))}
+        </div>
       </div>
+      {isEmpty ? null : (
+        <button className="chat-new" type="button" onClick={onStartNewChat}>
+          <SquarePen aria-hidden="true" size={15} />
+          <span>{t("chat.new")}</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -198,12 +214,11 @@ function ChatStarterQuestions() {
   const aui = useAui();
   const isRunning = useAuiState((state) => state.thread.isRunning);
   const questions = [
-    t("chat.starterQuestions.purpose"),
-    t("chat.starterQuestions.scope"),
-    t("chat.starterQuestions.rights"),
-    t("chat.starterQuestions.authorityReports"),
-    t("chat.starterQuestions.authorityRequirements"),
-    t("chat.starterQuestions.dataSubjectRights"),
+    t("chat.starterQuestions.processingAgents"),
+    t("chat.starterQuestions.processingScope"),
+    t("chat.starterQuestions.fundamentalRights"),
+    t("chat.starterQuestions.chapterContents"),
+    t("chat.starterQuestions.publicBodies"),
   ];
 
   return (
@@ -622,18 +637,25 @@ function AnswerInspection({
             );
           })}
         </ol>
-        {inspection.graphPath?.length ? (
+        {inspection.assertionPath?.length ? (
           <ol
             className="answer-inspection__path"
-            aria-label={t("chat.graphPath")}
+            aria-label={t("chat.assertionPath")}
           >
-            {inspection.graphPath.map((step) => {
+            {inspection.assertionPath.map((step) => {
               const reference = evidence.find(
-                (candidate) => candidate.id === step.evidenceId,
+                (candidate) => candidate.unitLocator === step.evidenceLocator,
               );
+              const hierarchyContext = step.hierarchyContext.join(" > ");
+              const predicate = t(`chat.predicates.${step.predicate}`);
               return (
-                <li key={`${step.evidenceId}:${step.relationshipType}`}>
+                <li key={step.assertionId}>
                   <button
+                    aria-label={t("chat.assertionSummary", {
+                      subject: step.subjectLabel,
+                      predicate,
+                      object: step.objectLabel,
+                    })}
                     type="button"
                     disabled={reference?.documentVersionId === undefined}
                     onClick={() => {
@@ -641,12 +663,31 @@ function AnswerInspection({
                     }}
                   >
                     <strong>{step.subjectLabel}</strong>
-                    <span>
-                      {t(`chat.relationships.${step.relationshipType}`)}
-                    </span>
+                    <span>{predicate}</span>
                     <strong>{step.objectLabel}</strong>
                   </button>
-                  <small>{step.evidenceLocator}</small>
+                  <small>
+                    {t("chat.assertionEstablished", {
+                      locator: step.establishingLocator,
+                    })}
+                    {` - ${t("chat.assertionEvidence", {
+                      locator: step.evidenceLocator,
+                    })}`}
+                  </small>
+                  {hierarchyContext ? (
+                    <small>
+                      {t("chat.assertionHierarchy", {
+                        context: hierarchyContext,
+                      })}
+                    </small>
+                  ) : null}
+                  {step.qualifier ? (
+                    <small>
+                      {t("chat.assertionQualifier", {
+                        qualifier: step.qualifier,
+                      })}
+                    </small>
+                  ) : null}
                 </li>
               );
             })}

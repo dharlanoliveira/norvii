@@ -20,9 +20,9 @@ func TestHandlerStreamsGroundedEventsInOrder(t *testing.T) {
 			ID: "evidence-1", CorpusID: corpusID, SourceID: uuid.New(), DocumentID: uuid.New(),
 			UnitLocator: "article-1", StartOffset: 0, EndOffset: 20, Excerpt: "Article 1", Rank: 1,
 		}},
-		Inspection: &chatdomain.Inspection{GraphPath: []chatdomain.GraphPathStep{{
-			RelationshipType: "requires", SubjectLabel: "Authority", ObjectLabel: "Impact report",
-			EvidenceID: "evidence-1", EvidenceLocator: "article-1",
+		Inspection: &chatdomain.Inspection{AssertionPath: []chatdomain.AssertionPathStep{{
+			AssertionID: "assertion-1", Predicate: "imposes_duty_on", SubjectLabel: "Authority", ObjectLabel: "Impact report",
+			EstablishingLocator: "article-1", EvidenceLocator: "item-1", HierarchyContext: []string{"chapter-1", "article-1"},
 		}}},
 	}}
 	mux := http.NewServeMux()
@@ -51,8 +51,11 @@ func TestHandlerStreamsGroundedEventsInOrder(t *testing.T) {
 		!strings.Contains(body, `"totalMilliseconds":`) {
 		t.Fatalf("completed event must expose inspection measurements: %s", body)
 	}
-	if !strings.Contains(body, `"graphPath":[{"relationshipType":"requires"`) {
-		t.Fatalf("completed event must expose the graph path: %s", body)
+	if !strings.Contains(body, `"assertionPath":[{"assertionId":"assertion-1","predicate":"imposes_duty_on"`) {
+		t.Fatalf("completed event must expose the assertion path: %s", body)
+	}
+	if !strings.Contains(body, `"hierarchyContext":["chapter-1","article-1"]`) {
+		t.Fatalf("completed event must expose assertion hierarchy context: %s", body)
 	}
 }
 

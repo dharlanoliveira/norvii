@@ -9,12 +9,14 @@ description = "LangGraph orchestration service for Norvii grounded research"
 requires-python = ">=3.13,<3.14"
 dependencies = [
   "langgraph==1.0.5",
+  "mcp>=2,<3",
   "neo4j==6.2.0",
   "psycopg[binary]==3.3.4",
 ]
 
 [project.scripts]
 norvii-agent = "norvii_agent.transport.__main__:main"
+norvii-mcp = "norvii_agent.mcp.__main__:main"
 
 [dependency-groups]
 dev = [

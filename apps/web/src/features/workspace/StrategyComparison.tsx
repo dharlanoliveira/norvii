@@ -203,14 +203,14 @@ function StrategyComparisonItem({
           ))}
         </div>
       ) : null}
-      {result.inspection?.graphPath?.length ? (
+      {result.inspection?.assertionPath?.length ? (
         <ol className="strategy-comparison__path">
-          {result.inspection.graphPath.map((step) => {
+          {result.inspection.assertionPath.map((step) => {
             const evidence = result.references.find(
-              (reference) => reference.id === step.evidenceId,
+              (reference) => reference.unitLocator === step.evidenceLocator,
             );
             return (
-              <li key={`${step.evidenceId}:${step.relationshipType}`}>
+              <li key={step.assertionId}>
                 <button
                   disabled={evidence?.documentVersionId === undefined}
                   type="button"
@@ -218,9 +218,8 @@ function StrategyComparisonItem({
                     if (evidence) onReferenceSelect?.(evidence);
                   }}
                 >
-                  {step.subjectLabel} /{" "}
-                  {t(`chat.relationships.${step.relationshipType}`)} /{" "}
-                  {step.objectLabel}
+                  {step.subjectLabel} / {t(`chat.predicates.${step.predicate}`)}{" "}
+                  / {step.objectLabel}
                 </button>
               </li>
             );
