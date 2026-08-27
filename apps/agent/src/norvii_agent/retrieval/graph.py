@@ -188,10 +188,30 @@ class Neo4jGraphRetriever:
         return self.driver
 
 
-_GRAPH_SEARCH = """
-MATCH (release:NorviiGraphRelease {
-  corpus_id: $corpus_id, snapshot_id: $snapshot_id, status: 'ready'
-})
+_READY_PROVENANCE_COMPLETE_RELEASE = """
+CALL () {
+  MATCH (candidate:NorviiGraphRelease {
+    corpus_id: $corpus_id,
+    snapshot_id: $snapshot_id,
+    status: 'ready',
+    build_version: 'legal-assertion-graph-v2'
+  })
+  WHERE NOT EXISTS {
+    MATCH (candidate)<-[:IN_GRAPH_RELEASE]-(candidate_assertion:NorviiGraphNormativeAssertion)
+    WHERE candidate_assertion.evidence_unit_id IS NULL
+       OR candidate_assertion.evidence_canonical_locator IS NULL
+       OR candidate_assertion.evidence_content_sha256 IS NULL
+  }
+  WITH candidate
+  ORDER BY candidate.id
+  LIMIT 1
+  RETURN candidate AS release
+}
+"""
+
+_GRAPH_SEARCH = (
+    _READY_PROVENANCE_COMPLETE_RELEASE
+    + """
 MATCH (release)<-[:IN_GRAPH_RELEASE]-(assertion:NorviiGraphNormativeAssertion)
 MATCH (release)<-[:IN_GRAPH_RELEASE]-(subject:NorviiGraphLegalEntity)<-[:SUBJECT]-(assertion)
 MATCH (release)<-[:IN_GRAPH_RELEASE]-(object:NorviiGraphLegalEntity)<-[:OBJECT]-(assertion)
@@ -208,6 +228,9 @@ RETURN assertion.normative_assertion_id AS assertion_id,
        assertion.pipeline_version AS pipeline_version,
        assertion.source_title AS source_title,
        assertion.evidence_locator AS evidence_locator,
+       assertion.evidence_canonical_locator AS evidence_canonical_locator,
+       assertion.evidence_content_sha256 AS evidence_content_sha256,
+       assertion.evidence_unit_id AS evidence_unit_id,
        assertion.start_offset AS start_offset,
        assertion.end_offset AS end_offset,
        assertion.excerpt AS excerpt,
@@ -220,24 +243,21 @@ RETURN assertion.normative_assertion_id AS assertion_id,
 ORDER BY assertion.evidence_locator, assertion.normative_assertion_id
 LIMIT 8
 """
+)
 
-_GRAPH_CAPABILITIES = """
-MATCH (release:NorviiGraphRelease {
-  corpus_id: $corpus_id, snapshot_id: $snapshot_id, status: 'ready'
-})
-CALL {
-  WITH release
+_GRAPH_CAPABILITIES = (
+    _READY_PROVENANCE_COMPLETE_RELEASE
+    + """
+CALL (release) {
   OPTIONAL MATCH (release)<-[:IN_GRAPH_RELEASE]-(entity:NorviiGraphLegalEntity)
   RETURN collect(DISTINCT entity.entity_type)[..32] AS entity_types,
          collect(DISTINCT entity.normalized_label)[..128] AS entity_labels
 }
-CALL {
-  WITH release
+CALL (release) {
   OPTIONAL MATCH (release)<-[:IN_GRAPH_RELEASE]-(unit:NorviiGraphLegalUnit)
   RETURN collect(DISTINCT unit.locator)[..128] AS scope_locators
 }
-CALL {
-  WITH release
+CALL (release) {
   OPTIONAL MATCH (release)<-[:IN_GRAPH_RELEASE]-(assertion:NorviiGraphNormativeAssertion)
   OPTIONAL MATCH (assertion)-[:SUBJECT]->(subject:NorviiGraphLegalEntity)
   OPTIONAL MATCH (assertion)-[:OBJECT]->(object:NorviiGraphLegalEntity)
@@ -256,11 +276,11 @@ RETURN entity_types,
        predicate_capabilities,
        scope_locators
 """
+)
 
-_PLANNED_GRAPH_SEARCH = """
-MATCH (release:NorviiGraphRelease {
-  corpus_id: $corpus_id, snapshot_id: $snapshot_id, status: 'ready'
-})
+_PLANNED_GRAPH_SEARCH = (
+    _READY_PROVENANCE_COMPLETE_RELEASE
+    + """
 OPTIONAL MATCH (release)<-[:IN_GRAPH_RELEASE]-(scope:NorviiGraphLegalUnit {
   locator: $scope_locator
 })
@@ -285,6 +305,9 @@ RETURN assertion.normative_assertion_id AS assertion_id,
        assertion.pipeline_version AS pipeline_version,
        assertion.source_title AS source_title,
        assertion.evidence_locator AS evidence_locator,
+       assertion.evidence_canonical_locator AS evidence_canonical_locator,
+       assertion.evidence_content_sha256 AS evidence_content_sha256,
+       assertion.evidence_unit_id AS evidence_unit_id,
        assertion.start_offset AS start_offset,
        assertion.end_offset AS end_offset,
        assertion.excerpt AS excerpt,
@@ -299,6 +322,7 @@ RETURN assertion.normative_assertion_id AS assertion_id,
 ORDER BY assertion.evidence_locator, assertion.normative_assertion_id
 LIMIT 8
 """
+)
 
 
 _MIN_QUERY_TOKEN_LENGTH = 3
@@ -328,6 +352,13 @@ def _evidence(row: dict[str, object], rank: int, corpus_id: UUID, snapshot_id: U
         pipeline_version=str(row["pipeline_version"]),
         source_title=str(row["source_title"]),
         snapshot_id=snapshot_id,
+        unit_id=UUID(str(row["evidence_unit_id"])),
+        canonical_locator=_required_string(
+            row.get("evidence_canonical_locator"), "evidence canonical locator"
+        ),
+        content_sha256=_required_string(
+            row.get("evidence_content_sha256"), "evidence content hash"
+        ),
     )
 
 

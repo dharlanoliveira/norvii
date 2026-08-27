@@ -78,7 +78,7 @@ func TestCorpusMutationsAreAtomicAndVersioned(t *testing.T) {
 	}
 }
 
-func TestInitialRepositoriesAreOrderedStableAndCorpusIsolated(t *testing.T) {
+func TestSeededRepositoriesAreOrderedStableAndCorpusIsolated(t *testing.T) {
 	ctx, pool, configuration := openPool(t)
 	catalogRepository := catalogpostgres.NewRepository(pool)
 	sourceRepository := sourcepostgres.NewRepository(pool)
@@ -87,21 +87,30 @@ func TestInitialRepositoriesAreOrderedStableAndCorpusIsolated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if len(corpora) != 2 {
-		t.Fatalf("List() count = %d, want 2", len(corpora))
+	wantCorpora := []struct {
+		id       string
+		language string
+	}{
+		{"10000000-0000-4000-8000-000000000002", "en"},
+		{"10000000-0000-4000-8000-000000000004", "en"},
+		{"10000000-0000-4000-8000-000000000003", "pt"},
+		{"10000000-0000-4000-8000-000000000001", "pt"},
 	}
-	if corpora[0].ID.String() != "10000000-0000-4000-8000-000000000002" || corpora[0].Language != "en" {
-		t.Fatalf("first corpus = %+v, want fixed English corpus", corpora[0])
+	if len(corpora) != len(wantCorpora) {
+		t.Fatalf("List() count = %d, want %d", len(corpora), len(wantCorpora))
 	}
-	if corpora[1].ID.String() != "10000000-0000-4000-8000-000000000001" || corpora[1].Language != "pt" {
-		t.Fatalf("second corpus = %+v, want fixed Portuguese corpus", corpora[1])
+	for index, want := range wantCorpora {
+		if corpora[index].ID.String() != want.id || string(corpora[index].Language) != want.language {
+			t.Fatalf("corpus %d = %+v, want id=%s language=%s", index, corpora[index], want.id, want.language)
+		}
 	}
 
-	sources, err := sourceRepository.ListByCorpus(ctx, corpora[0].ID)
+	englishCorpusID := uuid.MustParse("10000000-0000-4000-8000-000000000002")
+	sources, err := sourceRepository.ListByCorpus(ctx, englishCorpusID)
 	if err != nil {
 		t.Fatalf("ListByCorpus() error = %v", err)
 	}
-	if len(sources) != 1 || sources[0].CorpusID != corpora[0].ID {
+	if len(sources) != 1 || sources[0].CorpusID != englishCorpusID {
 		t.Fatalf("ListByCorpus() = %+v, want one owned source", sources)
 	}
 	foreignSources, err := sourceRepository.ListByCorpus(ctx, uuid.New())
@@ -113,14 +122,14 @@ func TestInitialRepositoriesAreOrderedStableAndCorpusIsolated(t *testing.T) {
 	}
 
 	const editedName = "Maintainer-edited English corpus"
-	if _, err := pool.Exec(ctx, `UPDATE corpora SET name = $1 WHERE id = $2`, editedName, corpora[0].ID); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE corpora SET name = $1 WHERE id = $2`, editedName, englishCorpusID); err != nil {
 		t.Fatalf("edit seeded corpus error = %v", err)
 	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `
 			UPDATE corpora
 			SET name = 'European Union General Data Protection Regulation'
-			WHERE id = $1`, corpora[0].ID)
+			WHERE id = $1`, englishCorpusID)
 	})
 	migrator, err := persistence.OpenPostgresMigrator(ctx, configuration.Postgres)
 	if err != nil {
@@ -130,7 +139,7 @@ func TestInitialRepositoriesAreOrderedStableAndCorpusIsolated(t *testing.T) {
 	if _, err := persistence.NewMigrationService(migrator).Apply(ctx); err != nil {
 		t.Fatalf("repeated initialization error = %v", err)
 	}
-	edited, err := catalogRepository.Get(ctx, corpora[0].ID, true)
+	edited, err := catalogRepository.Get(ctx, englishCorpusID, true)
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}

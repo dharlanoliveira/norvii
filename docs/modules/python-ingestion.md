@@ -16,7 +16,8 @@ request path.
 - embeddings and evidence-backed semantic extraction when their features are enabled;
 - idempotent publication of the rebuildable Neo4j graph projection;
 - artifact validation, publication checkpoints, retry classification, and processing outcomes;
-- offline corpus evaluation inputs and measurements.
+- official-source and legal-locator artifacts consumed by the API's evaluation
+  binding, compatibility preflight, and snapshot publication rules.
 
 ## Does not own
 
@@ -25,6 +26,8 @@ request path.
 - chat orchestration and answer generation;
 - retrieval decisions made for an online question;
 - Go domain types or database adapter internals.
+- evaluation asset import, dataset review/availability, opening-suggestion publication,
+  evaluation scoring, or run execution.
 
 ## Object model
 
@@ -64,9 +67,31 @@ retry is safe. Partial canonical output MUST not become visible to online retrie
 Graph publication happens after canonical PostgreSQL publication, records a
 checkpoint, and MUST be safe to retry or rebuild.
 
-Ingestion publishes candidate revisions, units, chunks, and embeddings only. It never
-changes `corpus_snapshot_releases`; a maintainer publishes a validated candidate into
-an immutable active snapshot through the Go API.
+For canonical source content, ingestion publishes candidate revisions, units, chunks, and
+embeddings. The worker then stages an immutable candidate snapshot through the Go API, builds its
+derived graph release, and asks the API to activate that same candidate. Ingestion never changes
+`corpus_snapshot_releases` directly. The API owns snapshot activation and rejects activation when
+the candidate graph release is not `ready` (`graph_release_not_ready`), so the preceding active
+snapshot remains in place. The API also owns evaluation source binding, dataset review and
+availability, and compatibility preflight.
+
+## Evaluation prerequisite boundary
+
+Evaluation assets are imported and operated by `apps/api/`. Review and publication
+establish whether a revision is available; that state is independent of a particular
+snapshot. Before a run uses a selected corpus and snapshot, API compatibility preflight
+checks the ingestion-owned source artifacts and verifies that every evaluation manifest
+source is explicitly bound in that corpus, is a member of the snapshot, and resolves every
+required legal locator uniquely. A failed preflight requirement blocks that selected
+evaluation. Reingest source material only when required source or legal-locator artifacts are
+missing; otherwise resolve the failure through the API-owned binding, preflight, or
+snapshot-publication workflow. Do not edit the curated evaluation assets or substitute a source
+or snapshot.
+
+The ingestion worker never invokes the evaluator and does not write evaluation
+measurements. API preflight reports bounded missing requirements before it creates a
+run or calls a model. See [`apps/api/README.md`](../../apps/api/README.md) for the
+importer, managed worker, and maintainer environment requirements.
 
 ## Semantic extraction and graph releases
 
@@ -109,7 +134,9 @@ The predicate is an allowlisted assertion property; it is not a dynamic Neo4j re
 Every projected node is release-, corpus-, and snapshot-scoped. The projection is rebuildable
 from canonical PostgreSQL records and never becomes a source of canonical legal text.
 
-After a maintainer publishes a snapshot, build its Neo4j projection explicitly:
+During normal worker execution, the graph-release coordinator builds the candidate projection
+between API staging and API activation. The standalone command below is not required for that
+flow; use it only to recover or rebuild a derived projection for an existing snapshot:
 
 ```bash
 python infra/scripts/run-with-environment.py infra/.env \
@@ -117,11 +144,11 @@ python infra/scripts/run-with-environment.py infra/.env \
   --corpus-id <corpus-id> --snapshot-id <snapshot-id>
 ```
 
-The builder reads only canonical PostgreSQL semantic records that belong to the named published
-snapshot. It writes an idempotent derived Neo4j release and records its manifest, status, counts,
-and safe failure category in PostgreSQL. Repeating the command for unchanged inputs reuses the
-same release identity. The builder never changes source content, snapshot activation, or
-canonical extraction artifacts.
+The builder reads only canonical PostgreSQL semantic records that belong to the named snapshot. It
+writes an idempotent derived Neo4j release and records its manifest, status, counts, and safe
+failure category in PostgreSQL. Repeating the command for unchanged inputs reuses the same release
+identity. The builder never changes source content or snapshot activation; activation remains an
+API-owned operation.
 
 ## Assertion-model reset and fresh ingestion
 

@@ -23,6 +23,20 @@ export interface ActiveSnapshotResponse {
   readonly releaseVersion: number;
 }
 
+export interface CorpusOpeningSuggestionResponse {
+  readonly corpusId: string;
+  readonly activeSnapshotId: string | null;
+  readonly activeSnapshotManifestSha256: string | null;
+  readonly interfaceLanguage: CorpusLanguage;
+  readonly suggestions: readonly CorpusOpeningSuggestion[];
+}
+
+export interface CorpusOpeningSuggestion {
+  readonly caseId: string;
+  readonly rank: number;
+  readonly question: string;
+}
+
 export interface SnapshotMemberResponse {
   readonly sourceId: string;
   readonly sourceRevisionId: string;
@@ -198,6 +212,65 @@ export function parseCorpusResponse(value: unknown): CorpusResponse {
   return parseCorpus(value, 0);
 }
 
+export function parseCorpusOpeningSuggestionResponse(
+  value: unknown,
+): CorpusOpeningSuggestionResponse {
+  const response = exactRecord(value, "Corpus opening suggestions response", [
+    "corpusId",
+    "activeSnapshotId",
+    "activeSnapshotManifestSha256",
+    "interfaceLanguage",
+    "suggestions",
+  ]);
+  const interfaceLanguage = corpusLanguage(
+    response.interfaceLanguage,
+    "opening suggestions interface language",
+  );
+  const activeSnapshotId =
+    response.activeSnapshotId === null
+      ? null
+      : uuidValue(
+          response.activeSnapshotId,
+          "opening suggestions active snapshot ID",
+        );
+  const activeSnapshotManifestSha256 =
+    response.activeSnapshotManifestSha256 === null
+      ? null
+      : sha256Value(
+          response.activeSnapshotManifestSha256,
+          "opening suggestions active snapshot manifest hash",
+        );
+  if ((activeSnapshotId === null) !== (activeSnapshotManifestSha256 === null)) {
+    throw new Error(
+      "Opening suggestions active snapshot identity must be complete or null.",
+    );
+  }
+  if (!Array.isArray(response.suggestions)) {
+    throw new TypeError("Opening suggestions must be an array.");
+  }
+  if (response.suggestions.length > 5) {
+    throw new Error("Opening suggestions cannot contain more than five items.");
+  }
+
+  const suggestions = response.suggestions.map((item, index) =>
+    parseCorpusOpeningSuggestion(item, index),
+  );
+  validateSuggestionRanks(suggestions);
+  if (activeSnapshotId === null && suggestions.length > 0) {
+    throw new Error(
+      "Opening suggestions require an active snapshot identity when populated.",
+    );
+  }
+
+  return {
+    corpusId: uuidValue(response.corpusId, "opening suggestions corpus ID"),
+    activeSnapshotId,
+    activeSnapshotManifestSha256,
+    interfaceLanguage,
+    suggestions,
+  };
+}
+
 export function parseSnapshotPublicationResponse(
   value: unknown,
 ): SnapshotPublicationResponse {
@@ -324,11 +397,8 @@ export function parseErrorEnvelope(value: unknown): ErrorEnvelope {
 
 function parseCorpus(value: unknown, index: number): CorpusResponse {
   const item = record(value, `Corpus at index ${String(index)}`);
-  const language = stringValue(item.language, "corpus language");
+  const language = corpusLanguage(item.language, "corpus language");
   const status = stringValue(item.status, "corpus status");
-  if (language !== "en" && language !== "pt") {
-    throw new Error("Corpus language must be en or pt.");
-  }
   if (status !== "enabled" && status !== "disabled") {
     throw new Error("Corpus status must be enabled or disabled.");
   }
@@ -345,6 +415,42 @@ function parseCorpus(value: unknown, index: number): CorpusResponse {
     updatedAt: dateTimeValue(item.updatedAt, "corpus update time"),
     activeSnapshot: parseActiveSnapshot(item.activeSnapshot),
   };
+}
+
+function parseCorpusOpeningSuggestion(
+  value: unknown,
+  index: number,
+): CorpusOpeningSuggestion {
+  const suggestion = exactRecord(
+    value,
+    `Opening suggestion at index ${String(index)}`,
+    ["caseId", "rank", "question"],
+  );
+  return {
+    caseId: identifierValue(suggestion.caseId, "opening suggestion case ID"),
+    rank: positiveInteger(suggestion.rank, "opening suggestion rank"),
+    question: nonBlankString(
+      suggestion.question,
+      "opening suggestion question",
+    ),
+  };
+}
+
+function validateSuggestionRanks(
+  suggestions: readonly CorpusOpeningSuggestion[],
+): void {
+  let previousRank = 0;
+  for (const suggestion of suggestions) {
+    if (suggestion.rank > 5) {
+      throw new Error("Opening suggestion rank must be between one and five.");
+    }
+    if (suggestion.rank <= previousRank) {
+      throw new Error(
+        "Opening suggestions must have unique ranks in ascending order.",
+      );
+    }
+    previousRank = suggestion.rank;
+  }
 }
 
 function parseActiveSnapshot(value: unknown): ActiveSnapshotResponse | null {
@@ -600,11 +706,55 @@ function record(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function exactRecord(
+  value: unknown,
+  label: string,
+  fields: readonly string[],
+): Record<string, unknown> {
+  const object = record(value, label);
+  const allowed = new Set(fields);
+  for (const key of Object.keys(object)) {
+    if (!allowed.has(key)) {
+      throw new Error(`${label} contains an unsupported field: ${key}.`);
+    }
+  }
+  for (const field of fields) {
+    if (!Object.hasOwn(object, field)) {
+      throw new Error(`${label} must contain ${field}.`);
+    }
+  }
+  return object;
+}
+
 function stringValue(value: unknown, label: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`${label} must be a non-empty string.`);
   }
   return value;
+}
+
+function nonBlankString(value: unknown, label: string): string {
+  const text = stringValue(value, label);
+  if (text.trim().length === 0) {
+    throw new Error(`${label} must not be blank.`);
+  }
+  return text;
+}
+
+function identifierValue(value: unknown, label: string): string {
+  const text = nonBlankString(value, label);
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(text)) {
+    throw new Error(`${label} must be a lowercase hyphenated identifier.`);
+  }
+  return text;
+}
+
+function corpusLanguage(value: unknown, label: string): CorpusLanguage {
+  const language = stringValue(value, label);
+  if (language !== "en" && language !== "pt") {
+    throw new Error(`${label} must be en or pt.`);
+  }
+  return language;
 }
 
 function booleanValue(value: unknown, label: string): boolean {

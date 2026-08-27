@@ -34,6 +34,16 @@ export const englishTranslation = {
       description:
         "A focused collection for comparing processing principles, individual rights, and controller obligations in European Union law.",
     },
+    antiCorruption: {
+      eyebrow: "Anti-corruption research collection",
+      description:
+        "A safe synthetic collection for exploring corporate-liability and public-procurement scenarios in the prototype.",
+    },
+    fairHousing: {
+      eyebrow: "Fair-housing research collection",
+      description:
+        "A safe synthetic collection for exploring disability-accommodation scenarios in the prototype.",
+    },
   },
   workspace: {
     corpusLabel: "Active corpus",
@@ -104,7 +114,7 @@ export const englishTranslation = {
     unknownCorpusKicker: "Corpus not found",
     unknownCorpusTitle: "This research collection is not available.",
     unknownCorpusBody:
-      "Return to the catalog and choose one of the two prepared legal corpora.",
+      "Return to the catalog and choose one of the prepared legal corpora.",
     returnToCatalog: "Return to corpus catalog",
   },
 } as const;

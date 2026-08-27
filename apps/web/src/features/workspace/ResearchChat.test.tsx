@@ -158,12 +158,12 @@ describe("research chat", () => {
       streamQuestion: (
         _corpus,
         question,
-        _language,
+        language,
         _strategy,
         _signal,
         onEvent,
       ) => {
-        questions.push(question);
+        questions.push(`${language}:${question}`);
         onEvent({
           type: "completed",
           requestId: "request-1",
@@ -179,18 +179,38 @@ describe("research chat", () => {
       },
     };
     const user = userEvent.setup();
-    renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
+    renderAtRoute(
+      <ResearchChat
+        corpusId="corpus-1"
+        openingSuggestions={[
+          {
+            caseId: "starter-question-1",
+            rank: 1,
+            question: "Which safeguards are documented in this corpus?",
+          },
+        ]}
+        provider={provider}
+      />,
+    );
 
     await user.click(
       screen.getByRole("button", {
-        name: "How are data processing agents related to the controller and operator in the LGPD?",
+        name: "Which safeguards are documented in this corpus?",
       }),
     );
 
     expect(await screen.findByText("Completed.")).toBeVisible();
     expect(questions).toEqual([
-      "How are data processing agents related to the controller and operator in the LGPD?",
+      "en:Which safeguards are documented in this corpus?",
     ]);
+  });
+
+  it("does not render a local starter-question fallback", () => {
+    renderAtRoute(<ResearchChat corpusId="corpus-1" />);
+
+    expect(
+      screen.queryByLabelText("Suggested research questions"),
+    ).not.toBeInTheDocument();
   });
 
   it("starts a new chat by clearing the conversation and composer draft", async () => {
@@ -266,7 +286,7 @@ describe("research chat", () => {
     expect(screen.queryByText("Response cancelled.")).not.toBeInTheDocument();
   });
 
-  it("offers graph-oriented starter questions for the demonstration", async () => {
+  it("renders the supplied ranked starter questions", async () => {
     const strategies: RetrievalStrategy[] = [];
     const provider: ChatProvider = {
       streamQuestion: (
@@ -293,25 +313,47 @@ describe("research chat", () => {
       },
     };
     const user = userEvent.setup();
-    renderAtRoute(<ResearchChat corpusId="corpus-1" provider={provider} />);
+    renderAtRoute(
+      <ResearchChat
+        corpusId="corpus-1"
+        openingSuggestions={[
+          {
+            caseId: "starter-question-1",
+            rank: 1,
+            question: "Which safeguards are documented in this corpus?",
+          },
+          {
+            caseId: "starter-question-2",
+            rank: 2,
+            question: "Which sources define the current scope?",
+          },
+          {
+            caseId: "starter-question-3",
+            rank: 3,
+            question: "Which responsibilities are recorded?",
+          },
+        ]}
+        provider={provider}
+      />,
+    );
 
-    const processingAgentsQuestion = await screen.findByRole("button", {
-      name: "How are data processing agents related to the controller and operator in the LGPD?",
+    const firstSuggestion = await screen.findByRole("button", {
+      name: "Which safeguards are documented in this corpus?",
     });
-    expect(processingAgentsQuestion).toBeVisible();
+    expect(firstSuggestion).toBeVisible();
     expect(
       screen.getByRole("button", {
-        name: "Which data processing operations does the LGPD apply to?",
+        name: "Which sources define the current scope?",
       }),
     ).toBeVisible();
 
     expect(
       screen.getByRole("button", {
-        name: "Which fundamental rights does the LGPD protect?",
+        name: "Which responsibilities are recorded?",
       }),
     ).toBeVisible();
 
-    await user.click(processingAgentsQuestion);
+    await user.click(firstSuggestion);
 
     expect(strategies).toEqual(["hybrid"]);
   });

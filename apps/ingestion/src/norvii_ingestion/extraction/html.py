@@ -4,21 +4,25 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, replace
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import trafilatura
 
 from norvii_ingestion.domain.artifacts import DocumentArtifact, DocumentUnit, UnitKind
 from norvii_ingestion.domain.models import Sha256
+from norvii_ingestion.extraction.legal_locator import canonical_legal_locator
 
 _LEGAL_MARKER = re.compile(
     r"^(?P<marker>"
-    r"(?:Title|T\u00edtulo|Chapter|Cap\u00edtulo|Section|Se\u00e7\u00e3o)\s+[^\n]+"
-    r"|(?:Article|Artigo)\s+\d+[A-Za-z]?[.\u00ba\u00b0]?"
-    r"|Art\.\s*\d+(?:-[A-Za-z])?[\u00ba\u00b0o]?"
+    r"(?:\d+\s+U\.S\.C\.\s+\u00a7\s*\d+(?:\.\d+)*(?:\([A-Za-z0-9]+\))*"
+    r"|\d+\s+CFR\s+\u00a7\s*\d+(?:\.\d+)*(?:\([A-Za-z0-9]+\))*)"
+    r"|(?:Title|T\u00edtulo|Chapter|Cap\u00edtulo|Section|Se\u00e7\u00e3o)\s+[^\n]+"
+    r"|(?:Article|Artigo)\s+\d+(?:[\u00ba\u00b0o])?(?:-[A-Za-z]+)?[.]?"
+    r"|Art\.\s*\d+(?:[\u00ba\u00b0o])?(?:-[A-Za-z]+)?[.]?"
     r"|Recital\s+\d+"
-    r"|\u00a7\s*\d+[\u00bao]?"
+    r"|\u00a7\s*\d+(?:[\u00bao])?(?:-[A-Za-z]+)?"
     r"|(?:\(\d+\)|\d+\.)\s+"
     r"|[IVXLCDM]+\s*[-\u2013\u2014]\s+"
     r"|(?:\([a-z]\)|[a-z]\))\s+"
@@ -37,6 +41,7 @@ class _UnitSpec:
     end: int
     locator: str
     marker: str | None = None
+    canonical_locator: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,10 +54,11 @@ class _LegalNode:
     level: int
     locator: str
     marker: str
+    canonical_locator: str | None
 
 
 class ExtractionError(ValueError):
-    """Report unsupported or empty HTML content without retaining source text."""
+    """Report HTML content that cannot yield a valid document artifact."""
 
 
 class HtmlExtractor:
@@ -99,7 +105,10 @@ class HtmlExtractor:
                 *children,
             ),
         )
-        artifact.validate()
+        try:
+            artifact.validate()
+        except ValueError as error:
+            raise ExtractionError("Extracted HTML artifact is structurally invalid.") from error
         return artifact
 
     @staticmethod
@@ -161,6 +170,10 @@ class HtmlExtractor:
             ordinal = child_counts.get(parent_id, 0)
             child_counts[parent_id] = ordinal + 1
             locator = f"{kind.value}-{index + 1}"
+            parent_locator = next(
+                (node.canonical_locator for node in reversed(active) if node.canonical_locator),
+                None,
+            )
             node = _LegalNode(
                 id=self._unit_id(text_hash, locator),
                 parent_id=parent_id,
@@ -170,6 +183,7 @@ class HtmlExtractor:
                 level=level,
                 locator=locator,
                 marker=marker,
+                canonical_locator=canonical_legal_locator(kind.value, marker, parent_locator),
             )
             nodes.append(node)
             active.append(node)
@@ -194,14 +208,32 @@ class HtmlExtractor:
                         end,
                         node.locator,
                         node.marker,
+                        node.canonical_locator,
                     ),
                 )
             )
-        return tuple(units)
+        return self._omit_ambiguous_canonical_locators(units)
+
+    @staticmethod
+    def _omit_ambiguous_canonical_locators(
+        units: list[DocumentUnit],
+    ) -> tuple[DocumentUnit, ...]:
+        aliases = [unit.canonical_locator for unit in units if unit.canonical_locator is not None]
+        ambiguous_aliases = {locator for locator, count in Counter(aliases).items() if count > 1}
+        if not ambiguous_aliases:
+            return tuple(units)
+        return tuple(
+            replace(unit, canonical_locator=None)
+            if _depends_on_ambiguous_alias(unit.canonical_locator, ambiguous_aliases)
+            else unit
+            for unit in units
+        )
 
     @staticmethod
     def _marker_kind(marker: str) -> UnitKind:
         folded = marker.casefold()
+        if "u.s.c." in folded or "cfr" in folded:
+            return UnitKind.SECTION
         prefixes = (
             (("title ", "t\u00edtulo "), UnitKind.TITLE),
             (("chapter ", "cap\u00edtulo "), UnitKind.CHAPTER),
@@ -274,8 +306,17 @@ class HtmlExtractor:
             end_page=None,
             locator=spec.locator,
             content_sha256=Sha256.from_bytes(text[spec.start : spec.end].encode("utf-8")),
+            canonical_locator=spec.canonical_locator,
         )
 
     @staticmethod
     def _unit_id(text_hash: Sha256, locator: str) -> UUID:
         return uuid5(NAMESPACE_URL, f"norvii:{text_hash}:{locator}")
+
+
+def _depends_on_ambiguous_alias(alias: str | None, ambiguous_aliases: set[str]) -> bool:
+    if alias is None:
+        return False
+    return any(
+        alias == candidate or alias.startswith(f"{candidate}/") for candidate in ambiguous_aliases
+    )

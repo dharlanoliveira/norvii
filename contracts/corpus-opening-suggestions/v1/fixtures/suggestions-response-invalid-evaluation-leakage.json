@@ -1,0 +1,16 @@
+{
+  "corpusId": "10000000-0000-4000-8000-000000000011",
+  "activeSnapshotId": "20000000-0000-4000-8000-000000000011",
+  "activeSnapshotManifestSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "interfaceLanguage": "en",
+  "suggestions": [
+    {
+      "caseId": "brazil-data-protection-001-en",
+      "rank": 1,
+      "question": "Which synthetic obligation applies to a controller?",
+      "referenceAnswer": "Synthetic answer",
+      "expectedEvidence": ["synthetic-evidence"],
+      "providerPayload": "synthetic-provider-payload"
+    }
+  ]
+}

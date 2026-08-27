@@ -47,4 +47,20 @@ describe("production application", () => {
       portugueseTranslation.catalog.loadFailed,
     );
   });
+
+  it("renders the maintainer dataset readiness view at its production route", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockRejectedValue(new Error("offline")),
+    );
+    window.history.replaceState({}, "", "/evaluations");
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Verify a dataset before it runs.",
+      }),
+    ).toBeVisible();
+  });
 });

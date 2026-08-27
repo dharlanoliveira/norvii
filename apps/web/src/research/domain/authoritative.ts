@@ -1,4 +1,6 @@
 import type {
+  CorpusLanguage,
+  CorpusOpeningSuggestionResponse,
   CorpusResponse,
   DocumentResponse,
   GraphReleaseResponse,
@@ -13,6 +15,11 @@ export interface ResearchProvider {
     includeDisabled?: boolean,
   ): Promise<readonly CorpusResponse[]>;
   getCorpus(corpusId: string, signal: AbortSignal): Promise<CorpusResponse>;
+  getCorpusOpeningSuggestions(
+    corpusId: string,
+    interfaceLanguage: CorpusLanguage,
+    signal: AbortSignal,
+  ): Promise<CorpusOpeningSuggestionResponse>;
   listSources(
     corpusId: string,
     signal: AbortSignal,

@@ -29,11 +29,17 @@ workspace to create an immutable v3 document version and backfill its chunks. A
 provider failure records a safe failed attempt and leaves the preceding ready document
 unchanged.
 
-## Build a graph release
+## Graph-ready snapshot lifecycle
 
-Semantic extraction is performed only during offline ingestion. After reprocessing sources and
-publishing a snapshot, build its derived Neo4j projection explicitly. This command never changes
-the canonical PostgreSQL source documents or activates a snapshot:
+Semantic extraction is performed only during offline ingestion. For normal worker processing,
+the worker first publishes the canonical document artifacts, then stages an immutable candidate
+snapshot through the Go API, builds that snapshot's derived Neo4j graph release, and finally asks
+the API to activate the candidate. The API activation boundary requires a `ready` graph release;
+it rejects a non-ready graph with `graph_release_not_ready`, leaving the preceding active snapshot
+unchanged.
+
+The standalone graph command is not part of the normal worker flow. Use it only to recover or
+rebuild the derived projection for an existing snapshot:
 
 ```bash
 python infra/scripts/run-with-environment.py infra/.env \
@@ -41,9 +47,28 @@ python infra/scripts/run-with-environment.py infra/.env \
   --corpus-id <corpus-id> --snapshot-id <snapshot-id>
 ```
 
-The build uses only supported extraction records for the named published snapshot. It is
-idempotent for the same semantic manifest; a graph or hybrid chat request safely remains
-unavailable until the release is ready.
+The build uses only supported extraction records for the named snapshot. It is idempotent for the
+same semantic manifest and never activates a snapshot or changes canonical PostgreSQL source
+documents. Graph and hybrid chat remain unavailable until a ready release is activated through the
+API.
+
+## Evaluation prerequisites
+
+Ingestion supplies the reviewed official-source artifacts and normalized legal locators that
+evaluation requires. The Go API owns evaluation source binding, dataset review and availability,
+compatibility preflight, and snapshot publication and activation. Ingestion does not import
+evaluation datasets, publish opening suggestions, create runs, score cases, or execute the
+evaluation worker; those responsibilities belong to `apps/api/`.
+
+Review and publication establish whether an evaluation revision is available; that state
+is independent of any particular snapshot. Before a run uses a selected corpus snapshot,
+API compatibility preflight verifies that every manifest source is bound within the same
+corpus, is a member of that snapshot, and resolves every required legal locator uniquely
+there. If required source or legal-locator artifacts are missing, reprocess the affected source
+material through ingestion before using the API-owned binding and snapshot publication flow.
+Other preflight failures must be corrected through that API-owned flow; do not alter
+`data/corpora/*/evaluation/` assets to bypass it. The API importer command and maintainer
+boundary are documented in [`apps/api/README.md`](../api/README.md).
 
 ## Quality and contracts
 

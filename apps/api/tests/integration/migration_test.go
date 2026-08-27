@@ -14,6 +14,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+const evaluationDatasetsMigrationVersion int32 = 13
+
 func TestCanonicalInitializationIsVectorCapableAndRepeatable(t *testing.T) {
 	config, err := persistence.LoadConfig(os.LookupEnv)
 	if err != nil {
@@ -51,6 +53,13 @@ func TestCanonicalInitializationIsVectorCapableAndRepeatable(t *testing.T) {
 			expectedVersion,
 		)
 	}
+	if firstStatus.CurrentVersion < evaluationDatasetsMigrationVersion {
+		t.Fatalf(
+			"migration version = %d, want Feature 012 evaluation dataset migration %d or later",
+			firstStatus.CurrentVersion,
+			evaluationDatasetsMigrationVersion,
+		)
+	}
 
 	connectionConfig, err := pgx.ParseConfig("sslmode=disable")
 	if err != nil {
@@ -80,6 +89,124 @@ func TestCanonicalInitializationIsVectorCapableAndRepeatable(t *testing.T) {
 	}
 	if extensionVersion != "0.8.6" {
 		t.Fatalf("vector extension version = %q, want 0.8.6", extensionVersion)
+	}
+}
+
+func TestEvaluationDatasetsMigrationIsEmbedded(t *testing.T) {
+	migration, err := migrations.Files.ReadFile("013_evaluation_datasets.sql")
+	if err != nil {
+		t.Fatalf("read Feature 012 evaluation dataset migration: %v", err)
+	}
+
+	for _, requiredStatement := range []string{
+		"CREATE TABLE evaluation_dataset_revision",
+		"CREATE TABLE evaluation_dataset_starter_case",
+		"CREATE TABLE corpus_opening_suggestion_set",
+		"CREATE TABLE corpus_opening_suggestion_item",
+		"CREATE FUNCTION reject_evaluation_immutable_mutation()",
+	} {
+		if !strings.Contains(string(migration), requiredStatement) {
+			t.Errorf("Feature 012 migration does not contain %q", requiredStatement)
+		}
+	}
+}
+
+func TestEvaluationExpectedEvidenceCanonicalLocatorMigrationIsEmbedded(t *testing.T) {
+	migration, err := migrations.Files.ReadFile("015_evaluation_expected_evidence_canonical_locators.sql")
+	if err != nil {
+		t.Fatalf("read evaluation canonical-locator migration: %v", err)
+	}
+
+	for _, requiredStatement := range []string{
+		"ADD COLUMN canonical_locator text",
+		"canonical_locator ~ '^[a-z][a-z-]*:[a-z0-9.-]+",
+		"DROP COLUMN IF EXISTS canonical_locator",
+	} {
+		if !strings.Contains(string(migration), requiredStatement) {
+			t.Errorf("canonical-locator migration does not contain %q", requiredStatement)
+		}
+	}
+}
+
+func TestEvaluationRunLedgerMigrationIsEmbedded(t *testing.T) {
+	migration, err := migrations.Files.ReadFile("016_evaluation_runs.sql")
+	if err != nil {
+		t.Fatalf("read evaluation run ledger migration: %v", err)
+	}
+
+	for _, requiredStatement := range []string{
+		"CREATE TABLE evaluation_run",
+		"CREATE TABLE evaluation_run_case",
+		"CREATE TABLE evaluation_run_expected_evidence",
+		"CREATE TABLE evaluation_run_actual_evidence",
+		"CREATE TABLE evaluation_run_metric",
+		"CREATE FUNCTION protect_evaluation_run_case_terminal_result()",
+	} {
+		if !strings.Contains(string(migration), requiredStatement) {
+			t.Errorf("evaluation run ledger migration does not contain %q", requiredStatement)
+		}
+	}
+}
+
+func TestEvaluationTerminalResultLedgerMigrationIsEmbedded(t *testing.T) {
+	migration, err := migrations.Files.ReadFile("017_evaluation_terminal_result_ledger.sql")
+	if err != nil {
+		t.Fatalf("read evaluation terminal result ledger migration: %v", err)
+	}
+
+	for _, requiredStatement := range []string{
+		"CREATE FUNCTION reject_evaluation_run_case_child_after_terminal()",
+		"CREATE FUNCTION require_terminal_cases_for_evaluation_run_aggregate()",
+		"CREATE TRIGGER evaluation_run_actual_evidence_terminal_child_trigger",
+		"CREATE TRIGGER evaluation_run_metric_terminal_aggregate_trigger",
+	} {
+		if !strings.Contains(string(migration), requiredStatement) {
+			t.Errorf("evaluation terminal result ledger migration does not contain %q", requiredStatement)
+		}
+	}
+}
+
+func TestEvaluationComparisonMetricLedgerMigrationIsEmbedded(t *testing.T) {
+	migration, err := migrations.Files.ReadFile("018_evaluation_comparison_metric_ledger.sql")
+	if err != nil {
+		t.Fatalf("read evaluation comparison metric ledger migration: %v", err)
+	}
+
+	for _, requiredStatement := range []string{
+		"CREATE FUNCTION require_evaluation_run_metric_scorer_version()",
+		"CREATE FUNCTION require_evaluation_terminal_case_metric_ledger()",
+		"CREATE FUNCTION require_evaluation_terminal_run_metric_ledgers()",
+		"CREATE TRIGGER evaluation_run_metric_scorer_version_trigger",
+		"CREATE TRIGGER evaluation_run_case_metric_ledger_trigger",
+		"CREATE TRIGGER evaluation_run_terminal_metric_ledger_trigger",
+	} {
+		if !strings.Contains(string(migration), requiredStatement) {
+			t.Errorf("evaluation comparison metric ledger migration does not contain %q", requiredStatement)
+		}
+	}
+}
+
+func TestFairHousingSourceRefreshMigrationIsEmbedded(t *testing.T) {
+	migration, err := migrations.Files.ReadFile("020_refresh_us_fair_housing_sources.sql")
+	if err != nil {
+		t.Fatalf("read U.S. fair-housing source refresh migration: %v", err)
+	}
+
+	content := string(migration)
+	for _, requiredStatement := range []string{
+		"USCODE-2024-title42-chap45-subchapI-sec3604.pdf",
+		"CFR-2025-title24-vol1-sec103-25.pdf",
+		"30000000-0000-4000-8000-000000000014",
+		"30000000-0000-4000-8000-000000000015",
+		"30000000-0000-4000-8000-000000000016",
+		"existing_work.status IN ('pending', 'leased')",
+	} {
+		if !strings.Contains(content, requiredStatement) {
+			t.Errorf("U.S. fair-housing source refresh migration does not contain %q", requiredStatement)
+		}
+	}
+	if strings.Contains(content, "20000000-0000-4000-8000-000000000009") {
+		t.Error("U.S. fair-housing source refresh migration must not alter assistance-animals source")
 	}
 }
 

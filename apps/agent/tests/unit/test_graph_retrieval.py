@@ -8,6 +8,8 @@ import pytest
 
 from norvii_agent.config import AgentConfig
 from norvii_agent.retrieval.graph import (
+    _GRAPH_CAPABILITIES,
+    _GRAPH_SEARCH,
     _PLANNED_GRAPH_SEARCH,
     GraphRetrievalUnavailableError,
     Neo4jGraphRetriever,
@@ -57,6 +59,55 @@ class FakeDriver:
         return SimpleNamespace(records=[FakeRecord(_assertion_row())])
 
 
+class CoexistingProjectionDriver:
+    """Deterministic Neo4j fixture with complete and incomplete release candidates."""
+
+    def __init__(self) -> None:
+        legacy_assertion = _assertion_row() | {
+            "release_id": "legacy-v1-release",
+            "build_version": "legal-assertion-graph-v1",
+            "evidence_id": "legacy-v1-evidence",
+        }
+        legacy_assertion.pop("evidence_canonical_locator")
+        legacy_assertion.pop("evidence_content_sha256")
+        incomplete_v2_assertion = _assertion_row() | {
+            "release_id": "incomplete-v2-candidate",
+            "build_version": "legal-assertion-graph-v2",
+            "evidence_id": "incomplete-v2-evidence",
+        }
+        incomplete_v2_assertion.pop("evidence_content_sha256")
+        self.release_assertions = [
+            legacy_assertion,
+            incomplete_v2_assertion,
+            _assertion_row()
+            | {
+                "release_id": "complete-v2-release",
+                "build_version": "legal-assertion-graph-v2",
+                "evidence_id": "complete-v2-evidence",
+            },
+        ]
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.selected_release_ids: list[str] = []
+
+    def execute_query(self, query: str, **kwargs: object) -> SimpleNamespace:
+        self.calls.append((query, kwargs))
+        selected = self.release_assertions
+        if "build_version: 'legal-assertion-graph-v2'" in query:
+            selected = [
+                row for row in selected if row["build_version"] == "legal-assertion-graph-v2"
+            ]
+        if "candidate_assertion.evidence_content_sha256 IS NULL" in query:
+            selected = [
+                row
+                for row in selected
+                if "evidence_canonical_locator" in row and "evidence_content_sha256" in row
+            ]
+        if "ORDER BY candidate.id" in query and "LIMIT 1" in query:
+            selected = sorted(selected, key=lambda row: str(row["release_id"]))[:1]
+        self.selected_release_ids = [str(row["release_id"]) for row in selected]
+        return SimpleNamespace(records=[FakeRecord(row) for row in selected])
+
+
 def test_graph_capabilities_are_snapshot_scoped_and_content_free() -> None:
     driver = FakeDriver()
     retriever = Neo4jGraphRetriever(_configuration(), driver=driver)  # type: ignore[arg-type]
@@ -88,6 +139,11 @@ def test_graph_capabilities_keep_the_bounded_canonical_catalogs() -> None:
     assert catalog.entity_labels[-1] == "national authority"
 
 
+def test_graph_capability_subqueries_use_explicit_variable_imports() -> None:
+    assert _GRAPH_CAPABILITIES.count("CALL (release) {") == 3
+    assert "CALL {\n  WITH release" not in _GRAPH_CAPABILITIES
+
+
 def test_graph_plan_logs_parameterized_assertion_query_and_provenance(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -110,7 +166,7 @@ def test_graph_plan_logs_parameterized_assertion_query_and_provenance(
     assert query_parameters["predicates"] == ["assigns_responsibility_to"]
     assert query_parameters["entity_labels"] == ["national authority"]
     assert query_parameters["scope_locator"] == "chapter-1"
-    assert "MATCH (release:NorviiGraphRelease" in caplog.text
+    assert "MATCH (candidate:NorviiGraphRelease" in caplog.text
     assert '"predicates": ["assigns_responsibility_to"]' in caplog.text
     assert '"scope_locator": "chapter-1"' in caplog.text
     assert "Planned assertion Cypher returned 1 evidence locations" in caplog.text
@@ -121,10 +177,29 @@ def test_graph_plan_logs_parameterized_assertion_query_and_provenance(
     assert retriever.last_assertion_path[0].hierarchy_context == ("chapter-1", "article-2")
 
 
+def test_graph_search_selects_only_the_complete_v2_release_candidate() -> None:
+    driver = CoexistingProjectionDriver()
+    retriever = Neo4jGraphRetriever(_configuration(), driver=driver)  # type: ignore[arg-type]
+
+    evidence = retriever.search(_corpus_id(), _snapshot_id(), "national authority")
+
+    assert [item.id for item in evidence] == ["complete-v2-evidence"]
+    assert evidence[0].unit_id == UUID("60000000-0000-4000-8000-000000000001")
+    assert evidence[0].canonical_locator == "article:2/item:1"
+    assert evidence[0].content_sha256 == "a" * 64
+    assert "legacy-v1-evidence" not in [item.id for item in evidence]
+    assert "incomplete-v2-evidence" not in [item.id for item in evidence]
+    assert driver.selected_release_ids == ["complete-v2-release"]
+    assert driver.calls[0][0] == _GRAPH_SEARCH
+    assert "CALL () {" in _GRAPH_SEARCH
+
+
 def test_planned_query_is_bounded_to_descendants_and_active_release() -> None:
     assert "[:CONTAINS*0..6]" in _planned_query()
     assert "($scope_locator IS NULL OR establishing IN scoped_units)" in _planned_query()
     assert "MATCH (release)<-[:IN_GRAPH_RELEASE]-(assertion" in _planned_query()
+    assert "build_version: 'legal-assertion-graph-v2'" in _planned_query()
+    assert "ORDER BY candidate.id" in _planned_query()
     assert "LIMIT 8" in _planned_query()
 
 
@@ -167,6 +242,9 @@ def _assertion_row() -> dict[str, object]:
         "pipeline_version": "corpus-ingestion-v2",
         "source_title": "Official text",
         "evidence_locator": "article-2-item-1",
+        "evidence_canonical_locator": "article:2/item:1",
+        "evidence_content_sha256": "a" * 64,
+        "evidence_unit_id": "60000000-0000-4000-8000-000000000001",
         "start_offset": 0,
         "end_offset": 10,
         "excerpt": "Evidence excerpt.",

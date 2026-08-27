@@ -43,6 +43,17 @@ def test_pdf_extractor_preserves_pages_and_legal_children() -> None:
     assert {unit.start_page for unit in artifact.units if unit.kind is UnitKind.PAGE} == {1, 2}
 
 
+def test_pdf_extractor_normalizes_united_states_code_locator_aliases() -> None:
+    reader = FakeReader([FakePage("42 U.S.C. \u00a7 3604(f)(3)(B) Reasonable accommodations")])
+
+    artifact = PdfExtractor(lambda _content: reader).extract(b"%PDF-generated-test")
+
+    unit = artifact.resolve_canonical_legal_locator("us-code:42/section:3604/item:f/item:3/item:b")
+
+    assert unit.kind is UnitKind.SECTION
+    assert unit.locator == "page-1-section-1"
+
+
 @pytest.mark.parametrize(
     "reader",
     [

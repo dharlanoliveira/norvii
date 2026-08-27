@@ -92,6 +92,9 @@ def test_search_uses_one_question_vector_and_only_ready_latest_chunks(
                 UUID("40000000-0000-4000-8000-000000000001"),
                 "corpus-ingestion-v1",
                 "Official law",
+                UUID("50000000-0000-4000-8000-000000000001"),
+                "article:1",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             )
         ]
     )
@@ -114,7 +117,7 @@ def test_search_uses_one_question_vector_and_only_ready_latest_chunks(
     assert evidence[0].source_title == "Official law"
     assert evidence[0].cosine_distance == 0.1834
     assert "c.embedding <=> %s::vector" in cursor.query
-    assert "s.title, c.ordinal" in cursor.query
+    assert "s.title, c.unit_id" in cursor.query
     assert "ORDER BY cosine_distance, ordinal, id" in cursor.query
     assert "c.enrichment_status = 'ready'" in cursor.query
     assert "sd.snapshot_id = %s" in cursor.query
@@ -122,3 +125,9 @@ def test_search_uses_one_question_vector_and_only_ready_latest_chunks(
     assert "to_tsvector" not in cursor.query
     assert cursor.parameters == ("[0.1,0.2]", corpus_id, snapshot_id)
     assert evidence[0].snapshot_id == snapshot_id
+    assert evidence[0].unit_id == UUID("50000000-0000-4000-8000-000000000001")
+    assert evidence[0].canonical_locator == "article:1"
+    assert (
+        evidence[0].content_sha256
+        == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    )

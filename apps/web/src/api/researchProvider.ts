@@ -1,5 +1,6 @@
 import {
   parseCorpusList,
+  parseCorpusOpeningSuggestionResponse,
   parseCorpusResponse,
   parseDocumentResponse,
   parseGraphReleaseResponse,
@@ -8,6 +9,8 @@ import {
   parseSnapshotPublicationResponse,
   parseSourceList,
   type CorpusResponse,
+  type CorpusLanguage,
+  type CorpusOpeningSuggestionResponse,
   type DocumentResponse,
   type GraphReleaseResponse,
   type PublicErrorCode,
@@ -68,6 +71,31 @@ class HttpResearchProvider implements ResearchProvider {
         signal,
       ),
     );
+  }
+
+  async getCorpusOpeningSuggestions(
+    corpusId: string,
+    interfaceLanguage: CorpusLanguage,
+    signal: AbortSignal,
+  ): Promise<CorpusOpeningSuggestionResponse> {
+    const query = new URLSearchParams({ interfaceLanguage });
+    const response = parseCorpusOpeningSuggestionResponse(
+      await this.#request(
+        `${this.#baseUrl}/corpora/${encodeURIComponent(corpusId)}/opening-suggestions?${query.toString()}`,
+        signal,
+      ),
+    );
+    if (response.corpusId !== corpusId) {
+      throw new Error(
+        "Opening suggestions response corpus does not match request.",
+      );
+    }
+    if (response.interfaceLanguage !== interfaceLanguage) {
+      throw new Error(
+        "Opening suggestions response language does not match request.",
+      );
+    }
+    return response;
   }
 
   async listSources(

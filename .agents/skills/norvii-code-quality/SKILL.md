@@ -50,6 +50,27 @@ Portuguese is permitted only in Portuguese localization values, preserved legal 
 - Avoid speculative extension points, pass-through wrappers, generic utility buckets, and premature frameworks.
 - Make invalid states difficult to represent where the language supports it.
 
+### 3.1 Complexity and method-size gate
+
+Treat cognitive complexity and oversized methods as design failures, not cleanup work. Do not
+hand off a method, function, test setup, handler, parser, or component body that coordinates more
+than one independently named responsibility.
+
+- Keep cognitive complexity at or below the repository analyzer threshold; when no threshold is
+  configured, use 15 as the review limit.
+- Keep a method or function under 50 non-blank, non-comment lines unless its single-purpose shape
+  remains obvious and it has no branching growth. Do not use this exception to retain an
+  orchestrator with multiple lifecycles.
+- Before adding another branch to a non-trivial method, identify whether validation, mapping,
+  persistence, retry/lifecycle, response projection, or rendering can become a named focused
+  operation.
+- Tests must use fixture builders, setup helpers, or focused subtests when their setup becomes a
+  branching scenario matrix. A test function is not exempt from complexity limits.
+- Prefer typed parameter objects when a function has more than seven parameters or repeated
+  adjacent parameters of the same type.
+- Do not silence, raise, or bypass Sonar complexity, method-size, parameter-count, or duplicate
+  literal rules. Refactor the responsible unit and add tests for each extracted boundary.
+
 ### 4. Implement explicitly
 
 - Use domain vocabulary in names. Avoid vague names such as `data`, `manager`, `helper`, `processor`, or `utils` without a narrow qualifier.
@@ -66,6 +87,9 @@ Portuguese is permitted only in Portuguese localization values, preserved legal 
 - Use integration or contract tests at database, HTTP, queue, filesystem, LLM, and cross-language boundaries.
 - Run the narrowest relevant formatter, static analysis, tests, and build commands available in the repository.
 - Treat a cognitive-complexity warning from configured analysis as a design defect, not a lint exception to suppress. Refactor the responsible behavior into named cohesive units and add behavior tests for the extracted boundaries before handoff.
+- Run the configured static analyzer for every changed production module before handoff when it
+  is available. Review analyzer findings for cognitive complexity, method size, parameter count,
+  duplicate literals, accessibility, and unsafe expression patterns as release blockers.
 - Do not claim a check passed unless it was executed successfully.
 
 ### 6. Review the diff

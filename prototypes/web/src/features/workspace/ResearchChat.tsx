@@ -19,6 +19,7 @@ import type {
   CorpusFixture,
   PreparedAnswer,
 } from "../../fixtures/models";
+import { resolveOpeningSuggestions } from "../../fixtures/legal-content/opening-suggestions";
 
 interface ResearchChatProps {
   readonly corpus: CorpusFixture;
@@ -169,7 +170,12 @@ function AssistantMessage({
 }
 
 function ChatThread({ corpus, onOpenCitation }: ResearchChatProps) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
+  const interfaceLanguage = i18n.resolvedLanguage === "pt" ? "pt" : "en";
+  const openingSuggestions = resolveOpeningSuggestions(
+    corpus,
+    interfaceLanguage,
+  );
 
   return (
     <ThreadPrimitive.Root
@@ -185,19 +191,21 @@ function ChatThread({ corpus, onOpenCitation }: ResearchChatProps) {
             <p className="eyebrow">{t("chat.kicker")}</p>
             <h2>{t("chat.title")}</h2>
             <p>{t("chat.emptyBody")}</p>
-            <div className="suggestion-list">
-              {corpus.suggestedQuestions.map((question, index) => (
-                <ThreadPrimitive.Suggestion
-                  className="suggestion-button"
-                  prompt={question}
-                  send
-                  key={question}
-                >
-                  <span>0{String(index + 1)}</span>
-                  {question}
-                </ThreadPrimitive.Suggestion>
-              ))}
-            </div>
+            {openingSuggestions.length > 0 ? (
+              <div className="suggestion-list">
+                {openingSuggestions.map((suggestion) => (
+                  <ThreadPrimitive.Suggestion
+                    className="suggestion-button"
+                    prompt={suggestion.question}
+                    send
+                    key={suggestion.caseId}
+                  >
+                    <span>{String(suggestion.rank).padStart(2, "0")}</span>
+                    {suggestion.question}
+                  </ThreadPrimitive.Suggestion>
+                ))}
+              </div>
+            ) : null}
           </div>
         </AuiIf>
         <ThreadPrimitive.Messages>

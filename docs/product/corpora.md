@@ -52,42 +52,49 @@ stateDiagram-v2
 
 Only `ready` sources participate in retrieval. Chat reports when an active corpus has no ready source.
 
-## Recommended legal domain
+## Initial legal corpora
 
-The proposed initial domain is data protection. The two corpora cover related concepts in different languages and jurisdictions, which supports comparable demonstrations without requiring a large collection.
+Norvii's initial evaluation scope contains three independent legal corpora. They are separate
+retrieval roots, not labels or folders under an information-security corpus. A source, snapshot,
+dataset revision, evaluation result, or opening suggestion belongs to one corpus only.
 
-This proposal remains subject to confirmation before corpus acquisition begins.
+| Corpus | Stable identifier | Jurisdiction | Dataset asset directory |
+| --- | --- | --- | --- |
+| Brazilian Personal Data Protection (LGPD) | `brazil-personal-data-protection` | Brazil, federal | `data/corpora/brazil-lgpd/evaluation/` |
+| Brazilian Anti-Corruption and White-Collar Crime | `brazil-anti-corruption-white-collar-crime` | Brazil, federal | `data/corpora/brazil-anti-corruption/evaluation/` |
+| United States Fair Housing and Disability Accommodations | `us-fair-housing-disability-accommodations` | United States, federal | `data/corpora/us-fair-housing-disability-accommodations/evaluation/` |
 
-## Portuguese corpus
+The project-owned dataset manifests define the authoritative official-source set for each corpus.
+They are evaluation inputs, not permission to acquire, change, or automatically publish a source.
+Source acquisition and processing remain subject to the normal controlled ingestion process.
 
-Jurisdiction: Brazil. Language: Portuguese.
+## Source readiness and snapshots
 
-Proposed sources:
+A corpus is eligible for a versioned evaluation dataset or opening suggestions only when all of
+the following are true:
 
-1. [Lei Geral de Protecao de Dados Pessoais, Lei 13.709/2018](https://www2.camara.leg.br/legin/fed/lei/2018/lei-13709-14-agosto-2018-787077-normaatualizada-pl.html)
-2. [Resolucao CD/ANPD 2/2022, agentes de tratamento de pequeno porte](https://www.gov.br/anpd/pt-br/acesso-a-informacao/institucional/atos-normativos/regulamentacoes_anpd/resolucao-cd-anpd-no-2-de-27-de-janeiro-de-2022)
-3. Resolucao CD/ANPD 15/2024, comunicacao de incidente de seguranca
-4. Resolucao CD/ANPD 18/2024, atuacao do encarregado
+1. Its intended source revisions are processed and represented by an immutable published snapshot.
+2. Each manifest source is explicitly bound to a source in the same corpus and is a member of that
+   snapshot.
+3. Every required legal locator resolves uniquely to the snapshot's versioned document unit or
+   evidence span.
+4. The compatible dataset revision has completed review and is available for publication.
 
-Use the [official ANPD regulation index](https://www.gov.br/anpd/pt-br/acesso-a-informacao/institucional/atos-normativos/regulamentacoes_anpd) to locate current official versions.
+An absent source, unresolved locator, draft dataset, disabled release, changed manifest, or later
+active snapshot makes the dependent evaluation or suggestion projection unavailable. The system
+must not substitute another source, corpus, snapshot, or approximate legal location.
 
-Preliminary estimate after extraction and cleanup: 40,000 to 70,000 tokens. The estimate must be replaced by a measured value after ingestion exists.
+## Corpus opening suggestions
 
-Optional expansion: Resolucao CD/ANPD 4/2023 on administrative sanction calculation and application.
+An empty chat can show a small discovery list only from a separately published,
+corpus-and-snapshot-bound projection of a reviewed available dataset revision. The projection
+contains rank, stable case ID, checksum, language, and the original question text. It excludes
+reference answers, expected evidence, review notes, evaluation outcomes, and execution details.
 
-## English corpus
-
-Jurisdiction: European Union. Language: English.
-
-Proposed sources:
-
-1. [General Data Protection Regulation, Regulation EU 2016/679](https://eur-lex.europa.eu/eli/reg/2016/679/oj/eng/)
-2. [EDPB Guidelines 07/2020 on controller and processor concepts](https://www.edpb.europa.eu/documents/guideline/guidelines-072020-on-the-concepts-of-controller-and-processor-in-the-gdpr_en)
-3. [EDPB Guidelines 9/2022 on personal data breach notification](https://www.edpb.europa.eu/documents/guideline/guidelines-92022-on-personal-data-breach-notification-under-gdpr_en)
-
-Preliminary estimate after extraction and cleanup: 100,000 to 150,000 tokens. The estimate must be replaced by a measured value after ingestion exists.
-
-Optional expansion: EDPB Guidelines 01/2022 on the right of access.
+For a published compatible projection, the workspace selects the exact reciprocal case matching
+the interface language and preserves rank order. It does not translate, synthesize, randomize, or
+fall back to questions from LGPD or another corpus. If the selected corpus has no compatible active
+projection, the empty chat shows no suggestion list.
 
 ## Required legal metadata
 
@@ -108,11 +115,13 @@ Record these fields when the official source provides them:
 
 ## Corpus readiness checklist
 
-- [ ] Confirm the initial data-protection scope.
-- [ ] Confirm the initial document set.
-- [ ] Acquire documents only from official sources.
-- [ ] Verify reuse rules for every source.
-- [ ] Measure tokens after extraction.
+- [ ] Confirm one of the three named corpus identities and its official source set.
+- [ ] Acquire documents only from official sources and verify reuse rules for every source.
 - [ ] Keep original and normalized representations separate.
-- [ ] Create a versioned manifest for each corpus.
-- [ ] Define a snapshot date for reproducible evaluation.
+- [ ] Record source origin, capture date, hash, authority metadata, and document status.
+- [ ] Create and publish an immutable snapshot with its versioned manifest.
+- [ ] Bind every dataset manifest source to that corpus and resolve each required legal locator.
+- [ ] Review and mark the compatible dataset revision available before publishing any evaluation
+      run or opening-suggestion projection.
+- [ ] Treat all chat output and evaluation measurements as technical information, not legal advice
+      or a legal conclusion about a real person or entity.

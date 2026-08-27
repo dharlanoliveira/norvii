@@ -5,8 +5,23 @@ This guide defines the expected verification flow after implementation. It does 
 ## 1. Prepare the local environment
 
 1. Start the standard Norvii local environment and apply API migrations.
-2. Create exactly these three legal corpora, never an information-security corpus: `brazil-personal-data-protection`, `brazil-anti-corruption-white-collar-crime`, and `us-fair-housing-disability-accommodations`.
-3. Process the reviewed official sources for each corpus, publish their snapshots, and verify that every source is ready. A dataset stays draft if a source is missing.
+2. Create exactly these three legal corpora, never an information-security corpus:
+   - Brazilian Personal Data Protection (LGPD): `brazil-personal-data-protection`;
+   - Brazilian Anti-Corruption and White-Collar Crime:
+     `brazil-anti-corruption-white-collar-crime`; and
+   - United States Fair Housing and Disability Accommodations:
+     `us-fair-housing-disability-accommodations`.
+3. Process the reviewed official sources for each corpus and publish an immutable snapshot. Before
+   an evaluation revision or opening-suggestion projection is eligible, verify all of the
+   following:
+   - every manifest source has an explicit source binding in the same corpus and is a member of
+     the snapshot;
+   - every required legal locator resolves uniquely in the snapshot; and
+   - the dataset revision is reviewed and available.
+
+A dataset remains draft when a source is missing, a locator is unresolved, or its review state is
+not available. Never substitute a source, snapshot, corpus, or approximate locator to make a
+dataset eligible.
 
 ## 2. Import and publish assets
 
@@ -19,6 +34,17 @@ data/corpora/us-fair-housing-disability-accommodations/evaluation/
 ```
 
 Verify that the importer reports all 52 cases, source requirements, original `pt-BR`/`en` language values, and reciprocal pairs. Re-run without changes and verify the same immutable revision is returned. Review source bindings and legal-locator aliases, then create an `available` publication record only after every expected target resolves in the intended snapshot.
+
+For each reviewed available revision, verify that starter-case selection has at most five complete
+reciprocal ranks. Publish an opening-suggestion projection only for its compatible corpus snapshot.
+The projection must contain only rank, case ID, checksum, language, and the original question
+text; it must not contain answers, expected evidence, review notes, scores, run outcomes, or other
+evaluation internals.
+
+Open an empty chat in each corpus in both interface languages. Where the active snapshot has a
+matching projection, it must show the exact rank-ordered question for that corpus and interface
+language. Where no matching projection exists, it must show no suggestion list. It must never
+translate, synthesize, randomize, or fall back to LGPD questions in another corpus.
 
 ## 3. Verify preflight safety
 
@@ -47,11 +73,27 @@ Use test fixtures to cover right source/right location, right source/wrong locat
 
 ## 6. Required automated checks
 
-Run the relevant Go, Python, and TypeScript test targets; migration/persistence verification; the prototype approval checks; and:
+Run the following sequence from the repository root:
 
 ```bash
+make persistence-migrate
+make persistence-migration-status
+make persistence-verify
+make -C apps/api ci
+make -C apps/agent ci
+make -C apps/ingestion ci
+(cd apps/web && npm ci && npm run format:check && npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e)
+(cd prototypes/web && npm ci && make ci)
+python3 .github/scripts/validate_contracts.py
 python3 .github/scripts/validate_repository_language.py
 git diff --check
 ```
 
-Add the exact implemented commands to this guide during the implementation task. Keep the technical-measurement and not-legal-advice notice visible in the maintainer experience.
+The database-backed integration suite requires a running local PostgreSQL environment configured
+through `infra/.env`. It must run against isolated fixture data; existing imported evaluation
+datasets can contaminate assertions that expect an empty catalog.
+
+Keep the technical-measurement and not-legal-advice notice visible in the maintainer experience.
+
+Evaluation results and opening suggestions are technical information about corpus-grounded system
+behavior. They do not provide legal advice or a legal conclusion about a real person or entity.

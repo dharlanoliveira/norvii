@@ -1,0 +1,46 @@
+{
+  "comparisonState": "comparable",
+  "leftRunId": "40000000-0000-4000-8000-000000000031",
+  "rightRunId": "40000000-0000-4000-8000-000000000032",
+  "left": {
+    "retrievalStrategy": "vector",
+    "retrievalConfigurationFingerprint": "4444444444444444444444444444444444444444444444444444444444444444",
+    "agentBuild": "synthetic-agent-build-left",
+    "chatModelIdentity": "synthetic-chat-model-left",
+    "embeddingModelIdentity": "synthetic-embedding-model-left"
+  },
+  "right": {
+    "retrievalStrategy": "hybrid",
+    "retrievalConfigurationFingerprint": "6666666666666666666666666666666666666666666666666666666666666666",
+    "agentBuild": "synthetic-agent-build-right",
+    "chatModelIdentity": "synthetic-chat-model-right",
+    "embeddingModelIdentity": "synthetic-embedding-model-right"
+  },
+  "differences": [],
+  "totals": {
+    "leftCases": 2,
+    "rightCases": 2,
+    "pairedCases": 2,
+    "leftUnpaired": 0,
+    "rightUnpaired": 0,
+    "failedOrCancelled": 1,
+    "leftFailed": 1,
+    "leftCancelled": 0,
+    "rightFailed": 0,
+    "rightCancelled": 0
+  },
+  "metrics": [
+    {
+      "name": "citation_validity",
+      "state": "scored",
+      "pairedCases": 1,
+      "leftNumerator": 1,
+      "leftDenominator": 1,
+      "rightNumerator": 0,
+      "rightDenominator": 1,
+      "leftValue": 1,
+      "rightValue": 0,
+      "delta": -1
+    }
+  ]
+}

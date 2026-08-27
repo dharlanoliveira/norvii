@@ -1,11 +1,18 @@
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg
 
+from norvii_ingestion.domain.artifacts import (
+    DocumentArtifact,
+    DocumentUnit,
+    PublicationCommand,
+    UnitKind,
+)
 from norvii_ingestion.domain.models import Sha256
 from norvii_ingestion.publication.postgres.repository import (
+    PostgresWorkRepository,
     _document_scoped_semantic_extraction,
     _repository_error_detail,
     retrieval_chunk_id_for_document,
@@ -80,3 +87,67 @@ def test_repository_error_detail_contains_only_the_sqlstate() -> None:
     error = psycopg.errors.UniqueViolation("duplicate key with source content")
 
     assert _repository_error_detail(error) == "repository_sqlstate_23505"
+
+
+def test_unit_publication_persists_the_immutable_canonical_legal_locator() -> None:
+    text = "Article 19\nA clear statement."
+    root_id = uuid4()
+    article_id = uuid4()
+    artifact = DocumentArtifact(
+        text=text,
+        text_sha256=Sha256.from_bytes(text.encode()),
+        units=(
+            DocumentUnit(
+                id=root_id,
+                parent_id=None,
+                kind=UnitKind.DOCUMENT,
+                ordinal=0,
+                marker=None,
+                label=None,
+                start_offset=0,
+                end_offset=len(text),
+                start_page=None,
+                end_page=None,
+                locator="document",
+                content_sha256=Sha256.from_bytes(text.encode()),
+            ),
+            DocumentUnit(
+                id=article_id,
+                parent_id=root_id,
+                kind=UnitKind.ARTICLE,
+                ordinal=0,
+                marker="Article 19",
+                label="Article 19",
+                start_offset=0,
+                end_offset=len(text),
+                start_page=None,
+                end_page=None,
+                locator="article-1",
+                content_sha256=Sha256.from_bytes(text.encode()),
+                canonical_locator="article:19",
+            ),
+        ),
+    )
+    command = PublicationCommand(
+        work_id=uuid4(),
+        lease_token=uuid4(),
+        pipeline_version="test-pipeline",
+        origin_sha256=Sha256("0" * 64),
+        artifact=artifact,
+    )
+    cursor = RecordingCursor()
+
+    PostgresWorkRepository._insert_units(cursor, uuid4(), command)  # noqa: SLF001
+
+    assert "canonical_locator" in cursor.query
+    assert cursor.parameters[1][12] == "article:19"
+
+
+class RecordingCursor:
+    def __init__(self) -> None:
+        self.query = ""
+        self.parameters: list[tuple[object, ...]] = []
+
+    def executemany(self, query: str, parameters: list[tuple[object, ...]]) -> None:
+        self.query = query
+        self.parameters = parameters

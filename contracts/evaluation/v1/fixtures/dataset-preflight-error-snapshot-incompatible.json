@@ -1,0 +1,14 @@
+{
+  "error": {
+    "code": "snapshot_incompatible",
+    "message": "The selected snapshot is incompatible with the dataset.",
+    "requestId": "50000000-0000-4000-8000-000000000021",
+    "missingRequirements": [
+      {
+        "sourceAlias": "official-source",
+        "locator": "Article 1",
+        "reason": "The required source is not a member of the selected snapshot."
+      }
+    ]
+  }
+}

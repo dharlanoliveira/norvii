@@ -108,6 +108,7 @@ def test_builder_projects_assertion_topology_with_exact_provenance(
     assert summary.legal_unit_count == 2
     assert summary.entity_count == 2
     assert summary.assertion_count == 1
+    assert release.build_version == "legal-assertion-graph-v2"
     assert release.legal_units[1]["parent_id"] == str(legal_units[0].id)
     assert assertion["establishing_unit_id"] == str(legal_units[1].id)
     assert assertion["evidence_unit_id"] == str(legal_units[1].id)
@@ -128,6 +129,8 @@ def test_builder_commits_snapshot_reads_before_recording_a_graph_release() -> No
                     unit.parent_id,
                     unit.kind,
                     unit.locator,
+                    unit.canonical_locator,
+                    unit.content_sha256,
                 )
                 for unit in legal_units
             ),
@@ -154,6 +157,8 @@ def test_builder_commits_snapshot_reads_before_recording_a_graph_release() -> No
                     assertion.excerpt,
                     assertion.predicate,
                     assertion.qualifier,
+                    assertion.evidence_canonical_locator,
+                    assertion.evidence_content_sha256,
                 )
                 for assertion in assertions
             ),
@@ -264,8 +269,12 @@ def _projection_inputs() -> tuple[
     tuple[_AssertionProjection, ...],
 ]:
     document_id = uuid4()
-    root = _LegalUnitProjection(uuid4(), document_id, None, "document", "law")
-    article = _LegalUnitProjection(uuid4(), document_id, root.id, "article", "article-1")
+    root = _LegalUnitProjection(
+        uuid4(), document_id, None, "document", "law", "document:law", "a" * 64
+    )
+    article = _LegalUnitProjection(
+        uuid4(), document_id, root.id, "article", "article-1", "article:1", "b" * 64
+    )
     subject = _EntityProjection(uuid4(), "The norm", "the norm", "concept")
     object_ = _EntityProjection(uuid4(), "Controller", "controller", "actor")
     assertion = _AssertionProjection(
@@ -281,6 +290,8 @@ def _projection_inputs() -> tuple[
         source_title="Official source",
         establishing_locator="article-1",
         evidence_locator="article-1",
+        evidence_canonical_locator="article:1",
+        evidence_content_sha256="b" * 64,
         start_offset=0,
         end_offset=10,
         excerpt="Legal text",

@@ -33,13 +33,18 @@ from norvii_ingestion.semantic.extraction import ExtractionProviderError
 
 
 class FakeAcquirer:
-    def __init__(self, failure: Exception | None = None) -> None:
+    def __init__(
+        self,
+        failure: Exception | None = None,
+        media_type: str = "text/html",
+    ) -> None:
         self._failure = failure
+        self._media_type = media_type
 
     def acquire(self, url: str) -> Acquisition:
         if self._failure is not None:
             raise self._failure
-        return Acquisition(b"Legal text", url, "text/html")
+        return Acquisition(b"Legal text", url, self._media_type)
 
 
 class FakeExtractor:
@@ -67,6 +72,15 @@ class FakeExtractor:
                 ),
             ),
         )
+
+
+class RecordingExtractor(FakeExtractor):
+    def __init__(self) -> None:
+        self.contents: list[bytes] = []
+
+    def extract(self, content: bytes) -> DocumentArtifact:
+        self.contents.append(content)
+        return super().extract(content)
 
 
 class FakeEmbeddingProvider:
@@ -267,6 +281,30 @@ def test_processor_extracts_preserved_pdf_without_network_acquisition() -> None:
     assert len(repository.publications) == 1
     assert repository.publications[0][1].media_type == "application/pdf"
     assert repository.publications[0][1].final_url is None
+
+
+def test_processor_dispatches_url_pdf_to_pdf_extractor() -> None:
+    repository = RecordingRepository()
+    html_extractor = RecordingExtractor()
+    pdf_extractor = RecordingExtractor()
+    processor = IngestionProcessor(
+        repository=repository,
+        acquirer=FakeAcquirer(media_type="application/pdf"),
+        extractors=ArtifactExtractors(html=html_extractor, pdf=pdf_extractor),
+        pipeline_version="corpus-ingestion-v1",
+        clock=_now,
+        embedding_provider=FakeEmbeddingProvider(),
+        embedding_model="test-embedding",
+        graph_release_coordinator=RecordingGraphReleaseCoordinator(),
+        logger=RecordingPipelineLogger(),
+    )
+
+    processor.process(_work())
+
+    assert html_extractor.contents == []
+    assert pdf_extractor.contents == [b"Legal text"]
+    assert repository.publications[0][1].media_type == "application/pdf"
+    assert repository.publications[0][1].final_url == "https://example.com/legal"
 
 
 def test_processor_preserves_the_ready_version_when_embedding_fails() -> None:

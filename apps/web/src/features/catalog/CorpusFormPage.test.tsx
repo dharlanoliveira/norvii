@@ -121,6 +121,10 @@ class FormProvider implements ResearchProvider {
       : Promise.reject(new Error("not found"));
   }
 
+  getCorpusOpeningSuggestions(): Promise<never> {
+    return Promise.reject(new Error("not used"));
+  }
+
   createCorpus(draft: CorpusDraft): Promise<CorpusResponse> {
     this.createdDraft = draft;
     const created = { ...corpus(draft.name), ...draft };

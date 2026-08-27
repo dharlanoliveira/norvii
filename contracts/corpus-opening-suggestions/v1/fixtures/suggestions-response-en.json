@@ -1,0 +1,33 @@
+{
+  "corpusId": "10000000-0000-4000-8000-000000000011",
+  "activeSnapshotId": "20000000-0000-4000-8000-000000000011",
+  "activeSnapshotManifestSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "interfaceLanguage": "en",
+  "suggestions": [
+    {
+      "caseId": "brazil-data-protection-001-en",
+      "rank": 1,
+      "question": "Which synthetic obligation applies to a controller?"
+    },
+    {
+      "caseId": "brazil-data-protection-002-en",
+      "rank": 2,
+      "question": "When must a synthetic notice be provided?"
+    },
+    {
+      "caseId": "brazil-data-protection-003-en",
+      "rank": 3,
+      "question": "Which synthetic actor receives the request?"
+    },
+    {
+      "caseId": "brazil-data-protection-004-en",
+      "rank": 4,
+      "question": "What synthetic condition limits the processing activity?"
+    },
+    {
+      "caseId": "brazil-data-protection-005-en",
+      "rank": 5,
+      "question": "Which synthetic safeguard must be observed?"
+    }
+  ]
+}

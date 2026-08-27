@@ -60,4 +60,6 @@ Actual evidence differentiates `retrieved` from `cited`; every item includes the
 
 ## Provider contract
 
-The API-to-agent evaluation port receives `corpusId`, `snapshotId`, question, normalized interface language, and frozen retrieval configuration. It returns answer, outcome, ordered retrieved evidence, citation-marker-compatible evidence order, graph-grounding state, model/build identity, and nullable latency/token measurements. It must reject evidence outside the supplied corpus and snapshot. It is non-streaming and does not alter public chat stream contracts.
+The API-to-agent evaluation port receives `corpusId`, `snapshotId`, question, normalized interface language, and frozen retrieval configuration. Its request must also include `executionIdentity` with exact non-empty `agentBuild`, `chatModelIdentity`, and `embeddingModelIdentity` fields. The agent executes only when that complete frozen identity matches its normalized deployed configuration.
+
+The response returns answer, outcome, ordered retrieved evidence, citation-marker-compatible evidence order, graph-grounding state, `modelIdentity`, `agentBuildIdentity`, required `embeddingModelIdentity`, and nullable latency/token measurements. The worker verifies the returned identities against the persisted `executionIdentity`. The port must reject evidence outside the supplied corpus and snapshot. It is non-streaming and does not alter public chat stream contracts.

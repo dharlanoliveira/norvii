@@ -170,6 +170,10 @@ class ManagementProvider implements ResearchProvider {
     throw new Error("not used");
   }
 
+  getCorpusOpeningSuggestions(): Promise<never> {
+    throw new Error("not used");
+  }
+
   listSources(): Promise<never[]> {
     return Promise.resolve([]);
   }

@@ -37,6 +37,25 @@ export interface PreparedAnswer {
   readonly citations: readonly CitationFixture[];
 }
 
+export interface CorpusReleaseFixture {
+  readonly snapshotId: string;
+  readonly snapshotManifestSha256: string;
+}
+
+export interface OpeningSuggestionFixture {
+  readonly caseId: string;
+  readonly rank: number;
+  readonly language: LanguageCode;
+  readonly question: string;
+}
+
+export interface OpeningSuggestionSetFixture {
+  readonly corpusId: string;
+  readonly snapshotId: string;
+  readonly snapshotManifestSha256: string;
+  readonly suggestions: readonly OpeningSuggestionFixture[];
+}
+
 export interface CorpusFixture {
   readonly id: string;
   readonly label: string;
@@ -46,7 +65,8 @@ export interface CorpusFixture {
   readonly jurisdiction: string;
   readonly sources: readonly CorpusSource[];
   readonly preparedAnswers: readonly PreparedAnswer[];
-  readonly suggestedQuestions: readonly string[];
+  readonly activeRelease?: CorpusReleaseFixture;
+  readonly openingSuggestionSet?: OpeningSuggestionSetFixture;
   readonly failurePrompts: readonly string[];
 }
 

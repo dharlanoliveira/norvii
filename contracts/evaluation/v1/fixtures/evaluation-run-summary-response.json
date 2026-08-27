@@ -1,0 +1,61 @@
+{
+  "id": "40000000-0000-4000-8000-000000000031",
+  "datasetRevision": {
+    "id": "30000000-0000-4000-8000-000000000031",
+    "contentSha256": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "corpusId": "10000000-0000-4000-8000-000000000031",
+  "snapshotId": "20000000-0000-4000-8000-000000000031",
+  "snapshotManifestSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "orderedCaseSetSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "configuration": {
+    "strategy": "vector",
+    "fingerprint": "4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "scoringPolicyVersion": "v1",
+  "agentBuild": "synthetic-agent-build",
+  "chatModelIdentity": "synthetic-chat-model",
+  "embeddingModelIdentity": "synthetic-embedding-model",
+  "initiatedBy": "maintainer-http",
+  "state": "completed_with_failures",
+  "createdAt": "2026-08-26T19:00:00Z",
+  "completedAt": "2026-08-26T19:01:00Z",
+  "aggregate": {
+    "total": 2,
+    "eligible": 2,
+    "scored": 1,
+    "failed": 1,
+    "cancelled": 0,
+    "notApplicable": 0,
+    "metrics": [
+      {
+        "name": "citation_validity",
+        "state": "scored",
+        "value": 1,
+        "numerator": 1,
+        "denominator": 1,
+        "rationale": "The scored case had one valid citation in the selected snapshot.",
+        "scorerVersion": "v1"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "50000000-0000-4000-8000-000000000031",
+      "datasetCaseId": "60000000-0000-4000-8000-000000000031",
+      "position": 1,
+      "state": "completed",
+      "attemptCount": 1,
+      "finishedAt": "2026-08-26T19:00:30Z"
+    },
+    {
+      "id": "50000000-0000-4000-8000-000000000032",
+      "datasetCaseId": "60000000-0000-4000-8000-000000000032",
+      "position": 2,
+      "state": "failed",
+      "attemptCount": 1,
+      "finishedAt": "2026-08-26T19:01:00Z",
+      "failureCode": "provider_unavailable"
+    }
+  ]
+}

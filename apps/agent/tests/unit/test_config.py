@@ -43,3 +43,34 @@ def test_agent_configuration_reuses_the_chat_key_when_embedding_key_is_blank(
     configuration = AgentConfig.from_environment()
 
     assert configuration.embedding_api_key == "chat-key"
+
+
+def test_agent_configuration_normalizes_evaluation_execution_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NORVII_EVALUATION_AGENT_BUILD", "\x1crelease-2026-08-26\x1f")
+    monkeypatch.setenv("NORVII_CHAT_MODEL", "\x1dchat-model-test\x1e")
+    monkeypatch.setenv("NORVII_EMBEDDING_MODEL", "\x1etext-embedding-3-small\x1d")
+
+    configuration = AgentConfig.from_environment()
+
+    assert configuration.evaluation_agent_build == "release-2026-08-26"
+    assert configuration.chat_model == "chat-model-test"
+    assert configuration.embedding_model == "text-embedding-3-small"
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "NORVII_EVALUATION_AGENT_BUILD",
+        "NORVII_CHAT_MODEL",
+        "NORVII_EMBEDDING_MODEL",
+    ],
+)
+def test_agent_configuration_rejects_blank_evaluation_execution_identity(
+    monkeypatch: pytest.MonkeyPatch, key: str
+) -> None:
+    monkeypatch.setenv(key, " \t ")
+
+    with pytest.raises(ValueError, match=f"{key} must not be empty"):
+        AgentConfig.from_environment()

@@ -1,10 +1,16 @@
-import { screen } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useNavigate } from "react-router-dom";
 
 import { createHttpResearchProvider } from "../../api/researchProvider";
 import type { ChatProvider } from "../../api/chat";
+import type {
+  ActiveSnapshotResponse,
+  CorpusResponse,
+} from "../../api/contract";
+import { i18n } from "../../i18n/config";
+import type { ResearchProvider } from "../../research/domain/authoritative";
 import { renderAtRoute } from "../../test/render";
 import { CorpusWorkspacePage } from "./CorpusWorkspacePage";
 
@@ -497,6 +503,279 @@ describe("authoritative corpus workspace", () => {
       "The cited location is unavailable.",
     );
   });
+
+  it("renders only exact rank-ordered questions in the active interface language", async () => {
+    const snapshot = activeSnapshot();
+    const englishResponse = deferred<Response>();
+    let englishSignal: AbortSignal | undefined;
+    const fetchResponse = vi
+      .fn<typeof fetch>()
+      .mockImplementation((input, init) => {
+        const url = requestUrl(input);
+        if (url.includes("/opening-suggestions?")) {
+          if (url.endsWith("interfaceLanguage=en")) {
+            englishSignal = init?.signal ?? undefined;
+            return englishResponse.promise;
+          }
+          return Promise.resolve(
+            jsonResponse(
+              openingSuggestionsResponse(corpus().id, "pt", snapshot, [
+                { caseId: "question-2", rank: 2, question: "Localized two" },
+                { caseId: "question-5", rank: 5, question: "Localized five" },
+              ]),
+            ),
+          );
+        }
+        if (url.endsWith("/sources")) return Promise.resolve(jsonResponse([]));
+        return Promise.resolve(jsonResponse(corpusWithSnapshot(snapshot)));
+      });
+
+    renderWorkspace(fetchResponse);
+
+    await waitFor(() => expect(englishSignal).toBeInstanceOf(AbortSignal));
+    await act(async () => {
+      await i18n.changeLanguage("pt");
+    });
+
+    expect(englishSignal?.aborted).toBe(true);
+    expect(
+      fetchResponse.mock.calls.some(([input]) =>
+        requestUrl(input).endsWith("interfaceLanguage=pt"),
+      ),
+    ).toBe(true);
+    englishResponse.resolve(
+      jsonResponse(
+        openingSuggestionsResponse(corpus().id, "en", snapshot, [
+          { caseId: "question-1", rank: 1, question: "Stale English question" },
+        ]),
+      ),
+    );
+
+    const suggestions = await screen.findByLabelText(
+      i18n.t("chat.starterQuestionsLabel"),
+    );
+    expect(
+      within(suggestions)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["Localized two", "Localized five"]);
+    expect(
+      screen.queryByText("Stale English question"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not substitute a localized question when the suggestion projection fails", async () => {
+    const snapshot = activeSnapshot();
+    const fetchResponse = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = requestUrl(input);
+      if (url.includes("/opening-suggestions?")) {
+        return Promise.resolve(new Response(null, { status: 503 }));
+      }
+      if (url.endsWith("/sources")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(corpusWithSnapshot(snapshot)));
+    });
+
+    renderWorkspace(fetchResponse);
+
+    await waitFor(() =>
+      expect(
+        fetchResponse.mock.calls.some(([input]) =>
+          requestUrl(input).includes("/opening-suggestions?"),
+        ),
+      ).toBe(true),
+    );
+    expect(
+      screen.queryByLabelText("Suggested research questions"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("aborts and discards a pending projection when the corpus route changes", async () => {
+    const firstCorpusId = corpus().id;
+    const secondCorpusId = "10000000-0000-4000-8000-000000000003";
+    const firstSnapshot = activeSnapshot();
+    const secondSnapshot = activeSnapshot(
+      "70000000-0000-4000-8000-000000000002",
+    );
+    const firstResponse = deferred<Response>();
+    let firstSignal: AbortSignal | undefined;
+    const fetchResponse = vi
+      .fn<typeof fetch>()
+      .mockImplementation((input, init) => {
+        const url = requestUrl(input);
+        if (url.includes("/opening-suggestions?")) {
+          if (url.includes(firstCorpusId)) {
+            firstSignal = init?.signal ?? undefined;
+            return firstResponse.promise;
+          }
+          return Promise.resolve(
+            jsonResponse(
+              openingSuggestionsResponse(secondCorpusId, "en", secondSnapshot, [
+                {
+                  caseId: "second-corpus-question",
+                  rank: 1,
+                  question: "Second corpus question",
+                },
+              ]),
+            ),
+          );
+        }
+        if (url.endsWith("/sources")) return Promise.resolve(jsonResponse([]));
+        return Promise.resolve(
+          jsonResponse(
+            url.includes(secondCorpusId)
+              ? corpusWithSnapshot(secondSnapshot, secondCorpusId)
+              : corpusWithSnapshot(firstSnapshot),
+          ),
+        );
+      });
+    const user = userEvent.setup();
+    const provider = createHttpResearchProvider({ fetch: fetchResponse });
+
+    renderAtRoute(
+      <Routes>
+        <Route
+          path="corpora/:corpusId"
+          element={<WorkspaceRouteChange provider={provider} />}
+        />
+      </Routes>,
+      `/corpora/${firstCorpusId}`,
+    );
+
+    await waitFor(() => expect(firstSignal).toBeInstanceOf(AbortSignal));
+    await user.click(screen.getByRole("button", { name: "Change corpus" }));
+
+    expect(firstSignal?.aborted).toBe(true);
+    expect(
+      await screen.findByRole("button", { name: "Second corpus question" }),
+    ).toBeVisible();
+    firstResponse.resolve(
+      jsonResponse(
+        openingSuggestionsResponse(firstCorpusId, "en", firstSnapshot, [
+          {
+            caseId: "first-corpus-question",
+            rank: 1,
+            question: "First corpus question",
+          },
+        ]),
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByText("First corpus question"),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("aborts and discards a pending projection when publication refreshes the active snapshot", async () => {
+    const firstSnapshot = activeSnapshot();
+    const secondSnapshot = activeSnapshot(
+      "70000000-0000-4000-8000-000000000002",
+      "f".repeat(64),
+    );
+    const firstResponse = deferred<Response>();
+    let currentSnapshot = firstSnapshot;
+    let firstSignal: AbortSignal | undefined;
+    let suggestionRequestCount = 0;
+    const staleProjectionProcessed = deferred<undefined>();
+    const fetchResponse = vi
+      .fn<typeof fetch>()
+      .mockImplementation((input, init) => {
+        const url = requestUrl(input);
+        if (url.includes("/opening-suggestions?")) {
+          suggestionRequestCount += 1;
+          if (suggestionRequestCount === 1) {
+            firstSignal = init?.signal ?? undefined;
+            return firstResponse.promise;
+          }
+          return Promise.resolve(
+            jsonResponse(
+              openingSuggestionsResponse(corpus().id, "en", secondSnapshot, [
+                {
+                  caseId: "new-snapshot-question",
+                  rank: 1,
+                  question: "New snapshot question",
+                },
+              ]),
+            ),
+          );
+        }
+        if (url.endsWith("/snapshots") && init?.method === "POST") {
+          currentSnapshot = secondSnapshot;
+          return Promise.resolve(
+            jsonResponse(snapshotPublicationResponse(secondSnapshot)),
+          );
+        }
+        if (url.endsWith("/sources"))
+          return Promise.resolve(jsonResponse([source()]));
+        if (url.includes("/document"))
+          return Promise.resolve(jsonResponse(document()));
+        return Promise.resolve(
+          jsonResponse(corpusWithSnapshot(currentSnapshot)),
+        );
+      });
+    const provider = createHttpResearchProvider({ fetch: fetchResponse });
+    const getCorpusOpeningSuggestions =
+      provider.getCorpusOpeningSuggestions.bind(provider);
+    vi.spyOn(provider, "getCorpusOpeningSuggestions").mockImplementation(
+      async (...arguments_) => {
+        try {
+          return await getCorpusOpeningSuggestions(...arguments_);
+        } finally {
+          if (arguments_[2] === firstSignal)
+            staleProjectionProcessed.resolve(undefined);
+        }
+      },
+    );
+    const user = userEvent.setup();
+
+    renderAtRoute(
+      <Routes>
+        <Route
+          path="corpora/:corpusId"
+          element={<CorpusWorkspacePage provider={provider} />}
+        />
+      </Routes>,
+      `/corpora/${corpus().id}`,
+    );
+
+    await waitFor(() => expect(firstSignal).toBeInstanceOf(AbortSignal));
+    await user.click(screen.getByRole("tab", { name: "Source" }));
+    await user.click(
+      screen.getByRole("treeitem", {
+        name: "Official English GDPR text (Ready)",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Publish snapshot" }),
+    );
+
+    await waitFor(() => expect(firstSignal?.aborted).toBe(true));
+    await user.click(screen.getByRole("tab", { name: "Chat" }));
+    expect(
+      await screen.findByRole("button", { name: "New snapshot question" }),
+    ).toBeVisible();
+    expect(suggestionRequestCount).toBe(2);
+    await act(async () => {
+      firstResponse.resolve(
+        jsonResponse(
+          openingSuggestionsResponse(corpus().id, "en", firstSnapshot, [
+            {
+              caseId: "old-snapshot-question",
+              rank: 1,
+              question: "Old snapshot question",
+            },
+          ]),
+        ),
+      );
+      await staleProjectionProcessed.promise;
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText("Old snapshot question")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "New snapshot question" }),
+    ).toBeVisible();
+  });
 });
 
 function renderWorkspace(
@@ -519,7 +798,7 @@ function renderWorkspace(
   );
 }
 
-function corpus() {
+function corpus(): CorpusResponse {
   return {
     id: "10000000-0000-4000-8000-000000000002",
     name: "EU Privacy Law",
@@ -532,6 +811,89 @@ function corpus() {
     createdAt: "2026-08-17T12:00:00Z",
     updatedAt: "2026-08-17T12:00:00Z",
   };
+}
+
+function corpusWithSnapshot(
+  activeSnapshot: ActiveSnapshotResponse,
+  id = corpus().id,
+): CorpusResponse {
+  return { ...corpus(), id, activeSnapshot };
+}
+
+function activeSnapshot(
+  id = "70000000-0000-4000-8000-000000000001",
+  manifestSha256 = "e".repeat(64),
+): ActiveSnapshotResponse {
+  return {
+    id,
+    manifestSha256,
+    createdAt: "2026-08-17T12:00:00Z",
+    activatedAt: "2026-08-17T12:00:00Z",
+    releaseVersion: id.endsWith("2") ? 2 : 1,
+  };
+}
+
+function snapshotPublicationResponse(release: ActiveSnapshotResponse) {
+  return {
+    snapshot: {
+      id: release.id,
+      corpusId: corpus().id,
+      manifestSha256: release.manifestSha256,
+      createdBy: "local-maintainer",
+      createdAt: release.createdAt,
+      members: [],
+    },
+    release,
+    published: true,
+  };
+}
+
+function openingSuggestionsResponse(
+  corpusId: string,
+  interfaceLanguage: "en" | "pt",
+  snapshot: ActiveSnapshotResponse,
+  suggestions: readonly {
+    readonly caseId: string;
+    readonly rank: number;
+    readonly question: string;
+  }[],
+) {
+  return {
+    corpusId,
+    activeSnapshotId: snapshot.id,
+    activeSnapshotManifestSha256: snapshot.manifestSha256,
+    interfaceLanguage,
+    suggestions,
+  };
+}
+
+function deferred<Value>() {
+  let resolve: (value: Value) => void;
+  const promise = new Promise<Value>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve: (value: Value) => resolve(value) };
+}
+
+function WorkspaceRouteChange({
+  provider,
+}: {
+  readonly provider: ResearchProvider;
+}) {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          void navigate("/corpora/10000000-0000-4000-8000-000000000003");
+        }}
+      >
+        Change corpus
+      </button>
+      <CorpusWorkspacePage provider={provider} />
+    </>
+  );
 }
 
 function source() {

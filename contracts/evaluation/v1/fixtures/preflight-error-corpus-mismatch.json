@@ -1,0 +1,14 @@
+{
+  "error": {
+    "code": "corpus_mismatch",
+    "message": "The selected dataset revision belongs to a different corpus.",
+    "requestId": "50000000-0000-4000-8000-000000000012",
+    "missingRequirements": [
+      {
+        "sourceAlias": "official-source",
+        "locator": "synthetic-locator-1",
+        "reason": "The dataset corpus does not match the requested corpus."
+      }
+    ]
+  }
+}

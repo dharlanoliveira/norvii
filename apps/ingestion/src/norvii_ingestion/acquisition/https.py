@@ -16,13 +16,17 @@ if TYPE_CHECKING:
     from norvii_ingestion.config import WorkerConfig
 
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
-_SUPPORTED_MEDIA_TYPES = frozenset({"text/html", "application/xhtml+xml", "text/plain"})
+_SUPPORTED_MEDIA_TYPES = frozenset(
+    {"application/pdf", "text/html", "application/xhtml+xml", "text/plain"}
+)
 _READ_CHUNK_SIZE = 64 * 1024
 _HTTPS_PORT = 443
 _SUCCESS_STATUS_MINIMUM = 200
 _SUCCESS_STATUS_MAXIMUM = 300
 _USER_AGENT = "Mozilla/5.0 (compatible; Norvii/1.0; +https://github.com/dharlanoliveira/norvii)"
-_ACCEPTED_REPRESENTATIONS = "application/xhtml+xml, text/html;q=0.9, text/plain;q=0.8"
+_ACCEPTED_REPRESENTATIONS = (
+    "application/pdf, application/xhtml+xml;q=0.9, text/html;q=0.8, text/plain;q=0.7"
+)
 _PREFERRED_LANGUAGES = "eng, en;q=0.9"
 
 

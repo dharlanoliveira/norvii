@@ -100,6 +100,7 @@ def test_vector_retrieval_excludes_foreign_corpus_and_snapshot_documents(
     assert isolation_fixture.foreign_corpus.document_id not in {
         item.document_id for item in evidence
     }
+    assert isolation_fixture.third_corpus.document_id not in {item.document_id for item in evidence}
 
 
 def test_hybrid_retrieval_excludes_foreign_postgres_and_neo4j_evidence(
@@ -130,11 +131,47 @@ def test_hybrid_retrieval_excludes_foreign_postgres_and_neo4j_evidence(
     returned_documents = {item.document_id for item in evidence}
     assert isolation_fixture.foreign_snapshot.document_id not in returned_documents
     assert isolation_fixture.foreign_corpus.document_id not in returned_documents
+    assert isolation_fixture.third_corpus.document_id not in returned_documents
     assert [path.assertion_id for path in hybrid.last_assertion_path] == [
         str(isolation_fixture.target.graph_assertion_id)
     ]
     assert hybrid.last_assertion_path[0].hierarchy_context == ("chapter-1", "article-1")
     assert hybrid.last_scope_locator == "chapter-1"
+
+
+def test_vector_retrieval_retains_the_declared_source_revision_after_an_update(
+    configuration: AgentConfig, isolation_fixture: RetrievalIsolationFixture
+) -> None:
+    """Each snapshot resolves the source revision it published, even after a later update."""
+    retriever = PostgresRetriever(configuration, FixedEmbeddingProvider())
+
+    historical_evidence = retriever.search(
+        isolation_fixture.target.corpus_id,
+        isolation_fixture.target.snapshot_id,
+        "Who governs the authority?",
+    )
+    updated_evidence = retriever.search(
+        isolation_fixture.updated_target.corpus_id,
+        isolation_fixture.updated_target.snapshot_id,
+        "Who governs the authority?",
+    )
+
+    assert isolation_fixture.target.source_id == isolation_fixture.updated_target.source_id
+    assert isolation_fixture.target.source_revision_id != (
+        isolation_fixture.updated_target.source_revision_id
+    )
+    assert [item.document_id for item in historical_evidence] == [
+        isolation_fixture.target.document_id
+    ]
+    assert [item.document_id for item in updated_evidence] == [
+        isolation_fixture.updated_target.document_id
+    ]
+    assert isolation_fixture.updated_target.document_id not in {
+        item.document_id for item in historical_evidence
+    }
+    assert isolation_fixture.target.document_id not in {
+        item.document_id for item in updated_evidence
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,27 +197,34 @@ class RetrievalIsolationFixture:
     def __init__(self) -> None:
         target_corpus_id = uuid4()
         foreign_corpus_id = uuid4()
-        self.target = self._document(target_corpus_id, "target")
+        third_corpus_id = uuid4()
+        target_source_id = uuid4()
+        self.target = self._document(target_corpus_id, "target", target_source_id)
+        self.updated_target = self._document(target_corpus_id, "updated-target", target_source_id)
         self.foreign_snapshot = self._document(target_corpus_id, "foreign-snapshot")
         self.foreign_corpus = self._document(foreign_corpus_id, "foreign-corpus")
-        self._corpus_ids = (target_corpus_id, foreign_corpus_id)
+        self.third_corpus = self._document(third_corpus_id, "third-corpus")
+        self._corpus_ids = (target_corpus_id, foreign_corpus_id, third_corpus_id)
 
     def seed_postgres(self, connection: psycopg.Connection[tuple[object, ...]]) -> None:
         """Create target and excluded vector evidence in their explicit snapshot memberships."""
         captured_at = datetime(2026, 8, 25, 12, 0, tzinfo=UTC)
         with connection.cursor() as cursor:
-            for corpus_id, language in (
-                (self.target.corpus_id, "en"),
-                (self.foreign_corpus.corpus_id, "pt"),
+            for corpus_id, language, name in (
+                (self.target.corpus_id, "en", "Target legal corpus"),
+                (self.foreign_corpus.corpus_id, "pt", "Foreign legal corpus"),
+                (self.third_corpus.corpus_id, "en", "Third legal corpus"),
             ):
                 cursor.execute(
                     """
                     INSERT INTO corpora (id, name, description, language, jurisdiction)
-                    VALUES (%s, 'Graph retrieval isolation fixture',
+                    VALUES (%s, %s,
                             'Service-backed retrieval isolation fixture.', %s, 'Test')
                     """,
-                    (corpus_id, language),
+                    (corpus_id, name, language),
                 )
+            for document in self._source_documents:
+                self._insert_source(cursor, document)
             for document in self._documents:
                 self._insert_document(cursor, document, captured_at)
                 self._insert_snapshot(cursor, document, captured_at)
@@ -247,14 +291,25 @@ class RetrievalIsolationFixture:
 
     @property
     def _documents(self) -> tuple[SnapshotDocument, ...]:
-        return (self.target, self.foreign_snapshot, self.foreign_corpus)
+        return (
+            self.target,
+            self.updated_target,
+            self.foreign_snapshot,
+            self.foreign_corpus,
+            self.third_corpus,
+        )
+
+    @property
+    def _source_documents(self) -> tuple[SnapshotDocument, ...]:
+        documents_by_source = {document.source_id: document for document in self._documents}
+        return tuple(documents_by_source.values())
 
     @staticmethod
-    def _document(corpus_id: UUID, label: str) -> SnapshotDocument:
+    def _document(corpus_id: UUID, label: str, source_id: UUID | None = None) -> SnapshotDocument:
         return SnapshotDocument(
             corpus_id=corpus_id,
             snapshot_id=uuid4(),
-            source_id=uuid4(),
+            source_id=source_id or uuid4(),
             source_revision_id=uuid4(),
             document_id=uuid4(),
             chapter_unit_id=uuid4(),
@@ -266,16 +321,9 @@ class RetrievalIsolationFixture:
         )
 
     @staticmethod
-    def _insert_document(
-        cursor: psycopg.Cursor[tuple[object, ...]],
-        document: SnapshotDocument,
-        captured_at: datetime,
+    def _insert_source(
+        cursor: psycopg.Cursor[tuple[object, ...]], document: SnapshotDocument
     ) -> None:
-        work_id = uuid4()
-        attempt_id = uuid4()
-        text = f"{document.label} authority governs obligations."
-        content_hash = uuid4().hex * 2
-        text_hash = uuid4().hex * 2
         cursor.execute(
             """
             INSERT INTO sources (id, corpus_id, title, kind, processing_status)
@@ -295,6 +343,18 @@ class RetrievalIsolationFixture:
                 f"https://example.org/{document.source_id}",
             ),
         )
+
+    @staticmethod
+    def _insert_document(
+        cursor: psycopg.Cursor[tuple[object, ...]],
+        document: SnapshotDocument,
+        captured_at: datetime,
+    ) -> None:
+        work_id = uuid4()
+        attempt_id = uuid4()
+        text = f"{document.label} authority governs obligations."
+        content_hash = uuid4().hex * 2
+        text_hash = uuid4().hex * 2
         cursor.execute(
             """
             INSERT INTO ingestion_work (id, source_id, corpus_id, reason, status)

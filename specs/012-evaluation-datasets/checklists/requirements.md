@@ -28,6 +28,8 @@
 - [x] User stories are independently testable and prioritized.
 - [x] Success criteria measure dataset integrity, boundary enforcement, traceability, and comparison safety.
 - [x] Evidence, legal-authority, bilingual, cost, and observability constraints are explicit.
+- [x] Corpus opening suggestions are rank-ordered, snapshot-bound, localized by paired dataset
+  cases, and separated from evaluation execution.
 
 ## Notes
 

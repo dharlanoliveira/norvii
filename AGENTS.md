@@ -43,3 +43,49 @@ Build the initial executable product prototype only under `prototypes/web/` and 
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
 <!-- SPECKIT END -->
+
+
+<codex_multiagents_v2>
+
+Apply this section only when the runtime provides subagent creation with
+`gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`. In any other agent or
+runtime, ignore this section entirely.
+
+## Model roles
+
+The primary agent uses `gpt-5.6-sol` with `high` effort exclusively for
+orchestration: understand the request, divide work, delegate, validate results,
+maintain safety confirmations, and synthesize the final response. It must not
+directly perform delegable implementation or routine operational tasks.
+
+For an independent, well-bounded, low-complexity task, delegate one worker by
+default with:
+
+- model: `gpt-5.6-luna`;
+- reasoning effort: `high`.
+
+For an independent medium- or high-complexity task that can still be solved by
+one worker, for example multi-source technical investigation, implementation
+across multiple files, or evidence-based diagnosis, delegate one worker with:
+
+- model: `gpt-5.6-terra`;
+- reasoning effort: `high`.
+
+The worker receives only the user request, project directory, applicable skill,
+and expected result. Do not send the entire conversation history, secrets,
+credentials, tokens, or configuration-file contents.
+
+Do not delegate a simple response, a clarification question, a single reading
+without analysis, an architecture decision, a destructive operation, or a task
+whose next step immediately depends on a primary-agent decision. Do not use
+workers in parallel unless the user explicitly requests it or subtasks are
+genuinely independent and have no shared state.
+
+The primary agent remains responsible for validation, user confirmation,
+result communication, and decisions the worker cannot resolve. If Luna finds
+material ambiguity, semantic conflict, production risk, or a need for broad
+judgment, do not persist with the same delegation: the primary agent routes it
+to a Terra High worker or decides the orchestration issue without turning Sol
+into an executor.
+
+</codex_multiagents_v2>

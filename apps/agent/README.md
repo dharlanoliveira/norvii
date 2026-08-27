@@ -25,6 +25,27 @@ to `text-embedding-3-small`. A blank `NORVII_EMBEDDING_API_KEY` reuses
 `ready` embedded chunks from a source's latest ready document version, so sources
 must be reprocessed after enabling embeddings.
 
+## Fixed-snapshot evaluation boundary
+
+The same process also exposes the private, non-streaming
+`POST /v1/evaluations/execute` transport for the managed Go evaluation worker. It is
+not a public command or a browser API. The Go API supplies one persisted corpus,
+snapshot, question, interface language, frozen retrieval configuration, and execution
+identity. Malformed or incomplete request data is rejected with the bounded
+`invalid_request` outcome. A well-formed request whose requested execution or
+retrieval identity does not match the running configuration is rejected with
+`frozen_identity_unavailable` instead.
+
+Set `NORVII_EVALUATION_RETRIEVAL_STRATEGY` (`vector` or `hybrid`),
+`NORVII_EVALUATION_RETRIEVAL_FINGERPRINT` (a lowercase SHA-256), and
+`NORVII_EVALUATION_AGENT_BUILD` consistently with the API. The execution identity
+also includes the configured `NORVII_CHAT_MODEL` and `NORVII_EMBEDDING_MODEL`. A
+fixed-snapshot evaluation never resolves the active snapshot and never changes the
+public chat SSE flow. Transport errors return safe codes (`invalid_request` for an
+invalid request, `frozen_identity_unavailable` for runtime frozen-identity drift,
+or `evaluation_unavailable` for another execution failure) without provider payloads,
+prompts, credentials, or source text.
+
 ## MCP research server
 
 Feature 010 adds a separate MCP entry point. In a local MCP client configuration,

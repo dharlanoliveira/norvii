@@ -1,4 +1,4 @@
-.PHONY: bootstrap local-start local-status local-stop persistence persistence-config \
+.PHONY: bootstrap local-restart local-start local-status local-stop persistence persistence-config \
 	persistence-health persistence-integration persistence-migrate persistence-migration-status \
 	persistence-initialize-snapshots \
 	persistence-mcp-health persistence-mcp-up persistence-reset persistence-stop persistence-up persistence-verify \
@@ -19,6 +19,9 @@ local-status:
 
 local-stop:
 	@$(LOCAL_ENVIRONMENT_MANAGER) stop
+
+local-restart:
+	@$(LOCAL_ENVIRONMENT_MANAGER) restart
 
 persistence:
 	@$(MAKE) persistence-up
