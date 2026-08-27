@@ -209,9 +209,10 @@ def test_extractor_maps_remaining_artifact_validation_errors_to_extraction_error
     monkeypatch.setattr(
         "norvii_ingestion.extraction.html.DocumentArtifact.validate", reject_artifact
     )
+    extractor = HtmlExtractor()
 
     with pytest.raises(ExtractionError, match="structurally invalid"):
-        HtmlExtractor().extract(
+        extractor.extract(
             b"<main><p>First official block contains the complete legal introduction.</p>"
             b"<p>Second official block contains the complete legal conclusion.</p></main>"
         )

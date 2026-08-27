@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 
 _WRITE_BATCH_SIZE = 250
+type _CypherParameters = dict[str, Any]
 
 
 class Neo4jStore:
@@ -122,7 +123,7 @@ def _superseded_release_ids(
     transaction: ManagedTransaction, parameters: dict[str, object]
 ) -> tuple[str, ...]:
     """Return only the release identifiers scoped to the replaced corpus snapshot."""
-    result = transaction.run(_SUPERSEDED_RELEASE_IDS, cast("dict[str, Any]", parameters))
+    result = transaction.run(_SUPERSEDED_RELEASE_IDS, _cypher_parameters(parameters))
     record = result.single(strict=True)
     value = record["release_ids"]
     if not isinstance(value, list) or not all(isinstance(identifier, str) for identifier in value):
@@ -155,7 +156,7 @@ def _deleted_count(
     transaction: ManagedTransaction, query: str, parameters: dict[str, object]
 ) -> int:
     """Execute one bounded deletion query and validate its affected-node count."""
-    result = transaction.run(query, cast("dict[str, Any]", parameters))
+    result = transaction.run(query, _cypher_parameters(parameters))
     record = result.single(strict=True)
     value = record["deleted"]
     if not isinstance(value, int) or value < 0:
@@ -188,7 +189,12 @@ def _projection_items(
 
 def _run(transaction: ManagedTransaction, query: str, parameters: dict[str, object]) -> None:
     """Consume one write result before issuing the next statement in the transaction."""
-    transaction.run(query, cast("dict[str, Any]", parameters)).consume()
+    transaction.run(query, _cypher_parameters(parameters)).consume()
+
+
+def _cypher_parameters(parameters: dict[str, object]) -> _CypherParameters:
+    """Narrow release parameters to the Neo4j driver's accepted value type."""
+    return cast("_CypherParameters", parameters)
 
 
 _SUPERSEDED_RELEASE_IDS = """
