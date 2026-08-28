@@ -9,135 +9,149 @@
 [![API Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-api&metric=alert_status)](https://sonarcloud.io/dashboard?id=dharlanoliveira_norvii-api)
 [![Ingestion Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-ingestion&metric=alert_status)](https://sonarcloud.io/dashboard?id=dharlanoliveira_norvii-ingestion)
 
-Norvii is a proof of concept for evidence-grounded legal research using RAG,
-GraphRAG, LLMs, MCP, and reusable skills. The application will let a user select a
-small Portuguese or English corpus, browse its sources, and ask questions in a chat
-whose answers include traceable citations.
+Norvii is a technical proof of concept for corpus-isolated, evidence-grounded legal
+research. A researcher selects a legal corpus, explores its versioned sources, and
+asks questions whose answers are constrained to retrieved evidence and traceable
+citations. The project demonstrates RAG, GraphRAG, LLM orchestration, MCP research
+tools, reusable workflows, and reproducible evaluation assets.
 
-The project is a technical demonstration and does not provide legal advice.
+Norvii is a technical demonstration, not legal advice or a substitute for
+professional legal research.
 
-## Project status
+## Current repository state
 
-The current implementation includes corpus and source ingestion, immutable corpus
-snapshots, grounded RAG chat with citation inspection, graph-ready releases, and
-vector-first planned Hybrid retrieval. PostgreSQL with pgvector is the canonical
-store; Neo4j Community is a rebuildable, evidence-linked graph projection.
+The repository contains an executable local stack: a React client, Go HTTP API,
+Python LangGraph agent, Python ingestion worker, PostgreSQL with pgvector, Neo4j,
+and a local-only MCP service. The runtime supports corpus and source management,
+safe URL and PDF ingestion, immutable document versions and snapshots, graph-ready
+releases, corpus-bound retrieval, citations, abstention, technical inspection, and
+maintainer evaluation operations.
 
-Feature 010 is in progress. It introduces bounded MCP research tools and reusable
-evidence workflows while preserving corpus and snapshot isolation. Its production
-target is a Docker-hosted Streamable HTTP endpoint; local stdio remains a development
-transport. See the [feature specification](specs/010-mcp-research-tools/spec.md) for
-scope and acceptance criteria.
+Model-backed chat and embeddings are optional local configuration. Without their
+provider settings, the catalog and source reader remain available, while chat fails
+closed rather than producing an ungrounded response. Graph and hybrid retrieval need
+an active graph-ready snapshot.
 
-## Bootstrap the complete local environment
+The numbered [feature specifications](specs/README.md) are the authoritative record
+of each capability's lifecycle and acceptance evidence; this README summarizes the
+currently versioned repository and local environment.
 
-After creating `infra/.env` from the provided example and replacing both password
-markers, start and verify all currently executable local components with:
+## Corpora and evaluation assets
+
+The local database migrations seed four independently searchable corpora. Source
+counts below are the seeded official URL sources, not a claim about their current
+ingestion status in any particular local database.
+
+| Seeded corpus | Stable key | Source language | Jurisdiction | Sources |
+| --- | --- | --- | --- | ---: |
+| Brazilian Personal Data Protection (LGPD) | `brazil-personal-data-protection` | Portuguese | Brazil, federal | 1 |
+| European Union General Data Protection Regulation | `initial-gdpr-en` | English | European Union | 1 |
+| Brazilian Anti-Corruption and White-Collar Crime | `brazil-anti-corruption-white-collar-crime` | Portuguese | Brazil, federal | 5 |
+| United States Fair Housing and Disability Accommodations | `us-fair-housing-disability-accommodations` | English | United States, federal | 5 |
+
+The project-owned evaluation scope is deliberately narrower: it contains three
+separate, draft datasets for LGPD, Brazilian anti-corruption, and U.S. fair housing.
+Their manifests and cases are repository assets, not automatically published
+evaluations or permission to fetch or alter sources.
+
+| Corpus | Dataset | Cases | Dataset assets |
+| --- | --- | ---: | --- |
+| Brazilian Personal Data Protection (LGPD) | `brazil-lgpd-v1` | 18 | [LGPD dataset](data/corpora/brazil-lgpd/evaluation/README.md) |
+| Brazilian Anti-Corruption and White-Collar Crime | `brazil-anti-corruption-v1` | 16 | [Anti-corruption dataset](data/corpora/brazil-anti-corruption/evaluation/README.md) |
+| United States Fair Housing and Disability Accommodations | `us-fair-housing-v1` | 18 | [Fair-housing dataset](data/corpora/us-fair-housing-disability-accommodations/evaluation/README.md) |
+
+Every query, source, snapshot, dataset revision, opening suggestion, and evaluation
+run is corpus-bound. A draft dataset becomes usable only after review, source binding,
+locator resolution, and compatibility with an immutable published snapshot. See
+[Legal corpora](docs/product/corpora.md) and the [evaluation strategy](docs/product/evaluation.md).
+
+## Quick start
+
+Prerequisites: Docker Engine with Docker Compose, Node.js 24 and npm, Go 1.26.5 (or a
+compatible Go 1.26 patch release), Python 3.13, uv 0.11, GNU Make, and Bash.
+
+Create the ignored local configuration, replace the password markers, and start the
+complete local environment:
 
 ```bash
+cp infra/.env.example infra/.env
+# Replace the local PostgreSQL and Neo4j password markers in infra/.env.
 make bootstrap
 ```
 
-Codex users can invoke `$bootstrap-norvii` for the same managed workflow. Runtime
-output is retained by component under `.log/`: `bootstrap.log`, `web.log`,
-`api.log`, `agent.log`, `ingestion.log`, `postgres.log`, and `neo4j.log`. Repeated execution
-reuses healthy processes rather than starting duplicates. Readiness is reported only
-after both stable initial sources reach `ready` or an explicit retryable `failed`
-state within the configured bound.
-
-Inspect or stop the managed environment with `make local-status` and
-`make local-stop`. Stopping retains both database volumes.
-
-## Run an individual module
-
-Prerequisites: Node.js 24 and npm.
+`make bootstrap` starts PostgreSQL, Neo4j, the MCP profile, API, agent, ingestion
+worker, evaluation worker, and web client. It validates service and process health,
+then waits for the two stable initial sources to reach `ready` or `failed` within the
+configured bound. Runtime logs are retained in `.log/`; use these commands to inspect
+or stop the managed environment without deleting database volumes:
 
 ```bash
-npm --prefix apps/web ci
-npm --prefix apps/web run dev
+make local-status
+make local-stop
 ```
 
-The web development server expects the API on `127.0.0.1:8080`; use `make bootstrap`
-for the complete environment. Validate the web module with:
+The web client normally runs at `http://127.0.0.1:5173`; the local MCP endpoint is
+`http://127.0.0.1:8091/mcp`. The detailed [local environment guide](docs/operations/local-environment.md)
+covers configuration, health checks, isolated integration, troubleshooting, and the
+guarded local reset.
+
+## Work on one module
+
+Use the complete bootstrap for an end-to-end journey. Each production module also
+has a focused guide and a module-owned `ci` target:
+
+| Module | Responsibility | Guide |
+| --- | --- | --- |
+| Web | Bilingual corpus catalog, workspace, citations, and evaluation presentation | [apps/web](apps/web/README.md) |
+| API | Public HTTP contracts, PostgreSQL transactions, snapshots, and evaluation ledger | [apps/api](apps/api/README.md) |
+| Agent | Corpus-bound retrieval, grounded generation, citation validation, and MCP server | [apps/agent](apps/agent/README.md) |
+| Ingestion | Safe acquisition, document processing, embeddings, and graph releases | [apps/ingestion](apps/ingestion/README.md) |
+
+For example, validate the web module with:
 
 ```bash
 npm --prefix apps/web exec playwright install chromium
 make -C apps/web ci
 ```
 
-See the [web](apps/web/README.md), [API](apps/api/README.md), [agent](apps/agent/README.md),
-and [ingestion](apps/ingestion/README.md) module guides for focused development.
+The MCP server exposes eight bounded, read-only research tools and three reusable
+prompts. Use Docker Streamable HTTP for the managed local service or stdio for local
+client development; see the [MCP quickstart](specs/010-mcp-research-tools/quickstart.md).
 
-The managed local bootstrap also starts the MCP Compose profile at its local-only
-endpoint. Its container and client validation instructions are in the
-[Feature 010 quickstart](specs/010-mcp-research-tools/quickstart.md).
+## Documentation and verification
 
-## Run the persistence foundation
+[Documentation guide](docs/README.md) maps every durable subject to its source of
+truth. Useful starting points include:
 
-Prerequisites: Docker Compose, Go 1.26, Python 3.13, uv, Make, and Bash.
+- [Product overview](docs/product/overview.md) and [AI capabilities](docs/product/ai-capabilities.md)
+- [System architecture](docs/architecture/overview.md) and [module models](docs/modules/README.md)
+- [Legal corpora](docs/product/corpora.md) and [evaluation strategy](docs/product/evaluation.md)
+- [Local environment](docs/operations/local-environment.md) and [continuous integration](docs/development/continuous-integration.md)
+- [Spec-driven development](docs/development/spec-driven-development.md) and [feature workspaces](specs/README.md)
+- [Project constitution](.specify/memory/constitution.md)
+
+CI checks repository language and contracts, runs each scaffolded module's `ci`
+target, exercises persistence integration, and analyzes the web, API, and ingestion
+modules with SonarQube Cloud. Run the verification relevant to the files you change;
+for a repository documentation change, start with:
 
 ```bash
-cp infra/.env.example infra/.env
-# Replace both password markers in infra/.env.
-make persistence
+python -m unittest discover -s .github/scripts/tests -v
+python .github/scripts/validate_repository_language.py
+python .github/scripts/validate_contracts.py
+git diff --check
 ```
 
-See the [local environment guide](docs/operations/local-environment.md) for health,
-troubleshooting, isolated integration, non-destructive stop, and guarded reset
-commands.
+## Contributing
 
-## Code quality analysis
-
-GitHub Actions analyzes the production web, API, and ingestion modules as separate SonarQube Cloud projects within the Norvii monorepo. The Python agent has its own module CI gate and is not yet a Sonar project. Each same-repository pull request and push to `main` waits for all three Sonar quality gates, then applies the stricter Norvii policy that fails the build when any analyzed module has an unresolved Sonar issue.
-
-| Module | Quality gate | Coverage |
-| --- | --- | --- |
-| Web | [![Web quality gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-web&metric=alert_status)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-web) | [![Web coverage](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-web&metric=coverage)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-web) |
-| API | [![API quality gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-api&metric=alert_status)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-api) | [![API coverage](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-api&metric=coverage)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-api) |
-| Ingestion | [![Ingestion quality gate](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-ingestion&metric=alert_status)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-ingestion) | [![Ingestion coverage](https://sonarcloud.io/api/project_badges/measure?project=dharlanoliveira_norvii-ingestion&metric=coverage)](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-ingestion) |
-
-View the SonarQube Cloud dashboards for [norvii-web](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-web), [norvii-api](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-api), and [norvii-ingestion](https://sonarcloud.io/project/overview?id=dharlanoliveira_norvii-ingestion). See [continuous integration](docs/development/continuous-integration.md#sonarqube-cloud-free-setup) for the monorepo configuration and gate behavior.
-
-## Documentation map
-
-- [Product overview](docs/product/overview.md): vision, scope, product behavior, and MVP boundary.
-- [Legal corpora](docs/product/corpora.md): source model and proposed Portuguese and English collections.
-- [Documentation guide](docs/README.md): ownership and location of every document
-  type.
-- [Feature map](docs/product/feature-map.md): proposed delivery sequence.
-- [Spec-driven workflow](docs/development/spec-driven-development.md): how Codex and
-  contributors move from capability to verified code.
-- [Development tooling](docs/development/tooling.md): pinned Spec Kit version, project preset, workflow overlay, and upgrade rules.
-- [Continuous integration](docs/development/continuous-integration.md): GitHub Actions builds and SonarQube Cloud gates.
-- [Local environment](docs/operations/local-environment.md): full application bootstrap, logs, health, persistence, and guarded reset commands.
-- [Executable prototyping](docs/development/prototyping.md): how React prototypes are built, reviewed, and approved before production.
-- [Prototype workspace](prototypes/README.md): executable product experiments kept separate from production applications.
-- [Production web client](apps/web/README.md): local startup, validation commands, and current client boundaries.
-- [Repository structure](docs/architecture/repository-structure.md): target monorepo
-  boundaries.
-- [Module models](docs/modules/README.md): client, Go facade, Python agent, and ingestion
-  responsibilities.
-- [Constitution](.specify/memory/constitution.md): non-negotiable engineering and
-  product rules.
-- [Feature specifications](specs/README.md): numbered Spec Kit workspaces.
-
-## Spec Kit workflow
-
-For each capability, use the repository-local Spec Kit skills in this order:
-
-1. `speckit-specify`
-2. `speckit-clarify` when material ambiguity remains
-3. `speckit-checklist`
-4. `speckit-plan`
-5. `speckit-tasks`
-6. `speckit-analyze`
-7. implementation approval gate
-8. `speckit-implement`
-9. `speckit-converge`
-
-Do not start application code from the roadmap alone. Create or select the numbered
-feature that owns the behavior first.
+Norvii is a proprietary portfolio project. External code or documentation
+contributions require prior written agreement with the project owner. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the Spec Kit workflow, engineering standards,
+and commit expectations.
 
 ## License
 
-Copyright (c) 2026 Dharlan Oliveira. Norvii is proprietary and available for personal evaluation and portfolio review only. See [LICENSE](LICENSE) for the full terms and [third-party notices](THIRD_PARTY_NOTICES.md) for separately licensed components.
+Copyright (c) 2026 Dharlan Oliveira. Norvii is proprietary and available for
+personal evaluation and portfolio review only. See [LICENSE](LICENSE) for the full
+terms and [third-party notices](THIRD_PARTY_NOTICES.md) for separately licensed
+components.
