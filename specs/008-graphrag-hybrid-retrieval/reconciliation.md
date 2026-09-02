@@ -6,7 +6,9 @@
 
 This audit compares Feature 008 requirements and unchecked historical tasks with the current
 repository state. Feature 009 is the later product decision: the client exposes Vector and
-planned Hybrid retrieval, not a standalone Graph strategy.
+planned Hybrid retrieval, not a standalone Graph strategy. Feature 011 later replaces the
+canonical direct semantic-relationship model with evidence-backed normative assertions for every
+new graph release after its controlled local reset.
 
 ## Implementation Present
 
@@ -30,6 +32,12 @@ both seeded corpora.
 Tasks that require a standalone Graph selector are superseded by Feature 009. The remaining
 validation must demonstrate Vector and Hybrid behavior, including a safe unavailable graph stage,
 without restoring the removed product option.
+
+Feature 011 supersedes direct `semantic_relationships` persistence and direct relationship-edge
+inspection for future releases. It keeps Feature 008's snapshot isolation, graph-release
+lifecycle, and evidence-grounding requirements, but represents the supported statement as a
+normative assertion with distinct establishing and evidence legal units. This note does not alter
+the historical Feature 008 acceptance evidence.
 
 ## Reconciled Execution Path
 

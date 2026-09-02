@@ -122,7 +122,7 @@ and operational documentation.
 
 - [x] T031 Update `apps/api/README.md`, `apps/agent/README.md`, `apps/ingestion/README.md`, `apps/web/README.md`, `docs/modules/go-api.md`, `docs/modules/python-agent.md`, `docs/modules/python-ingestion.md`, and `docs/modules/web-client.md` with implemented evaluation and opening-suggestion commands, ownership, and diagnostics.
 - [x] T032 Add end-to-end fixture coverage across `apps/api/tests/integration/`, `apps/agent/tests/integration/`, and `apps/web/tests/e2e/` for the three isolated corpora, language pairs, stale suggestion sets, source updates, importer idempotency, and run retention.
-- [ ] T033 Run the exact validation sequence recorded in `specs/012-evaluation-datasets/quickstart.md`, including Go, Python, TypeScript, migration, persistence, prototype, contract, repository-language, and diff checks; record any bounded operational prerequisite in the quickstart.
+- [x] T033 Run the exact validation sequence recorded in `specs/012-evaluation-datasets/quickstart.md`, including Go, Python, TypeScript, migration, persistence, prototype, contract, repository-language, and diff checks; record any bounded operational prerequisite in the quickstart. Completed 2026-09-01; see the quickstart verification record.
 
 ---
 

@@ -259,3 +259,11 @@ For new requests, this feature supersedes Feature 008 requirements and scenarios
 compare standalone Graph retrieval. Feature 008 continues to own graph-release construction,
 snapshot activation, graph provenance, and graph-path evidence; this feature owns the researcher
 choice and adaptive retrieval policy built on that foundation.
+
+### Feature 011 Assertion-Model Supersession
+
+For graph releases produced after the Feature 011 controlled reset, the graph capability and
+inspection boundary use normative assertions instead of direct semantic relationships. The
+existing Vector and Hybrid policy remains in force: planning selects only published assertion
+predicates, compatible endpoint labels, and optional legal-unit scopes. This note preserves the
+historical Feature 009 acceptance evidence and does not require rebuilding previous releases.
