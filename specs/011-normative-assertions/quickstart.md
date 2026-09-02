@@ -56,3 +56,13 @@ Expected outcome: the active snapshot has a ready graph release whose every grap
 Ask one provision-level question and one chapter-scoped relationship question. Inspect the returned assertion path.
 
 Expected outcome: the provision question cites its direct establishing location. The chapter question returns only matching descendant assertions and does not include unrelated chapters or sibling provisions.
+
+## Verification record
+
+On 2026-09-01, T031 completed successfully. The reset preflight passed with migration 20 and 104
+ingestion and 70 agent tests, then `make persistence-reset CONFIRM=reset-norvii-data` removed the
+managed local PostgreSQL and Neo4j volumes. `make bootstrap` recreated the environment. Fresh
+ingestion produced LGPD snapshot `756d90a8-1df3-4c54-8f59-204a6e79f3af` with 11 normative
+assertions and GDPR snapshot `9a327d12-7aee-4984-8a66-2cf82a9a975b` with 13. A live LGPD hybrid
+request returned a completed graph assertion path with assertion ID, predicate, endpoint labels,
+establishing and evidence locators, and hierarchy context.

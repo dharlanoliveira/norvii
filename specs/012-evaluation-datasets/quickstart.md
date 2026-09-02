@@ -93,6 +93,33 @@ The database-backed integration suite requires a running local PostgreSQL enviro
 through `infra/.env`. It must run against isolated fixture data; existing imported evaluation
 datasets can contaminate assertions that expect an empty catalog.
 
+## 7. Verification record
+
+Verified on 2026-09-01 from the repository root. The managed local environment was started with
+`make bootstrap` before the persistence commands; it reported PostgreSQL, Neo4j, the API, agent,
+ingestion worker, MCP service, and web client ready. No corpus reset or external source acquisition
+was performed.
+
+Every command in the required automated-check sequence completed successfully:
+
+```text
+make persistence-migrate
+make persistence-migration-status
+make persistence-verify
+make -C apps/api ci
+make -C apps/agent ci
+make -C apps/ingestion ci
+(cd apps/web && npm ci && npm run format:check && npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e)
+(cd prototypes/web && npm ci && make ci)
+python3 .github/scripts/validate_contracts.py
+python3 .github/scripts/validate_repository_language.py
+git diff --check
+```
+
+The persistence migration was current at version 20. The web checks completed with 119 unit tests
+and 16 end-to-end tests passing; prototype CI completed with 28 tests passing. Build output emitted
+only the existing Vite large-chunk advisory and did not fail a gate.
+
 Keep the technical-measurement and not-legal-advice notice visible in the maintainer experience.
 
 Evaluation results and opening suggestions are technical information about corpus-grounded system
